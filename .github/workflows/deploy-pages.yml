@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       zip_path:
-        description: "ZIP path in the repository, e.g. releases/kh-checker-v2.1-komplett.zip"
+        description: "ZIP path in the repository, for example releases/kh-checker-v2.0-komplett.zip"
         required: true
         default: "releases/kh-checker-v2.0-komplett.zip"
         type: string
@@ -20,6 +20,7 @@ concurrency:
 
 jobs:
   deploy:
+    name: Deploy selected release ZIP
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -39,26 +40,26 @@ jobs:
           case "$ZIP_PATH" in
             releases/*.zip) ;;
             *)
-              echo "::error::ZIP_PATH must point to a .zip file inside releases/."
+              echo "::error::The selected file must be a ZIP inside releases/."
               exit 1
               ;;
           esac
 
           if [[ "$ZIP_PATH" == *".."* ]]; then
-            echo "::error::ZIP_PATH must not contain '..'."
+            echo "::error::The ZIP path must not contain '..'."
             exit 1
           fi
 
           if [[ ! -f "$ZIP_PATH" ]]; then
             echo "::error::Selected ZIP does not exist: $ZIP_PATH"
-            echo "Available ZIP files:"
+            echo "Available release ZIP files:"
             find releases -maxdepth 1 -type f -name '*.zip' -print | sort || true
             exit 1
           fi
 
           unzip -t "$ZIP_PATH"
 
-      - name: Extract selected version into a clean site directory
+      - name: Prepare clean deployment directory
         shell: bash
         env:
           ZIP_PATH: ${{ inputs.zip_path }}
@@ -72,16 +73,16 @@ jobs:
           if [[ -f unpacked/index.html ]]; then
             SOURCE_DIR="unpacked"
           else
-            mapfile -t INDEX_FILES < <(find unpacked -mindepth 2 -maxdepth 2 -type f -name index.html | sort)
+            mapfile -t ROOTS < <(find unpacked -mindepth 2 -maxdepth 2 -type f -name index.html | sort)
 
-            if [[ ${#INDEX_FILES[@]} -ne 1 ]]; then
-              echo "::error::The ZIP must contain index.html either at ZIP root or inside exactly one top-level folder."
-              echo "Found index.html files:"
+            if [[ ${#ROOTS[@]} -ne 1 ]]; then
+              echo "::error::The ZIP must contain index.html at ZIP root or inside exactly one top-level folder."
+              echo "Detected index.html files:"
               find unpacked -type f -name index.html -print | sort || true
               exit 1
             fi
 
-            SOURCE_DIR="$(dirname "${INDEX_FILES[0]}")"
+            SOURCE_DIR="$(dirname "${ROOTS[0]}")"
           fi
 
           rsync -a --delete "$SOURCE_DIR"/ site/
@@ -91,14 +92,19 @@ jobs:
           test -f site/manifest.webmanifest
           test -f site/sw.js
 
-          if find site -type f -path '*/payload/*' | grep -q .; then
-            echo "::error::Unexpected payload directory inside deployable site."
+          if find site -type f -path '*/.git/*' | grep -q .; then
+            echo "::error::The ZIP must not contain a .git directory."
             exit 1
           fi
 
-          echo "Deploying ZIP: $ZIP_PATH"
-          echo "Deploying from: $SOURCE_DIR"
-          echo "Top-level site contents:"
+          if find site -type f -path '*/payload/*' | grep -q .; then
+            echo "::error::The ZIP unexpectedly contains a payload directory."
+            exit 1
+          fi
+
+          echo "Selected release: $ZIP_PATH"
+          echo "Deployment root: $SOURCE_DIR"
+          echo "Files to publish:"
           find site -maxdepth 2 -type f -print | sort
 
       - name: Configure GitHub Pages

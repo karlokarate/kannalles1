@@ -1,27 +1,33 @@
-# KH Checker v2.0
+# KH Checker deployment repository
 
-Installierbare PWA zur deterministischen Berechnung von Kohlenhydraten für konkrete und generische Lebensmittel.
+Dieses Repository enthält nur den GitHub-Pages-Workflow und die auswählbaren Release-ZIPs.
 
-## Web-App
+## Neue Version hochladen
 
-Nach erfolgreichem GitHub-Pages-Deployment:
+1. Die fertige App-ZIP unter `releases/` hochladen.
+2. In GitHub **Actions** öffnen.
+3. **Deploy selected KH Checker ZIP to GitHub Pages** wählen.
+4. **Run workflow** starten.
+5. Bei `zip_path` den vollständigen Pfad angeben, zum Beispiel:
 
-**https://karlokarate.github.io/kannalles1/**
+```text
+releases/kh-checker-v2.1-komplett.zip
+```
 
-Auf iPhone oder iPad in Safari öffnen und anschließend **Teilen → Zum Home-Bildschirm** wählen.
+Der Workflow entpackt die gewählte ZIP immer in ein vollständig neues Veröffentlichungsverzeichnis. Dateien einer älteren Version werden nicht übernommen.
 
-## Architektur
+## Erwartete ZIP-Struktur
 
-- statische PWA auf GitHub Pages
-- direkte Produktsuche über Search-a-licious
-- konkrete Produktdaten über Open Food Facts
-- deterministische Portions- und Mengenberechnung
-- lokaler Verlauf, Favoriten und persönliche Stückgewichte
-- kein eigener Datenserver erforderlich
-- optionaler OpenAI-Port bleibt getrennt und benötigt bei Aktivierung ein sicheres Backend
+Die ZIP darf die App entweder direkt auf oberster Ebene enthalten:
 
-## Deployment
+```text
+index.html
+manifest.webmanifest
+sw.js
+assets/
+icons/
+```
 
-Die gebaute App liegt komprimiert in nummerierten Fragmenten unter `payload/`. GitHub Actions rekonstruiert daraus das statische App-Verzeichnis und veröffentlicht es automatisch über GitHub Pages.
+oder in genau einem gemeinsamen Hauptordner.
 
-Jeder Push auf `main` startet die Veröffentlichung erneut.
+Vor dem Deployment werden ZIP-Integrität und die drei Pflichtdateien geprüft.
