@@ -1,0 +1,69 @@
+KH Checker v2.2.2 – Release Notes
+Build: 2026-07-11
+
+Zielbetrieb
+- statische, installierbare PWA für GitHub Pages, iPhone, iPad, Android und Desktop
+- kein eigener Server und kein automatisch erkannter Same-Origin-Gateway erforderlich
+- direkte HTTPS-Abfragen vom Endgerät an die öffentlichen Open-Food-Facts-Dienste
+- fertige PWA liegt direkt im Stamm des Komplett-ZIP und passt zum vorhandenen deploy-pages.yml-Workflow
+
+Produktsuche
+- Search-a-licious ist wieder der primäre Volltext-Suchweg
+- Sprachen de, en und main; kein zusätzlicher Phrase-Boost, damit exakte Produktnamen lokal gerankt werden und die öffentliche Suche weniger komplex bleibt
+- kompakte Search-a-licious-Feldprojektion statt unnötiger Portions- und Packungsfelder
+- OFF Legacy Search wird genau einmal nach technischem Primärfehler oder gültiger Null-Treffer-Antwort versucht
+- maximal zwei Suchbackends pro Benutzeraktion
+- keine Suche während der Eingabe, kein lokaler Cooldown und kein lokaler Request-Zähler
+- sofortiger manueller Retry bleibt immer möglich
+- alle Originalfehler, Endpunkte, HTTP-Statuswerte und Laufzeiten bleiben in den technischen Details erhalten
+
+Cache und Fehlerzustände
+- Query wird vor Cache und Netzwerk kanonisiert
+- backend-unabhängiger Fresh Cache vor jeder neuen Netzwerkanfrage
+- identische parallele Requests teilen einen In-Flight-Task
+- Stale Cache erst nach Scheitern beider öffentlichen Backends oder bei bekanntem Offline-Zustand
+- Such-UI erhält immer einen typisierten Zustand statt einer ungefangenen Netzwerk-Ausnahme
+- erreichbare Quellen mit null Treffern liefern not_found; nicht erreichbare Quellen ohne Cache liefern temporarily_unavailable
+
+Produktdetails
+- keine Detailabfragen für alle Kandidaten
+- nur der ausgewählte Barcode wird hydratisiert
+- vorhandene Suchtreffer-Nährwerte werden als Seed übernommen
+- OFF API v3.6 primär
+- OFF API v2 nur, wenn Seed plus v3.6 weiterhin notwendige Kohlenhydratdaten vermissen lassen
+- Such- und Produktdiagnose bleiben gemeinsam sichtbar
+
+Einheiten und Kalibrierung
+- explizite Nutzer-Einheiten werden nicht stillschweigend ersetzt
+- kleinste belastbar belegte essbare Einheit steht vor Portion und Packung
+- unbekanntes Gewicht einer zählbaren Einheit führt zur Kalibrierung statt zu einer Schätzung
+- Einzel- und Gruppenwägung mit frei editierbarer Anzahl
+- Live-Anzeige von Einheitengewicht, KH je Einheit und KH der angefragten Menge
+- Kalibrierungsschema v2 mit Barcode-, exakter Produkt- und ausdrücklich freigegebener generischer Ebene
+- IndexedDB-Migration auf Datenbankversion 3; Legacy-Datensatz bleibt bis zur verifizierten v2-Kopie erhalten
+- Stück-, Riegel-, Scheiben- und Portionskalibrierungen werden nicht auf Packungen übertragen
+- gespeichert wird das präzise Einheitengewicht; Kohlenhydrate werden mit dem aktuellen 100-g-Wert neu berechnet
+
+PWA und GitHub Pages
+- relative Assets für Repository-Unterpfade
+- Manifest start_url und scope jeweils ./
+- Service Worker, App-Shell-Precache und Apple-Touch-Icon
+- API-JSON bleibt im eigenen Fresh-/Stale-Request-Manager
+- Paketprüfung simuliert die Entpack- und Publish-Regeln des vorhandenen GitHub-Workflows
+
+Qualität
+- 67 von 67 automatisierten Vitest-Tests bestanden
+- TypeScript-Prüfung bestanden
+- Biome-Lint bestanden
+- optionale Server-Syntaxprüfung bestanden
+- Vite-8-/PWA-Produktionsbuild bestanden
+- GitHub-Pages-Unterpfadprüfung bestanden
+- statische HTTP-Auslieferung des aus dem ZIP erzeugten Pages-Artefakts bestanden
+- exakte Entpack- und Publish-Emulation des vorhandenen GitHub-Pages-Workflows bestanden
+- npm audit für Produktions- und Entwicklungsabhängigkeiten: 0 bekannte Schwachstellen
+- ZIP-Struktur, interne SHA-256-Prüfsummen und entpacktes Pages-Artefakt geprüft
+
+Ehrlicher Testumfang
+Ein physischer iPhone-/iPad-/Android-Test war in dieser Build-Umgebung nicht möglich. Die lokale Chromium-Automation konnte in der isolierten Build-Umgebung wegen deren Prozess- und Systemrestriktionen nicht zuverlässig starten; deshalb wird kein bestandener Browser-Smoke-Test behauptet. Vite/PWA-Build, relative Pfade, Manifest, Service Worker, Icons, statische HTTP-Auslieferung und die exakte Pages-Workflow-Emulation wurden automatisiert geprüft.
+
+Die externe Verfügbarkeit von Open Food Facts kann kein Release garantieren. Search-a-licious ist im aktuellen Upstream-Code für HTTP(S)-Origins per CORS freigegeben; die App behandelt trotzdem Timeout, Netzwerk-, HTTP- und Parsefehler kontrolliert, nutzt vorhandene Reserve-Daten und lässt den Retry sofort zu. Die beigefügte API-DIAGNOSE.html kann auf dem jeweiligen Zielgerät reale Endpunktaufrufe mit Originalfehlern ausführen.
