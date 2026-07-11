@@ -1,0 +1,300 @@
+name: Build, validate and deploy KH Checker PWA
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "src/**"
+      - "server/**"
+      - "public-template/**"
+      - "scripts/**"
+      - "e2e/**"
+      - "index.html"
+      - "vite.config.ts"
+      - "playwright.config.ts"
+      - "releases/*.zip"
+      - ".github/workflows/build-deploy-pages.yml"
+      - ".github/scripts/validate_release_bundle.py"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Source build or an already built release ZIP"
+        required: true
+        default: auto
+        type: choice
+        options:
+          - auto
+          - source
+          - release_zip
+      zip_path:
+        description: "Deployable ZIP inside releases/ when release_zip is selected"
+        required: false
+        default: "releases/kh-checker-v2.2.3-komplett.zip"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Build and validate Pages artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      should_deploy: ${{ steps.resolve.outputs.should_deploy }}
+      mode: ${{ steps.resolve.outputs.mode }}
+      release_zip: ${{ steps.select.outputs.release_zip }}
+      version: ${{ steps.validate.outputs.version }}
+      release_sha256: ${{ steps.validate.outputs.release_sha256 }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Resolve build input
+        id: resolve
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_MODE: ${{ inputs.mode || 'auto' }}
+          INPUT_ZIP_PATH: ${{ inputs.zip_path || 'releases/kh-checker-v2.2.3-komplett.zip' }}
+          BEFORE_SHA: ${{ github.event.before || '' }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          mode="$REQUESTED_MODE"
+          zip_path="$INPUT_ZIP_PATH"
+
+          if [[ "$mode" == "auto" ]]; then
+            if [[ -f package.json && -f package-lock.json && -d src ]]; then
+              mode="source"
+            elif [[ "$EVENT_NAME" == "push" ]]; then
+              if [[ -n "$BEFORE_SHA" && "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+                mapfile -t changed_zips < <(git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" -- 'releases/*.zip' | sort -u)
+              else
+                mapfile -t changed_zips < <(git show --pretty='' --name-only "$CURRENT_SHA" -- 'releases/*.zip' | sort -u)
+              fi
+
+              if [[ ${#changed_zips[@]} -eq 0 ]]; then
+                echo "No source tree and no changed release ZIP; nothing to deploy."
+                echo "mode=none" >> "$GITHUB_OUTPUT"
+                echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              if [[ ${#changed_zips[@]} -ne 1 ]]; then
+                echo "::error::Exactly one changed releases/*.zip file is required for automatic deployment."
+                printf '%s\n' "${changed_zips[@]}"
+                exit 1
+              fi
+              mode="release_zip"
+              zip_path="${changed_zips[0]}"
+            else
+              mode="release_zip"
+            fi
+          fi
+
+          case "$mode" in
+            source)
+              test -f package.json
+              test -f package-lock.json
+              test -d src
+              ;;
+            release_zip)
+              case "$zip_path" in
+                releases/*.zip) ;;
+                *)
+                  echo "::error::zip_path must point to a ZIP directly inside releases/."
+                  exit 1
+                  ;;
+              esac
+              if [[ "$zip_path" == *".."* || "$zip_path" == *"\\"* ]]; then
+                echo "::error::zip_path contains an unsafe segment."
+                exit 1
+              fi
+              test -f "$zip_path" || {
+                echo "::error::Release ZIP does not exist: $zip_path"
+                find releases -maxdepth 1 -type f -name '*.zip' -print | sort || true
+                exit 1
+              }
+              ;;
+            *)
+              echo "::error::Unsupported mode: $mode"
+              exit 1
+              ;;
+          esac
+
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "zip_path=$zip_path" >> "$GITHUB_OUTPUT"
+          echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js 22
+        if: steps.resolve.outputs.should_deploy == 'true' && steps.resolve.outputs.mode == 'source'
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.x"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked dependencies
+        if: steps.resolve.outputs.should_deploy == 'true' && steps.resolve.outputs.mode == 'source'
+        run: npm ci
+
+      - name: Set up Node.js 22 for release-ZIP browser validation
+        if: steps.resolve.outputs.should_deploy == 'true' && steps.resolve.outputs.mode == 'release_zip'
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.x"
+
+
+      - name: Install Playwright Chromium
+        if: steps.resolve.outputs.should_deploy == 'true' && steps.resolve.outputs.mode == 'source'
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Build tested v2.2.3 release
+        if: steps.resolve.outputs.should_deploy == 'true' && steps.resolve.outputs.mode == 'source'
+        env:
+          CI: "true"
+          NODE_OPTIONS: "--max-old-space-size=4096"
+          # VITE_* values are public after bundling. Use repository Variables, never Secrets.
+          VITE_DATA_GATEWAY_URL: ${{ vars.VITE_DATA_GATEWAY_URL || '' }}
+          VITE_AI_PARSE_URL: ${{ vars.VITE_AI_PARSE_URL || '' }}
+        run: npm run release
+
+      - name: Select generated or uploaded release ZIP
+        if: steps.resolve.outputs.should_deploy == 'true'
+        id: select
+        shell: bash
+        env:
+          MODE: ${{ steps.resolve.outputs.mode }}
+          INPUT_ZIP: ${{ steps.resolve.outputs.zip_path }}
+        run: |
+          set -euo pipefail
+          if [[ "$MODE" == "source" ]]; then
+            version="$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")"
+            release_zip="release-out/kh-checker-v${version}-komplett.zip"
+          else
+            release_zip="$INPUT_ZIP"
+          fi
+          test -f "$release_zip"
+          echo "release_zip=$release_zip" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release ZIP and prepare Pages directory
+        if: steps.resolve.outputs.should_deploy == 'true'
+        id: validate
+        shell: bash
+        env:
+          RELEASE_ZIP: ${{ steps.select.outputs.release_zip }}
+          MODE: ${{ steps.resolve.outputs.mode }}
+        run: |
+          set -euo pipefail
+          args=(
+            --zip "$RELEASE_ZIP"
+            --site site
+            --base-path "/${GITHUB_REPOSITORY#*/}/"
+          )
+          if [[ "$MODE" == "source" ]]; then
+            expected_version="$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")"
+            args+=(--expected-version "$expected_version")
+          fi
+
+          python3 .github/scripts/validate_release_bundle.py "${args[@]}" | tee validation-result.json
+          version="$(python3 -c 'import json; print(json.load(open("validation-result.json"))["version"])')"
+          release_sha256="$(python3 -c 'import json; print(json.load(open("validation-result.json"))["sha256"])')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release_sha256=$release_sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Run source-tree browser, mobile and accessibility gates
+        if: steps.resolve.outputs.should_deploy == 'true' && steps.resolve.outputs.mode == 'source'
+        env:
+          CI: "true"
+          PLAYWRIGHT_INCLUDE_WEBKIT: "1"
+        run: npm run test:e2e
+
+      - name: Install release-ZIP browser gate tools
+        if: steps.resolve.outputs.should_deploy == 'true' && steps.resolve.outputs.mode == 'release_zip'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .workflow-e2e
+          mkdir -p .workflow-e2e
+          cp .github/e2e/release.spec.ts .workflow-e2e/
+          cp .github/e2e/playwright.release.config.ts .workflow-e2e/
+          cd .workflow-e2e
+          npm init -y >/dev/null
+          npm install --no-save --no-audit --no-fund             @playwright/test@1.61.1             @axe-core/playwright@4.12.1
+          npx playwright install --with-deps chromium webkit
+
+      - name: Run release-ZIP browser, mobile and accessibility gates
+        if: steps.resolve.outputs.should_deploy == 'true' && steps.resolve.outputs.mode == 'release_zip'
+        working-directory: .workflow-e2e
+        env:
+          CI: "true"
+          SITE_DIR: ${{ github.workspace }}/site
+        run: npx playwright test --config playwright.release.config.ts
+
+      - name: Upload generated release ZIP
+        if: steps.resolve.outputs.should_deploy == 'true' && steps.resolve.outputs.mode == 'source'
+        uses: actions/upload-artifact@v7
+        with:
+          name: kh-checker-v${{ steps.validate.outputs.version }}-release
+          path: |
+            release-out/kh-checker-v${{ steps.validate.outputs.version }}-komplett.zip
+            release-out/ENTWICKLER-QUELLCODE-v${{ steps.validate.outputs.version }}.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Configure GitHub Pages
+        if: steps.resolve.outputs.should_deploy == 'true'
+        uses: actions/configure-pages@v5
+
+      - name: Upload validated Pages artifact
+        if: steps.resolve.outputs.should_deploy == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+          include-hidden-files: true
+
+  deploy:
+    name: Deploy validated KH Checker PWA
+    if: needs.prepare.outputs.should_deploy == 'true'
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - name: Deployment summary
+        shell: bash
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_SHA256: ${{ needs.prepare.outputs.release_sha256 }}
+          RELEASE_ZIP: ${{ needs.prepare.outputs.release_zip }}
+        run: |
+          {
+            echo "## KH Checker v${VERSION} deployed"
+            echo
+            echo "- URL: ${PAGE_URL}"
+            echo "- Input: \`${RELEASE_ZIP}\`"
+            echo "- Release SHA-256: \`${RELEASE_SHA256}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
