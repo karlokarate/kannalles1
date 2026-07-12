@@ -103,10 +103,19 @@ Die Upstream-Requests setzen die für OFF erforderliche Identität:
 - `User-Agent: $OFF_USER_AGENT`
 - `From: $OFF_CONTACT_EMAIL` (wenn gesetzt)
 
+Optional kann der Gateway zusätzlich einen OFF-Account ausschließlich serverseitig verwenden:
+
+- `OFF_USERNAME`
+- `OFF_PASSWORD`
+
+Wenn beide Variablen gesetzt sind, meldet sich der Gateway serverseitig einmal gegen `https://world.openfoodfacts.org/cgi/login.pl` an, cached die Session-Cookie pro laufender Instanz und verwendet diese für Folgeanfragen wieder. Bei erkennbar abgelaufener Session wird genau ein Re-Login versucht. Diese Credentials dürfen niemals als `VITE_*`-Variable oder in die statische Pages-App gelangen.
+
 Erforderliche Vercel-Umgebungsvariablen:
 
 - `OFF_USER_AGENT`
 - `OFF_CONTACT_EMAIL`
+- `OFF_USERNAME` (optional)
+- `OFF_PASSWORD` (optional)
 - `CORS_ORIGINS` (kommagetrennte Origins, optional)
 
 Für den Pages-Build muss zusätzlich im GitHub-Repository als Actions-Variable gesetzt sein:

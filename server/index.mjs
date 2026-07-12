@@ -35,10 +35,126 @@ const port = safePort(process.env.PORT || DEFAULT_PORT);
 const host = String(process.env.HOST || '0.0.0.0').trim() || '0.0.0.0';
 const offContactEmail = 'chrisfischtopher@googlemail.com';
 const offUserAgent = `KH-Checker/${APP_VERSION} (+https://karlokarate.github.io/kannalles1/; contact: ${offContactEmail})`;
+const offUsername = String(process.env.OFF_USERNAME || '').trim();
+const offPassword = String(process.env.OFF_PASSWORD || '');
 const configuredCorsOrigins = String(process.env.CORS_ORIGINS || '')
   .split(',')
   .map((item) => item.trim())
   .filter(Boolean);
+
+const offSessionState = {
+  cookieHeader: '',
+  loginPromise: null,
+  verifiedAt: 0
+};
+
+function hasOffCredentials() {
+  return Boolean(offUsername && offPassword);
+}
+
+function cookieHeaderFromSetCookie(response) {
+  const getSetCookie = response?.headers?.getSetCookie;
+  const rawCookies = typeof getSetCookie === 'function'
+    ? getSetCookie.call(response.headers)
+    : [];
+  const cookiePairs = rawCookies
+    .map((value) => String(value).split(';', 1)[0]?.trim())
+    .filter(Boolean);
+  return cookiePairs.length ? cookiePairs.join('; ') : '';
+}
+
+async function loginOffSession() {
+  if (!hasOffCredentials()) return '';
+  const body = new URLSearchParams({
+    user_id: offUsername,
+    password: offPassword,
+    remember_me: 'on',
+    redirect: ''
+  });
+  const response = await fetch('https://world.openfoodfacts.org/cgi/login.pl', {
+    method: 'POST',
+    headers: {
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': offUserAgent,
+      From: offContactEmail
+    },
+    body,
+    redirect: 'manual'
+  });
+  if (!response.ok && response.status !== 302 && response.status !== 303) return '';
+  return cookieHeaderFromSetCookie(response);
+}
+
+async function getOffSessionCookie() {
+  if (!hasOffCredentials()) return '';
+  if (offSessionState.cookieHeader) return offSessionState.cookieHeader;
+  if (!offSessionState.loginPromise) {
+    offSessionState.loginPromise = loginOffSession()
+      .then((cookieHeader) => {
+        offSessionState.cookieHeader = cookieHeader;
+        offSessionState.verifiedAt = cookieHeader ? Date.now() : 0;
+        return offSessionState.cookieHeader;
+      })
+      .catch(() => '')
+      .finally(() => {
+        offSessionState.loginPromise = null;
+      });
+  }
+  return offSessionState.loginPromise;
+}
+
+function invalidateOffSession() {
+  offSessionState.cookieHeader = '';
+  offSessionState.verifiedAt = 0;
+  offSessionState.loginPromise = null;
+}
+
+function shouldRetryOffSession(response, text) {
+  if (!hasOffCredentials() || !offSessionState.cookieHeader) return false;
+  if (response.status === 401 || response.status === 403) return true;
+  const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+  if (!contentType.includes('text/html')) return false;
+  const finalUrl = String(response.url || '');
+  if (finalUrl.includes('/cgi/session.pl') || finalUrl.includes('/cgi/login.pl')) return true;
+  const preview = cleanPreview(text).toLowerCase();
+  return preview.includes('name="user_id"')
+    || preview.includes('name="password"')
+    || preview.includes('/cgi/login.pl');
+}
+
+async function fetchWithOffSessionRetry(url, controller) {
+  const firstResponse = await fetch(url, {
+    method: 'GET',
+    headers: await buildOffUpstreamHeadersAsync(),
+    redirect: 'follow',
+    signal: controller.signal
+  });
+  const firstText = await firstResponse.text();
+  if (!shouldRetryOffSession(firstResponse, firstText)) {
+    return { response: firstResponse, text: firstText };
+  }
+  invalidateOffSession();
+  const secondResponse = await fetch(url, {
+    method: 'GET',
+    headers: await buildOffUpstreamHeadersAsync(),
+    redirect: 'follow',
+    signal: controller.signal
+  });
+  const secondText = await secondResponse.text();
+  return { response: secondResponse, text: secondText };
+}
+
+async function buildOffUpstreamHeadersAsync() {
+  const headers = {
+    Accept: 'application/json',
+    'User-Agent': offUserAgent,
+    From: offContactEmail
+  };
+  const cookieHeader = await getOffSessionCookie();
+  if (cookieHeader) headers.Cookie = cookieHeader;
+  return headers;
+}
 
 function isLoopbackOrigin(origin) {
   try {
@@ -218,17 +334,7 @@ async function fetchUpstreamJson(url, backend, label, timeoutMs = 8_500) {
   }, timeoutMs);
 
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': offUserAgent,
-        From: offContactEmail
-      },
-      redirect: 'follow',
-      signal: controller.signal
-    });
-    const text = await response.text();
+    const { response, text } = await fetchWithOffSessionRetry(url, controller);
     const durationMs = Date.now() - startedAt;
     const retryAfterMs = parseRetryAfter(response.headers.get('Retry-After'));
 
