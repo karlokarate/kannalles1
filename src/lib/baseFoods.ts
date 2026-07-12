@@ -23,6 +23,16 @@ export interface BaseFoodReference {
  */
 const REFERENCES: BaseFoodReference[] = [
   {
+    id: 'peanuts-roasted-unsalted',
+    label: 'Erdnüsse, geröstet und ungesalzen',
+    aliases: /\b(erdnuss|erdnusse|erdnuesse|peanut|peanuts)\b/,
+    carbohydratesPer100g: 9.4,
+    middleRange: { from: 9.4, to: 9.4 },
+    stateLabel: 'geröstet / ungesalzen',
+    sourceLabel: 'Basislebensmittel-Referenz',
+    note: 'Generischer Referenzwert für geröstete, ungesalzene Erdnüsse. Gesalzene, gewürzte, ummantelte oder anderweitig verarbeitete Produkte können abweichen und sollten als konkretes Produkt gesucht werden.'
+  },
+  {
     id: 'pasta-cooked',
     label: 'Nudeln, gekocht',
     aliases: /\b(nudel\w*|pasta|spaghetti|macaroni|maccheroni)\b/,
@@ -104,7 +114,7 @@ const REFERENCES: BaseFoodReference[] = [
   }
 ];
 
-const SPECIALTY_TERMS = /\b(vollkorn|wholegrain|edamame|soja|soy|linse\w*|lentil|kichererbse\w*|chickpea|protein|high protein|glutenfrei|gluten-free|konjak|shirataki|instant|ramen|cup|fix|bolognese|carbonara|pesto|sauce|soße|sosse|salat|auflauf|fertiggericht)\b/;
+const SPECIALTY_TERMS = /\b(erdnussbutter|peanut butter|erdnusscreme|peanut cream|flips|ummantelt|coated|wasabi|schokolade|chocolate|vollkorn|wholegrain|edamame|soja|soy|linse\w*|lentil|kichererbse\w*|chickpea|protein|high protein|glutenfrei|gluten-free|konjak|shirataki|instant|ramen|cup|fix|bolognese|carbonara|pesto|sauce|soße|sosse|salat|auflauf|fertiggericht)\b/;
 
 export function getBaseFoodReference(query: string): BaseFoodReference | null {
   const normalized = normalizeText(query);
