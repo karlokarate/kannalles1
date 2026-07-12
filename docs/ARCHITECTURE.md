@@ -112,11 +112,15 @@ Gültigkeiten:
 
 1. Nur ausgewählter oder eindeutig bestimmter Barcode wird hydratisiert.
 2. Suchtreffer dient als Seed.
-3. OFF API v3.6 ist primär.
-4. OFF API v2 wird nur bei weiterhin fehlenden Kohlenhydrat-/Kompatibilitätsfeldern verwendet.
-5. Dokumente werden feldweise, Nutriments schlüsselweise zusammengeführt.
-6. Erreichbare Antworten ohne Produkt werden als 404 klassifiziert.
-7. Nützliche Teildaten bleiben bei transientem v2-Ausfall verwendbar.
+3. Produkt-API-Modus ist explizit konfigurierbar (`hybrid`, `v3`, `v2`).
+4. Im Modus `hybrid` ist OFF API v3.6 primär.
+5. Im Modus `hybrid` wird OFF API v2 nur bei weiterhin fehlenden Kohlenhydrat-/Kompatibilitätsfeldern verwendet.
+6. Im Modus `v3` wird ausschließlich OFF API v3.6 verwendet.
+7. Im Modus `v2` wird ausschließlich OFF API v2 verwendet.
+8. Dokumente werden feldweise, Nutriments schlüsselweise zusammengeführt.
+9. Erreichbare Antworten ohne Produkt werden als 404 klassifiziert.
+10. Nützliche Teildaten bleiben bei transientem v2-Ausfall verwendbar.
+11. Seed-/Cache-Daten (`known_carbs`) reduzieren unnötige Folgeaufrufe im Hybrid-Modus.
 
 ## Einheiten- und Kalibrierungsvertrag
 

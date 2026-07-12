@@ -575,4 +575,78 @@ describe('v2.2 product cache', () => {
     })).rejects.toMatchObject({ kind: 'http', status: 404 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('supports v3-only mode and skips v2 fallback even when v3 lacks carbohydrates', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.includes('/api/v3.6/product/')) {
+        return jsonResponse({
+          status: 'success',
+          product: {
+            code: '7613035459739',
+            product_name: 'Only V3',
+            serving_size: '30 g'
+          }
+        });
+      }
+      throw new Error(`unexpected URL for v3-only mode: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await getProductByBarcode('7613035459739', undefined, { productApiMode: 'v3' });
+
+    expect(result.product?.product_name).toBe('Only V3');
+    expect(result.api_meta?.attempts?.map((attempt) => attempt.backend)).toEqual(['open-food-facts-v3']);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('supports v2-only mode and skips v3 request', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.includes('/api/v2/product/')) {
+        return jsonResponse({
+          status: 'success',
+          product: {
+            code: '3045140105506',
+            product_name: 'Only V2',
+            nutriments: { carbohydrates_100g: 45 }
+          }
+        });
+      }
+      throw new Error(`unexpected URL for v2-only mode: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await getProductByBarcode('3045140105506', undefined, { productApiMode: 'v2' });
+
+    expect(result.product?.product_name).toBe('Only V2');
+    expect(result.api_meta?.attempts?.map((attempt) => attempt.backend)).toEqual(['open-food-facts-v2']);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes product_api to the gateway product endpoint', async () => {
+    let requestedUrl = '';
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      requestedUrl = String(input);
+      return jsonResponse({
+        status: 'success',
+        product: {
+          code: '4001724819806',
+          product_name: 'Gateway Mode Test'
+        }
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getProductByBarcode('4001724819806', undefined, {
+      gatewayUrl: 'https://gateway.example/',
+      productApiMode: 'v2'
+    });
+
+    const url = new URL(requestedUrl);
+    expect(url.origin).toBe('https://gateway.example');
+    expect(url.pathname).toBe('/api/product/4001724819806');
+    expect(url.searchParams.get('product_api')).toBe('v2');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

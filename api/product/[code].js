@@ -15,8 +15,11 @@ export default async function handler(req, res) {
   }
 
   const knownCarbohydrates = req.query.known_carbs === '1';
+  let productApiMode = 'hybrid';
+  if (req.query.product_api === 'v2') productApiMode = 'v2';
+  if (req.query.product_api === 'v3') productApiMode = 'v3';
   try {
-    const payload = await productThroughGateway(code, knownCarbohydrates);
+    const payload = await productThroughGateway(code, { knownCarbohydrates, productApiMode });
     res.setHeader('Cache-Control', 'public, max-age=900, stale-while-revalidate=86400');
     res.status(200).json(payload);
   } catch (error) {

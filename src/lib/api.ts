@@ -10,6 +10,7 @@ import type {
   ApiResponseMeta,
   OffProduct,
   OffProductResponse,
+  ProductApiMode,
   SearchHit,
   SearchOutcome,
   SearchResponse
@@ -58,13 +59,10 @@ export const SEARCH_FIELDS = [
   'product_quantity_unit',
   'serving_size',
   'serving_quantity',
-  'nutrition_data_per',
-  'nutrition_data_prepared_per',
   'countries_tags',
   'categories_tags',
   'nutriments',
   'image_front_url',
-  'data_quality_errors_tags',
   'unique_scans_n',
   'completeness'
 ];
@@ -78,10 +76,8 @@ export const SEARCH_A_LICIOUS_FIELDS = [
   'code',
   'product_name',
   'product_name_de',
-  'product_name_en',
   'generic_name',
   'generic_name_de',
-  'generic_name_en',
   'brands',
   'quantity',
   'countries',
@@ -108,6 +104,8 @@ export interface ProductRequestOptions {
   gatewayUrl?: string;
   /** Existing compact search data for the selected barcode. */
   seedProduct?: OffProduct;
+  /** Product detail strategy (hybrid=v3->v2 fallback). */
+  productApiMode?: ProductApiMode;
 }
 
 interface LegacySearchResponse {
@@ -1312,6 +1310,26 @@ function buildGatewayProductUrl(base: string, code: string, knownCarbohydrates =
   return buildGeneratedGatewayProductUrl(base, code, knownCarbohydrates);
 }
 
+function normalizeProductApiMode(mode: ProductRequestOptions['productApiMode']): ProductApiMode {
+  if (mode === 'v2' || mode === 'v3' || mode === 'hybrid') return mode;
+  return 'hybrid';
+}
+
+function productApiQueryValue(mode: ProductApiMode): 'v2' | 'v3' | 'hybrid' {
+  return mode;
+}
+
+function buildGatewayProductUrlForMode(
+  base: string,
+  code: string,
+  knownCarbohydrates: boolean,
+  productApiMode: ProductApiMode
+): string {
+  const url = new URL(buildGatewayProductUrl(base, code, knownCarbohydrates));
+  url.searchParams.set('product_api', productApiQueryValue(productApiMode));
+  return url.toString();
+}
+
 function productPolicy(backend: 'gateway' | 'open-food-facts-v3' | 'open-food-facts-v2'): FetchPolicy {
   if (backend === 'gateway') {
     return { bucket: 'product', backend, label: 'Eigener Produkt-Gateway', freshMs: PRODUCT_FRESH_MS, staleMs: PRODUCT_STALE_MS, timeoutMs: 9_000 };
@@ -1370,10 +1388,11 @@ async function fetchProductBackend(
   code: string,
   signal?: AbortSignal,
   gatewayUrl = '',
-  knownCarbohydrates = false
+  knownCarbohydrates = false,
+  productApiMode: ProductApiMode = 'hybrid'
 ): Promise<OffProductResponse> {
   const url = backend === 'gateway'
-    ? buildGatewayProductUrl(gatewayUrl, code, knownCarbohydrates)
+    ? buildGatewayProductUrlForMode(gatewayUrl, code, knownCarbohydrates, productApiMode)
     : backend === 'open-food-facts-v3'
       ? buildV3ProductUrl(code)
       : buildV2ProductUrl(code);
@@ -1477,6 +1496,26 @@ function combineProductMeta(
   };
 }
 
+function hasRequiredProductData(product: OffProduct | undefined, mode: ProductApiMode): boolean {
+  if (!product) return false;
+  if (mode === 'v3' || mode === 'v2') return true;
+  return hasCarbohydrateData(product);
+}
+
+function productBackendOrder(
+  gatewayUrl: string,
+  mode: ProductApiMode
+): Array<'gateway' | 'open-food-facts-v3' | 'open-food-facts-v2'> {
+  if (gatewayUrl) {
+    if (mode === 'v3') return ['gateway', 'open-food-facts-v3'];
+    if (mode === 'v2') return ['gateway', 'open-food-facts-v2'];
+    return ['gateway', 'open-food-facts-v3', 'open-food-facts-v2'];
+  }
+  if (mode === 'v3') return ['open-food-facts-v3'];
+  if (mode === 'v2') return ['open-food-facts-v2'];
+  return ['open-food-facts-v3', 'open-food-facts-v2'];
+}
+
 export async function getProductByBarcode(
   code: string,
   signal?: AbortSignal,
@@ -1489,37 +1528,30 @@ export async function getProductByBarcode(
   }
 
   const gatewayUrl = await resolveGatewayUrl(options.gatewayUrl, signal);
+  const productApiMode = normalizeProductApiMode(options.productApiMode);
   throwIfAborted(signal);
   const cached = await readProductSnapshot(normalizedCode);
   throwIfAborted(signal);
-  const cachedIsCompatibilityComplete = cached && (
-    hasCarbohydrateData(cached.product)
-    || cached.api_meta?.originBackend === 'gateway'
-    || cached.api_meta?.originBackend === 'open-food-facts-v2'
-  );
+  const cachedIsCompatibilityComplete = cached && hasRequiredProductData(cached.product, productApiMode);
   if (cachedIsCompatibilityComplete) return cached;
 
   const migrated = cached ? null : await findMigratableProductCache(normalizedCode, signal);
   throwIfAborted(signal);
   const seedSnapshot = cached ?? migrated;
-  const migratedIsCompatibilityComplete = migrated && (
-    hasCarbohydrateData(migrated.product)
-    || migrated.api_meta?.originBackend === 'open-food-facts-v2'
-  );
+  const migratedIsCompatibilityComplete = migrated && hasRequiredProductData(migrated.product, productApiMode);
   if (migratedIsCompatibilityComplete) return migrated;
 
   const staleSnapshot = await readProductSnapshot(normalizedCode, true);
   throwIfAborted(signal);
   if (staleSnapshot && isOffline()) return staleSnapshot;
 
-  const backends: Array<'gateway' | 'open-food-facts-v3' | 'open-food-facts-v2'> = gatewayUrl
-    ? ['gateway', 'open-food-facts-v3', 'open-food-facts-v2']
-    : ['open-food-facts-v3', 'open-food-facts-v2'];
+  const backends = productBackendOrder(gatewayUrl, productApiMode);
   const attempts: ApiAttemptDiagnostic[] = [];
   const errors: DataSourceError[] = [];
   let partialProduct = mergeProducts(seedSnapshot?.product, options.seedProduct);
   let partialResponse = seedSnapshot;
-  let partialBackend: ApiBackend = seedSnapshot?.api_meta?.originBackend ?? 'open-food-facts-v3';
+  let partialBackend: ApiBackend = seedSnapshot?.api_meta?.originBackend
+    ?? (productApiMode === 'v2' ? 'open-food-facts-v2' : 'open-food-facts-v3');
   let reachableWithoutProduct = false;
 
   for (const backend of backends) {
@@ -1535,7 +1567,8 @@ export async function getProductByBarcode(
         normalizedCode,
         signal,
         gatewayUrl,
-        hasCarbohydrateData(options.seedProduct)
+        hasCarbohydrateData(options.seedProduct),
+        productApiMode
       );
       throwIfAborted(signal);
       attempts.push(...responseAttempts(response));
@@ -1545,9 +1578,7 @@ export async function getProductByBarcode(
 
       partialBackend = backend;
       partialResponse = combineProductMeta({ ...response, product: partialProduct }, priorAttempts, errors.at(-1));
-      const compatibilityComplete = backend === 'gateway'
-        || backend === 'open-food-facts-v2'
-        || hasCarbohydrateData(partialProduct);
+      const compatibilityComplete = hasRequiredProductData(partialProduct, productApiMode);
       if (!compatibilityComplete) continue;
 
       await storeProductSnapshot(normalizedCode, partialResponse, backend, response.api_meta?.sourceUrl);
@@ -1635,10 +1666,11 @@ export async function getSearchDocumentByBarcode(
   throwIfAborted(signal);
   const normalizedCode = code.replace(/\D/g, '');
   const gatewayUrl = await resolveGatewayUrl(options.gatewayUrl, signal);
+  const productApiMode = normalizeProductApiMode(options.productApiMode);
   throwIfAborted(signal);
   const snapshot = await readProductSnapshot(normalizedCode);
   throwIfAborted(signal);
-  if (snapshot?.product && hasCarbohydrateData(snapshot.product)) {
+  if (snapshot?.product && hasRequiredProductData(snapshot.product, productApiMode)) {
     const hit = productToSearchHit(snapshot.product);
     hit.api_meta = snapshot.api_meta;
     return hit;
@@ -1647,9 +1679,12 @@ export async function getSearchDocumentByBarcode(
   const existingProduct = snapshot?.product;
   let response: OffProductResponse;
   try {
-    // v2 is deprecated but remains a compact compatibility fallback when a v3
-    // response omitted nutrition fields. It is never the primary product API.
-    response = await fetchProductBackend('open-food-facts-v2', normalizedCode, signal, gatewayUrl);
+    const backend: 'gateway' | 'open-food-facts-v3' | 'open-food-facts-v2' = productApiMode === 'hybrid'
+      ? 'open-food-facts-v2'
+      : gatewayUrl
+        ? 'gateway'
+        : (productApiMode === 'v3' ? 'open-food-facts-v3' : 'open-food-facts-v2');
+    response = await fetchProductBackend(backend, normalizedCode, signal, gatewayUrl, false, productApiMode);
     throwIfAborted(signal);
   } catch (cause) {
     if (signal?.aborted) throwIfAborted(signal);
@@ -1672,7 +1707,8 @@ export async function getSearchDocumentByBarcode(
   const mergedProduct = mergeProducts(existingProduct, response.product);
   const mergedResponse = { ...response, product: mergedProduct };
   if (mergedProduct) {
-    await storeProductSnapshot(normalizedCode, mergedResponse, 'open-food-facts-v2', response.api_meta?.sourceUrl);
+    const backend = productApiMode === 'v3' ? 'open-food-facts-v3' : 'open-food-facts-v2';
+    await storeProductSnapshot(normalizedCode, mergedResponse, backend, response.api_meta?.sourceUrl);
     throwIfAborted(signal);
   }
   const hit = productToSearchHit(mergedProduct);

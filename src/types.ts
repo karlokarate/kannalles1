@@ -28,6 +28,8 @@ export type ApiBackend =
   | 'query-cache'
   | 'product-cache';
 
+export type ProductApiMode = 'hybrid' | 'v3' | 'v2';
+
 export type ApiAttemptOutcome =
   | 'cache-hit'
   | 'success'
@@ -301,6 +303,8 @@ export interface AppSettings {
   saveHistory: boolean;
   /** Optional compatibility gateway; the default PWA path calls OFF directly. */
   dataGatewayUrl: string;
+  /** Product detail strategy: hybrid (v3->v2), v3-only, or v2-only. */
+  productApiMode: ProductApiMode;
 }
 
 export interface WeightMeasurement {

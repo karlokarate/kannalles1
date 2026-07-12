@@ -11,13 +11,10 @@ const SEARCH_FIELDS = [
   'product_quantity_unit',
   'serving_size',
   'serving_quantity',
-  'nutrition_data_per',
-  'nutrition_data_prepared_per',
   'countries_tags',
   'categories_tags',
   'nutriments',
   'image_front_url',
-  'data_quality_errors_tags',
   'unique_scans_n',
   'completeness'
 ];
@@ -25,10 +22,8 @@ const SEARCH_A_LICIOUS_FIELDS = [
   'code',
   'product_name',
   'product_name_de',
-  'product_name_en',
   'generic_name',
   'generic_name_de',
-  'generic_name_en',
   'brands',
   'quantity',
   'countries',
@@ -510,8 +505,15 @@ export async function searchThroughGateway(query, pageSize) {
   };
 }
 
-export async function productThroughGateway(code, knownCarbohydrates = false) {
-  const key = `product:${code}:${knownCarbohydrates ? 'seeded' : 'complete'}`;
+function normalizeProductApiMode(mode) {
+  if (mode === 'v2' || mode === 'v3' || mode === 'hybrid') return mode;
+  return 'hybrid';
+}
+
+export async function productThroughGateway(code, options = {}) {
+  const knownCarbohydrates = options.knownCarbohydrates === true;
+  const productApiMode = normalizeProductApiMode(options.productApiMode);
+  const key = `product:${code}:${productApiMode}:${knownCarbohydrates ? 'seeded' : 'complete'}`;
   const result = await cachedGatewayLoad({
     key,
     freshMs: 24 * 60 * 60 * 1000,
@@ -520,15 +522,34 @@ export async function productThroughGateway(code, knownCarbohydrates = false) {
       const attempts = [];
       let v3Data = null;
 
+      if (productApiMode === 'v2') {
+        const response = await fetchUpstreamJson(buildV2ProductUrl(code), 'open-food-facts-v2', 'Open Food Facts API v2');
+        attempts.push(response.attempt);
+        if (!response.data?.product) {
+          throw new UpstreamError('Für diesen Barcode wurde kein Produkt gefunden.', {
+            status: 404,
+            attempts
+          });
+        }
+        return { value: response.data, attempts };
+      }
+
       try {
         const response = await fetchUpstreamJson(buildV3ProductUrl(code), 'open-food-facts-v3', 'Open Food Facts API v3.6');
         attempts.push(response.attempt);
         v3Data = response.data;
-        if (v3Data?.product && (knownCarbohydrates || hasCarbohydrateData(v3Data.product))) {
+        if (v3Data?.product && (productApiMode === 'v3' || knownCarbohydrates || hasCarbohydrateData(v3Data.product))) {
           return { value: v3Data, attempts };
         }
       } catch (error) {
         if (error instanceof UpstreamError) attempts.push(...error.attempts);
+        if (productApiMode === 'v3') {
+          throw new UpstreamError('Produktdetails konnten über v3.6 nicht geladen werden.', {
+            status: error instanceof UpstreamError ? error.status : undefined,
+            attempts,
+            retryAt: error instanceof UpstreamError ? error.retryAt : undefined
+          });
+        }
       }
 
       try {

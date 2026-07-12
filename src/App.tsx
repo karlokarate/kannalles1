@@ -37,6 +37,7 @@ import type {
   OffProduct,
   ParsedFoodRequest,
   PortionOption,
+  ProductApiMode,
   SearchHit,
   SearchOutcome,
   SearchResponse,
@@ -109,7 +110,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   searchPageSize: 10,
   preferGermanMarket: true,
   saveHistory: true,
-  dataGatewayUrl: import.meta.env.VITE_DATA_GATEWAY_URL || import.meta.env.VITE_DATA_API_BASE_URL || ''
+  dataGatewayUrl: import.meta.env.VITE_DATA_GATEWAY_URL || import.meta.env.VITE_DATA_API_BASE_URL || '',
+  productApiMode: 'hybrid'
 };
 
 const DEFAULT_MANUAL: ManualFormValues = {
@@ -294,6 +296,9 @@ function sanitizeSettings(value: AppSettings | null): AppSettings {
   // Old saved settings may still contain an empty gateway URL from releases
   // before the required gateway build variable was introduced.
   merged.dataGatewayUrl = persistedGatewayUrl || defaultGatewayUrl;
+  if (!['hybrid', 'v3', 'v2'].includes(String(merged.productApiMode))) {
+    merged.productApiMode = 'hybrid';
+  }
   const endpoint = merged.aiParseUrl.trim();
   if (isLocalAndroidViewer()) {
     let validExternalEndpoint = false;
@@ -1459,6 +1464,17 @@ function SettingsScreen({
         <div className="setting-title"><Gauge size={20} /><div><strong>Suche & Darstellung</strong><span>Search-a-licious-first, lokale Berechnung</span></div></div>
         <label className="toggle-row"><span>Deutschen Markt bevorzugen</span><input type="checkbox" checked={settings.preferGermanMarket} onChange={(event) => patch({ preferGermanMarket: event.target.checked })} /></label>
         <label>
+          <span>Produktdaten-API</span>
+          <select value={settings.productApiMode} onChange={(event) => patch({ productApiMode: event.target.value as ProductApiMode })}>
+            <option value="hybrid">Hybrid (v3.6 primär, v2 nur bei fehlenden Feldern)</option>
+            <option value="v3">Nur OFF API v3.6</option>
+            <option value="v2">Nur OFF API v2</option>
+          </select>
+        </label>
+        <p className="setting-note">
+          Hybrid reduziert Last und bleibt kompatibel: v2 wird nur nachgezogen, wenn v3 für die Berechnung relevante Produktfelder nicht liefert.
+        </p>
+        <label>
           <span>Suchtreffer</span>
           <select value={settings.searchPageSize} onChange={(event) => patch({ searchPageSize: Number(event.target.value) as 10 | 15 | 20 })}>
             <option value={10}>10</option><option value={15}>15</option><option value={20}>20</option>
@@ -1694,6 +1710,12 @@ export default function App() {
     return validation.value;
   }
 
+  function configuredProductApiMode(): ProductApiMode {
+    const candidate = settings.productApiMode;
+    if (candidate === 'v2' || candidate === 'v3' || candidate === 'hybrid') return candidate;
+    return 'hybrid';
+  }
+
   function observeApiMeta(responseMeta: ApiResponseMeta | undefined, label: string): void {
     refreshApiUsage();
     if (!responseMeta) return;
@@ -1833,6 +1855,7 @@ export default function App() {
       try {
         const response = await getProductByBarcode(candidate.code, controller.signal, {
           gatewayUrl: configuredGatewayUrl(),
+          productApiMode: configuredProductApiMode(),
           seedProduct: productSeedFromSearchHit(candidate)
         });
         ensureControllerActive(controller);
@@ -1853,7 +1876,10 @@ export default function App() {
     // already selected barcode; never fetch the large unfiltered document.
     if (!hasCarbohydrateData(candidate) && candidate.code && !compatibilityFallbackAttempted) {
       try {
-        const fallbackHit = await getSearchDocumentByBarcode(candidate.code, controller.signal, { gatewayUrl: configuredGatewayUrl() });
+        const fallbackHit = await getSearchDocumentByBarcode(candidate.code, controller.signal, {
+          gatewayUrl: configuredGatewayUrl(),
+          productApiMode: configuredProductApiMode()
+        });
         ensureControllerActive(controller);
         observeApiMeta(fallbackHit.api_meta, 'Produkt-Fallback');
         candidate = mergeSearchHit(candidate, fallbackHit);
@@ -1899,14 +1925,20 @@ export default function App() {
       setRequest(parsed);
 
       if (parsed.resolutionMode === 'barcode' && parsed.barcode) {
-        const productResponse = await getProductByBarcode(parsed.barcode, controller.signal, { gatewayUrl: configuredGatewayUrl() });
+        const productResponse = await getProductByBarcode(parsed.barcode, controller.signal, {
+          gatewayUrl: configuredGatewayUrl(),
+          productApiMode: configuredProductApiMode()
+        });
         ensureControllerActive(controller);
         observeApiMeta(productResponse.api_meta, 'Barcode-Produkt');
         if (!productResponse.product) throw new Error('Zu diesem Barcode wurde kein Produkt gefunden.');
         let hit = syntheticHit(productResponse.product);
         if (!hasCarbohydrateData(hit) && !productCompatibilityFallbackAttempted(productResponse.api_meta)) {
           try {
-            const fallbackHit = await getSearchDocumentByBarcode(parsed.barcode, controller.signal, { gatewayUrl: configuredGatewayUrl() });
+            const fallbackHit = await getSearchDocumentByBarcode(parsed.barcode, controller.signal, {
+              gatewayUrl: configuredGatewayUrl(),
+              productApiMode: configuredProductApiMode()
+            });
             ensureControllerActive(controller);
             observeApiMeta(fallbackHit.api_meta, 'Barcode-Fallback');
             hit = mergeSearchHit(hit, fallbackHit);

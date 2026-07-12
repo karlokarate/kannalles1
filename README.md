@@ -78,8 +78,9 @@ GitHub Pages
     └── https://<gateway>.vercel.app/api
       ├── Search-a-licious als Primärsuche
       ├── OFF Legacy Search als genau ein Fallback
-      ├── OFF API v3.6 für das ausgewählte Produkt
-      └── OFF API v2 nur bei weiterhin fehlenden Daten
+      ├── Produktmodus `hybrid`: OFF API v3.6 primär, OFF API v2 nur bei fehlenden Kompatibilitätsfeldern
+      ├── Produktmodus `v3`: nur OFF API v3.6
+      └── Produktmodus `v2`: nur OFF API v2
 ```
 
 Die Pages-PWA darf keine direkten Browseraufrufe zu Open Food Facts mehr ausführen. `VITE_DATA_GATEWAY_URL` ist daher im Build zwingend und muss auf einen laufenden Gateway-Dienst zeigen. Gateway-Antworten werden im Browser und im optionalen Express-Server gegen den generierten Zod-Vertrag geprüft.
@@ -91,6 +92,11 @@ Der Workspace enthält serverlose Endpunkte unter `api/` (direkt kompatibel mit 
 - `GET /api/health`
 - `GET /api/search`
 - `GET /api/product/{code}`
+
+`/api/product/{code}` unterstützt zusätzlich folgende Query-Parameter:
+
+- `known_carbs=1` für seed-basierte Hybrid-Optimierung (überspringt unnötigen v2-Nachzug)
+- `product_api=hybrid|v3|v2` zur expliziten Auswahl der Produktquelle
 
 Die Upstream-Requests setzen die für OFF erforderliche Identität:
 
