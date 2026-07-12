@@ -1,0 +1,55 @@
+diff --git a/contracts/no-cooldown.contract.test.ts b/contracts/no-cooldown.contract.test.ts
+new file mode 100644
+--- /dev/null
++++ b/contracts/no-cooldown.contract.test.ts
+@@ -0,0 +1,55 @@
++import { readFileSync } from 'node:fs';
++import { describe, expect, it } from 'vitest';
++import { correctCommonFoodTypos } from '../src/lib/query';
++import { genericIdentityCompatible, isGenericCategoryQuery } from '../src/lib/identity';
++
++describe('immediate retry and peanut search contracts', () => {
++  it('canonicalizes German and English peanut aliases before cache and network', () => {
++    expect(correctCommonFoodTypos('Erdnüsse')).toBe('Erdnuss');
++    expect(correctCommonFoodTypos('Erdnuesse')).toBe('Erdnuss');
++    expect(correctCommonFoodTypos('Peanuts')).toBe('Erdnuss');
++  });
++
++  it('recognizes plain peanuts but rejects peanut-derived products as the generic food', () => {
++    expect(isGenericCategoryQuery('Erdnuss')).toBe(true);
++    expect(genericIdentityCompatible('Erdnuss', {
++      code: 'plain-peanuts',
++      product_name_de: 'Erdnüsse geröstet und gesalzen',
++      brands: 'Testmarke',
++      nutriments: { carbohydrates_100g: 12 }
++    })).toBe(true);
++    expect(genericIdentityCompatible('Erdnuss', {
++      code: 'peanut-butter',
++      product_name_de: 'Erdnussbutter cremig',
++      brands: 'Testmarke',
++      nutriments: { carbohydrates_100g: 14 }
++    })).toBe(false);
++  });
++
++  it('contains no local search cooldown or disabled retry path', () => {
++    const app = readFileSync('src/App.tsx', 'utf8');
++    expect(app).not.toContain('RATE_LIMIT_DEFAULT_BLOCK_MS');
++    expect(app).not.toContain('searchBlockedUntil');
++    expect(app).not.toContain('setSearchBlockedUntil');
++    expect(app).not.toContain('Warte ${formatCountdown');
++    expect(app).not.toContain('disabled={!query.trim() || searchBlocked}');
++    expect(app).toContain('Retry-After und Serverlimits werden nur angezeigt');
++    expect(app).toContain('ohne Countdown sofort erneut gestartet');
++  });
++
++  it('does not classify an upstream 503 as a client rate limit', () => {
++    const api = readFileSync('src/lib/api.ts', 'utf8');
++    expect(api).toContain('if (response.status === 429)');
++    expect(api).not.toContain('response.status === 429 || response.status === 503');
++
++    const gateway = readFileSync('api/search.js', 'utf8');
++    expect(gateway).toContain('res.status(502)');
++    expect(gateway).toContain('retryAllowedImmediately: true');
++    expect(gateway).not.toContain("res.setHeader('Retry-After'");
++  });
++});
