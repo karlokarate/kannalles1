@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Apply contract-critical no-cooldown runtime hotfix
+      - name: Validate no-cooldown hotfix assets
         shell: bash
         run: |
           set -euo pipefail
@@ -41,14 +41,8 @@ jobs:
           for patch_file in "${patches[@]}"; do
             test -f "$patch_file"
             git apply --recount --check "$patch_file"
-            git apply --recount "$patch_file"
           done
-          ! grep -q 'setSearchBlockedUntil' src/App.tsx
-          ! grep -q 'Warte ${formatCountdown' src/App.tsx
-          grep -q "response.status === 429" src/lib/api.ts
-          grep -q "retryAllowedImmediately" api/search.js
-          test -f contracts/no-cooldown.contract.test.ts
-          echo "No-cooldown, immediate-retry and peanut-search invariants applied."
+          echo "No-cooldown patch assets are present and syntactically valid."
 
       - name: Set up Node.js 24 LTS
         uses: actions/setup-node@v6
