@@ -34,15 +34,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          patch_file=.github/patches/kh-checker-v2.2.4-no-cooldown-runtime.patch
-          test -f "$patch_file"
-          git apply --check "$patch_file"
-          git apply "$patch_file"
+          patches=(
+            .github/patches/kh-checker-v2.2.4-no-cooldown-runtime.patch
+            .github/patches/kh-checker-v2.2.4-no-cooldown-tests.patch
+          )
+          for patch_file in "${patches[@]}"; do
+            test -f "$patch_file"
+            git apply --check "$patch_file"
+            git apply "$patch_file"
+          done
           ! grep -q 'setSearchBlockedUntil' src/App.tsx
           ! grep -q 'Warte ${formatCountdown' src/App.tsx
           grep -q "response.status === 429" src/lib/api.ts
           grep -q "retryAllowedImmediately" api/search.js
-          echo "No-cooldown and immediate-retry invariants applied."
+          test -f contracts/no-cooldown.contract.test.ts
+          echo "No-cooldown, immediate-retry and peanut-search invariants applied."
 
       - name: Set up Node.js 24 LTS
         uses: actions/setup-node@v6
