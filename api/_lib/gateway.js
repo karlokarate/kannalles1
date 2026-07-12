@@ -55,10 +55,8 @@ globalThis.__KH_SEARCH_A_LICIOUS_CIRCUIT__ = searchALiciousCircuit;
 globalThis.__KH_LEGACY_SEARCH_CIRCUIT__ = legacySearchCircuit;
 
 const APP_VERSION = process.env.npm_package_version || '2.2.4';
-const OFF_USER_AGENT =
-  process.env.OFF_USER_AGENT ||
-  `KH-Checker/${APP_VERSION} (+https://karlokarate.github.io/kannalles1/; contact: your-email@example.com)`;
-const OFF_CONTACT_EMAIL = String(process.env.OFF_CONTACT_EMAIL || '').trim();
+const OFF_CONTACT_EMAIL = 'chrisfischtopher@googlemail.com';
+const OFF_USER_AGENT = `KH-Checker/${APP_VERSION} (+https://karlokarate.github.io/kannalles1/; contact: ${OFF_CONTACT_EMAIL})`;
 
 function parseRetryAfter(value, now = Date.now()) {
   if (!value) return null;
@@ -74,12 +72,11 @@ function cleanPreview(value) {
 }
 
 function buildUpstreamHeaders() {
-  const headers = {
+  return {
     Accept: 'application/json',
-    'User-Agent': OFF_USER_AGENT
+    'User-Agent': OFF_USER_AGENT,
+    From: OFF_CONTACT_EMAIL
   };
-  if (OFF_CONTACT_EMAIL) headers.From = OFF_CONTACT_EMAIL;
-  return headers;
 }
 
 export function setCors(res) {

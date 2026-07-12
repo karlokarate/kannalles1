@@ -33,7 +33,8 @@ function safePort(value) {
 
 const port = safePort(process.env.PORT || DEFAULT_PORT);
 const host = String(process.env.HOST || '0.0.0.0').trim() || '0.0.0.0';
-const offUserAgent = process.env.OFF_USER_AGENT || `KH-Checker/${APP_VERSION} (replace-with-contact@example.com)`;
+const offContactEmail = 'chrisfischtopher@googlemail.com';
+const offUserAgent = `KH-Checker/${APP_VERSION} (+https://karlokarate.github.io/kannalles1/; contact: ${offContactEmail})`;
 const configuredCorsOrigins = String(process.env.CORS_ORIGINS || '')
   .split(',')
   .map((item) => item.trim())
@@ -226,7 +227,8 @@ async function fetchUpstreamJson(url, backend, label, timeoutMs = 8_500) {
       method: 'GET',
       headers: {
         Accept: 'application/json',
-        'User-Agent': offUserAgent
+        'User-Agent': offUserAgent,
+        From: offContactEmail
       },
       redirect: 'follow',
       signal: controller.signal
