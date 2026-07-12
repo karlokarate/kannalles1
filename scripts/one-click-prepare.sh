@@ -15,10 +15,12 @@ REPORT_DIR="$ROOT_DIR/ci-reports"
 FALLBACK_SITE="$ROOT_DIR/fallback-site"
 CANDIDATE_SITE="$ROOT_DIR/candidate-site"
 PUBLISH_SITE="$ROOT_DIR/publish-site"
+STATIC_SITE="$REPORT_DIR/source-static-site"
+STATIC_RELEASE_DIR="$REPORT_DIR/source-static-release"
 GATES_TSV="$REPORT_DIR/gates.tsv"
 GATEWAY_URL="${VITE_DATA_GATEWAY_URL:-}"
 mkdir -p "$REPORT_DIR"
-rm -rf "$FALLBACK_SITE" "$CANDIDATE_SITE" "$PUBLISH_SITE" "$ROOT_DIR/release-out"
+rm -rf "$FALLBACK_SITE" "$CANDIDATE_SITE" "$PUBLISH_SITE" "$STATIC_SITE" "$STATIC_RELEASE_DIR" "$ROOT_DIR/release-out"
 : > "$GATES_TSV"
 
 hard_fail() {
@@ -43,7 +45,7 @@ run_gate() {
     return 0
   fi
   record_gate "$slug" failed "$label (exit $status)"
-  echo "::warning::$label failed (exit $status); the validated prebuilt v${VERSION} fallback remains selected." >&2
+  echo "::warning::$label failed (exit $status); the best previously validated candidate remains selected." >&2
   return "$status"
 }
 
@@ -69,7 +71,9 @@ SELECTED_ZIP="$FALLBACK_ZIP"
 SOURCE_OK=true
 
 # A source candidate is optional at deployment time. Every stage is recorded;
-# the first failure disqualifies only the candidate, never the already validated PWA.
+# the first failure disqualifies only that candidate, never the best already
+# validated PWA. A fresh static source build becomes the new fallback before
+# browser infrastructure is attempted, so old runtime bugs cannot reappear.
 if ! run_gate npm-ci "Install locked dependencies" npm ci --no-audit --no-fund; then SOURCE_OK=false; fi
 if [[ "$SOURCE_OK" == true ]] && ! run_gate api-generation "Regenerate and verify OpenAPI/Orval/Zod/MSW artifacts" npm run api:check; then SOURCE_OK=false; fi
 if [[ "$SOURCE_OK" == true ]] && ! run_gate workflow-contract "Validate the single final workflow" npm run check:workflow; then SOURCE_OK=false; fi
@@ -83,11 +87,47 @@ if [[ "$SOURCE_OK" == true ]] && ! run_gate audit "High/critical npm audit" npm 
 if [[ "$SOURCE_OK" == true ]] && ! run_gate production-build "Vite/PWA production build" npm run build; then SOURCE_OK=false; fi
 if [[ "$SOURCE_OK" == true ]] && ! run_gate pages-contract "GitHub Pages subpath/PWA validation" npm run check:pages; then SOURCE_OK=false; fi
 
+if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+else
+  SOURCE_DATE_EPOCH="$(date -u +%s)"
+fi
+export SOURCE_DATE_EPOCH
+
+# Freeze and validate the freshly built static PWA before Playwright. If the
+# browser download or browser runtime fails, this source-built artifact—not the
+# old prebuilt ZIP—is published.
+if [[ "$SOURCE_OK" == true ]]; then
+  if ! run_gate static-release-build "Create fresh static source-built fallback" \
+      env RELEASE_PREVALIDATED=1 RELEASE_BROWSER_GATE=deferred_to_deployment_workflow OUTPUT_DIR="$STATIC_RELEASE_DIR" npm run release; then
+    SOURCE_OK=false
+  else
+    STATIC_ZIP="$STATIC_RELEASE_DIR/kh-checker-v${VERSION}-komplett.zip"
+    if ! run_gate static-candidate-validation "Validate fresh static source-built fallback" \
+        python3 .github/scripts/validate_release_bundle.py \
+          --zip "$STATIC_ZIP" \
+          --site "$STATIC_SITE" \
+          --expected-version "$VERSION" \
+          --base-path "$BASE_PATH"; then
+      SOURCE_OK=false
+    elif ! run_gate static-candidate-pages "Revalidate fresh static Pages directory" node scripts/verify-pages-build.mjs "$STATIC_SITE"; then
+      SOURCE_OK=false
+    elif ! run_gate static-candidate-http "Serve fresh static Pages directory over HTTP" node scripts/verify-static-http.mjs "$STATIC_SITE"; then
+      SOURCE_OK=false
+    else
+      rm -rf "$PUBLISH_SITE"
+      cp -a "$STATIC_SITE" "$PUBLISH_SITE"
+      SELECTED_KIND="source-built-static-validated-fallback"
+      SELECTED_ZIP="$STATIC_ZIP"
+    fi
+  fi
+fi
+
 if [[ "$SOURCE_OK" == true ]]; then
   if [[ "${ONE_CLICK_SKIP_BROWSER:-0}" == "1" ]]; then
     record_gate playwright-install skipped "Browser installation explicitly skipped by ONE_CLICK_SKIP_BROWSER"
-    record_gate playwright-e2e skipped "Browser suite explicitly skipped; source candidate disqualified"
-    echo "::warning::Browser suite was skipped; using the validated prebuilt fallback." >&2
+    record_gate playwright-e2e skipped "Browser suite explicitly skipped; fresh static source candidate retained"
+    echo "::warning::Browser suite was skipped; using the fresh static source-built candidate." >&2
     SOURCE_OK=false
   elif ! run_gate playwright-install "Install locked Playwright Chromium and WebKit browsers" \
       npx --no-install playwright install --with-deps chromium webkit; then
@@ -99,13 +139,7 @@ if [[ "$SOURCE_OK" == true ]]; then
 fi
 
 if [[ "$SOURCE_OK" == true ]]; then
-  if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-  else
-    SOURCE_DATE_EPOCH="$(date -u +%s)"
-  fi
-  export SOURCE_DATE_EPOCH
-  if ! run_gate release-build "Create deterministic app-only and source release ZIPs" \
+  if ! run_gate release-build "Create deterministic browser-validated app-only and source release ZIPs" \
       env RELEASE_PREVALIDATED=1 RELEASE_BROWSER_GATE=passed_at_build OUTPUT_DIR="$ROOT_DIR/release-out" npm run release; then
     SOURCE_OK=false
   fi
@@ -132,8 +166,10 @@ if [[ "$SOURCE_OK" == true ]]; then
   cp -a "$CANDIDATE_SITE" "$PUBLISH_SITE"
   SELECTED_KIND="source-built-and-browser-validated"
   SELECTED_ZIP="release-out/kh-checker-v${VERSION}-komplett.zip"
+elif [[ "$SELECTED_KIND" == "source-built-static-validated-fallback" ]]; then
+  echo "::notice::Deploying the fresh static source-built v${VERSION} candidate because a later optional gate failed." >&2
 else
-  echo "::notice::Deploying the hard-validated prebuilt v${VERSION} fallback." >&2
+  echo "::notice::Deploying the hard-validated prebuilt v${VERSION} fallback because the source build did not pass static validation." >&2
 fi
 
 # These are hard final gates because no incomplete or unsafe directory may reach Pages.
@@ -154,7 +190,16 @@ for line in Path(sys.argv[1]).read_text(encoding='utf-8').splitlines():
     gates.append((slug, status, label))
 version, selected, archive, digest = sys.argv[3:7]
 rows = '\n'.join(f'| `{slug}` | {status} | {label} |' for slug, status, label in gates)
-Path(sys.argv[2]).write_text(f'''# KH Checker v{version} – One-Click-Workflow\n\n- Deployment candidate: **{selected}**\n- Release ZIP: `{archive}`\n- SHA-256: `{digest}`\n\n| Gate | Ergebnis | Beschreibung |\n|---|---|---|\n{rows}\n''', encoding='utf-8')
+Path(sys.argv[2]).write_text(f'''# KH Checker v{version} – One-Click-Workflow
+
+- Deployment candidate: **{selected}**
+- Release ZIP: `{archive}`
+- SHA-256: `{digest}`
+
+| Gate | Ergebnis | Beschreibung |
+|---|---|---|
+{rows}
+''', encoding='utf-8')
 PY
 
 cat "$REPORT_DIR/ONE-CLICK-SUMMARY.md"
