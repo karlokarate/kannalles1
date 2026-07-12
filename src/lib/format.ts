@@ -19,6 +19,14 @@ export function formatNumber(value: number | null, decimals = 1): string {
   }).format(value);
 }
 
+/** Parse a browser-independent German or invariant decimal without grouping. */
+export function parseLocalizedDecimal(value: string): number | null {
+  const normalized = value.trim().replace(',', '.');
+  if (!normalized || !/^\d+(?:\.\d*)?$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function normalizeText(value: unknown): string {
   if (Array.isArray(value)) return value.map(normalizeText).filter(Boolean).join(', ');
   if (typeof value !== 'string') return '';

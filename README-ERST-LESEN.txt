@@ -8,25 +8,18 @@ vorher entpackt hochladen.
 
 GITHUB
 ------
-1. Datei im Repository ablegen als:
-   releases/kh-checker-v2.2.4-komplett.zip
+1. Aktuellen Source-Stand inklusive Lockfile einchecken.
 2. Actions öffnen.
-3. Workflow "Build, validate and deploy KH Checker PWA" starten.
-4. mode = release_zip und zip_path = releases/kh-checker-v2.2.4-komplett.zip wählen.
-5. Bei einem normalen Push dieses einzelnen neuen Release-ZIPs erfolgt die Auswahl automatisch.
-6. Nach erfolgreichem Workflow die ausgegebene Pages-Seite öffnen.
+3. Workflow "Build, validate and deploy KH Checker PWA" ohne Eingaben starten.
+4. Nur ein vollständig neu gebauter und validierter Kandidat wird veröffentlicht.
+5. Nach erfolgreichem Workflow die ausgegebene Pages-Seite öffnen.
 
 LAUFZEIT
 --------
-GitHub Pages liefert nur die statischen App-Dateien. Das ist beabsichtigt.
-Die installierte PWA fragt vom jeweiligen Gerät direkt ab:
-
-1. Search-a-licious als primäre Volltextsuche
-2. OFF Legacy Search genau einmal bei Fehler oder null Treffern
-3. OFF API v3.6 für das ausgewählte Produkt
-4. OFF API v2 nur, wenn danach noch Kohlenhydratdaten fehlen
-
-Ein eigener Server ist für den normalen Betrieb nicht erforderlich.
+GitHub Pages liefert nur die statischen App-Dateien. Manuelle Berechnung und
+lokale Daten funktionieren ohne Server. Neue globale Produktsuche läuft nur
+über ein konfiguriertes Daten-Gateway; direkte Browserzugriffe auf OFF oder
+Search-a-licious sind verboten. Primärbetrieb ist ein eigener Suchindex.
 
 INSTALLATION
 ------------
@@ -47,9 +40,18 @@ stellt diesen automatisch bereit.
 
 FEHLER UND CACHE
 ----------------
-Die App zeigt den originalen Endpunktfehler, sperrt keinen manuellen Retry und
-verwendet Reserve-Daten erst nach dem Scheitern beider Suchbackends. Bereits
-lokal gespeicherte Produkte, Kalibrierungen und Berechnungen bleiben verfügbar.
+Die App zeigt einen strukturierten, sicher bereinigten Endpunktfehler, sperrt
+keinen manuellen Retry und nutzt im Auto-Modus den eigenen Index primär sowie
+OFF Legacy kontrolliert als Reserve. Die öffentliche Search-a-licious-Instanz
+ist nur ein expliziter Diagnosemodus. Bereits lokal gespeicherte Produkte,
+Kalibrierungen und Berechnungen bleiben verfügbar.
+
+DATENSCHUTZ
+-----------
+Suchbegriffe, Barcodes und Produktdaten-Anfragen gehen nur an das konfigurierte
+Gateway. Produktbilder können direkt von images.openfoodfacts.org geladen
+werden; das Bild-CDN sieht dabei technisch IP-Adresse und Bild-URL. Offline
+verfügbar sind nur bereits gecachte App-Assets, Bilder und Daten.
 
 ARTEFAKTE
 ---------

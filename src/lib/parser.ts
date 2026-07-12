@@ -2,6 +2,10 @@ import type { FoodUnit, ParsedFoodRequest, ResolutionMode } from '../types';
 import { normalizeText } from './format';
 import { correctCommonFoodTypos } from './query';
 import { preparationProfileFor } from './preparation';
+import { extractOffBarcodeEvidence } from './barcode';
+import { isPlausibleFoodAmount, MAX_AMOUNT_BY_UNIT } from './domainLimits';
+
+export { isPlausibleFoodAmount } from './domainLimits';
 
 const NUMBER_WORDS: Record<string, number> = {
   ein: 1,
@@ -67,7 +71,8 @@ const KNOWN_BRANDS = [
   'griesson',
   'de beukelaer',
   'bahlsen',
-  'oreo'
+  'oreo',
+  '7 days'
 ];
 
 const DISTINCT_PRODUCT_TERMS = [
@@ -83,11 +88,33 @@ const DISTINCT_PRODUCT_TERMS = [
   'pick up'
 ];
 
+const NUMERIC_PRODUCT_PREFIXES = [
+  '7 days',
+  '5 minuten terrine',
+  '3 glocken'
+];
+
+const STRICT_DECIMAL = /^[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)$/;
+const COMPACT_METRIC = /^([+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+))(kg|g|ml)$/i;
+
 function parseNumber(token: string | undefined): number | null {
   if (!token) return null;
-  const numeric = Number(token.replace(',', '.'));
+  const numeric = STRICT_DECIMAL.test(token) ? Number(token.replace(',', '.')) : Number.NaN;
   if (Number.isFinite(numeric) && numeric > 0) return numeric;
   return NUMBER_WORDS[normalizeText(token)] ?? null;
+}
+
+function explicitNumericValue(token: string | undefined): number | null {
+  if (!token || !STRICT_DECIMAL.test(token)) return null;
+  const numeric = Number(token.replace(',', '.'));
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function withoutBarcodeEvidence(raw: string, start: number, end: number): string {
+  return `${raw.slice(0, start)} ${raw.slice(end)}`
+    .replace(/\b(?:barcode|ean|upc|gtin)\b\s*[:#-]?/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function parseUnit(token: string | undefined): FoodUnit | null {
@@ -110,8 +137,8 @@ function inferMode(productName: string, unit: FoodUnit, barcode: string | null):
 
 export function parseFoodRequestLocal(rawInput: string): ParsedFoodRequest {
   const raw = rawInput.trim();
-  const barcodeMatch = raw.match(/(?:^|\s)(\d{8,14})(?:$|\s)/);
-  const barcode = barcodeMatch?.[1] ?? null;
+  const barcodeEvidence = extractOffBarcodeEvidence(raw);
+  const barcode = barcodeEvidence?.normalized ?? null;
 
   if (!raw) {
     return {
@@ -126,7 +153,11 @@ export function parseFoodRequestLocal(rawInput: string): ParsedFoodRequest {
     };
   }
 
-  if (barcode && normalizeText(raw).replace(barcode, '').trim().length === 0) {
+  const inputWithoutBarcode = barcodeEvidence
+    ? withoutBarcodeEvidence(raw, barcodeEvidence.start, barcodeEvidence.end)
+    : raw;
+
+  if (barcode && !inputWithoutBarcode) {
     return {
       status: 'parsed',
       rawInput: raw,
@@ -139,18 +170,26 @@ export function parseFoodRequestLocal(rawInput: string): ParsedFoodRequest {
     };
   }
 
-  const normalized = raw.replace(/\s+/g, ' ').trim();
+  const normalized = inputWithoutBarcode.replace(/\s+/g, ' ').trim();
   const tokens = normalized.split(' ');
-  const parsedLeadingAmount = parseNumber(tokens[0]);
-  let amount = parsedLeadingAmount;
-  let unit = parseUnit(tokens[1]);
+  const protectedNumericProduct = NUMERIC_PRODUCT_PREFIXES.some((prefix) =>
+    normalizeText(normalized) === prefix || normalizeText(normalized).startsWith(`${prefix} `)
+  );
+  const compact = protectedNumericProduct ? null : tokens[0]?.match(COMPACT_METRIC) ?? null;
+  const explicitNumeric = compact
+    ? explicitNumericValue(compact[1])
+    : protectedNumericProduct
+      ? null
+      : explicitNumericValue(tokens[0]);
+  const parsedLeadingAmount = protectedNumericProduct ? null : parseNumber(compact?.[1] ?? tokens[0]);
+  let amount = explicitNumeric ?? parsedLeadingAmount;
+  let unit = compact ? parseUnit(compact[2]) : parseUnit(tokens[1]);
   let consumed = 0;
-  let valueExplicit = parsedLeadingAmount !== null;
+  let valueExplicit = amount !== null;
   let unitExplicit = unit !== null;
 
   if (amount !== null) {
-    consumed = 1;
-    if (unit) consumed = 2;
+    consumed = compact ? 1 : 1 + (unit ? 1 : 0);
   }
 
   if (amount === null) {
@@ -170,7 +209,7 @@ export function parseFoodRequestLocal(rawInput: string): ParsedFoodRequest {
 
   let productName = tokens.slice(consumed).join(' ').trim();
   if (!productName && barcode) productName = 'Produkt per Barcode';
-  if (!productName) productName = normalized;
+  if (!productName && consumed === 0) productName = normalized;
   productName = correctCommonFoodTypos(productName);
 
   // A bare count such as “14 Salzstangen” means pieces. A product-only query
@@ -178,6 +217,23 @@ export function parseFoodRequestLocal(rawInput: string): ParsedFoodRequest {
   // manufacturer portion or smallest explicit unit.
   if (!unit) {
     unit = valueExplicit ? 'piece' : 'portion';
+  }
+
+  if (valueExplicit && !isPlausibleFoodAmount(amount, unit)) {
+    const maximum = MAX_AMOUNT_BY_UNIT[unit];
+    const nonPositive = !Number.isFinite(amount) || amount <= 0;
+    return {
+      status: 'needs_clarification',
+      rawInput: raw,
+      product: { name: productName, brand: null, variant: null },
+      amount: { value: 1, unit, valueExplicit: false, unitExplicit },
+      resolutionMode: barcode ? 'barcode' : 'generic_category',
+      barcode,
+      clarificationQuestion: nonPositive
+        ? 'Die Menge muss größer als 0 sein. Bitte korrigiere die Mengenangabe.'
+        : `Die Menge ist ungewöhnlich groß. Bitte prüfe sie (maximal ${maximum} ${unit} pro Berechnung).`,
+      parser: 'local'
+    };
   }
 
   const lowered = normalizeText(productName);

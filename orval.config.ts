@@ -25,7 +25,20 @@ export default defineConfig({
       mode: 'single',
       client: 'zod',
       target: './src/generated/gateway.zod.ts',
-      clean: false
+      clean: false,
+      override: {
+        zod: {
+          version: 4,
+          generateEachHttpStatus: true,
+          generateReusableSchemas: true,
+          strict: {
+            body: true,
+            param: true,
+            query: true,
+            response: true
+          }
+        }
+      }
     }
   }
 });

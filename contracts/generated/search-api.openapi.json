@@ -8,6 +8,7 @@
           "input": {
             "maxLength": 200,
             "minLength": 1,
+            "pattern": "\\S",
             "type": "string"
           }
         },
@@ -17,100 +18,783 @@
         "type": "object"
       },
       "AiParseResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "amount": {
+        "oneOf": [
+          {
             "additionalProperties": false,
             "properties": {
-              "unit": {
-                "$ref": "#/components/schemas/FoodUnit"
+              "amount": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "g"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 100000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "kg"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 100,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "ml"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 100000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "piece"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "bar"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "slice"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "portion"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "package"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  }
+                ]
               },
-              "value": {
-                "exclusiveMinimum": 0,
-                "type": "number"
-              }
-            },
-            "required": [
-              "value",
-              "unit"
-            ],
-            "type": "object"
-          },
-          "barcode": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "clarificationQuestion": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "parser": {
-            "enum": [
-              "openai"
-            ],
-            "type": "string"
-          },
-          "product": {
-            "additionalProperties": false,
-            "properties": {
-              "brand": {
+              "barcode": {
+                "type": "null"
+              },
+              "clarificationQuestion": {
+                "maxLength": 240,
+                "minLength": 1,
                 "type": [
                   "string",
                   "null"
                 ]
               },
-              "name": {
+              "parser": {
+                "enum": [
+                  "openai"
+                ],
                 "type": "string"
               },
-              "variant": {
+              "product": {
+                "additionalProperties": false,
+                "properties": {
+                  "brand": {
+                    "maxLength": 80,
+                    "minLength": 1,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "name": {
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "variant": {
+                    "maxLength": 80,
+                    "minLength": 1,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "brand",
+                  "variant"
+                ],
+                "type": "object"
+              },
+              "rawInput": {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "resolutionMode": {
+                "enum": [
+                  "generic_category"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "parsed",
+                  "needs_clarification",
+                  "unsupported"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "rawInput",
+              "product",
+              "amount",
+              "clarificationQuestion",
+              "parser",
+              "resolutionMode",
+              "barcode"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "amount": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "g"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 100000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "kg"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 100,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "ml"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 100000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "piece"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "bar"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "slice"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "portion"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "package"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "barcode": {
+                "type": "null"
+              },
+              "clarificationQuestion": {
+                "maxLength": 240,
+                "minLength": 1,
                 "type": [
                   "string",
                   "null"
                 ]
+              },
+              "parser": {
+                "enum": [
+                  "openai"
+                ],
+                "type": "string"
+              },
+              "product": {
+                "additionalProperties": false,
+                "properties": {
+                  "brand": {
+                    "maxLength": 80,
+                    "minLength": 1,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "name": {
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "variant": {
+                    "maxLength": 80,
+                    "minLength": 1,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "brand",
+                  "variant"
+                ],
+                "type": "object"
+              },
+              "rawInput": {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "resolutionMode": {
+                "enum": [
+                  "exact_product"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "parsed",
+                  "needs_clarification",
+                  "unsupported"
+                ],
+                "type": "string"
               }
             },
             "required": [
-              "name",
-              "brand",
-              "variant"
+              "status",
+              "rawInput",
+              "product",
+              "amount",
+              "clarificationQuestion",
+              "parser",
+              "resolutionMode",
+              "barcode"
             ],
             "type": "object"
           },
-          "rawInput": {
-            "type": "string"
-          },
-          "resolutionMode": {
-            "enum": [
-              "generic_category",
-              "exact_product",
+          {
+            "additionalProperties": false,
+            "properties": {
+              "amount": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "g"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 100000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "kg"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 100,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "ml"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 100000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "piece"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "bar"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "slice"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "portion"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "unit": {
+                        "enum": [
+                          "package"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "barcode": {
+                "pattern": "^\\d{7,14}$",
+                "type": "string"
+              },
+              "clarificationQuestion": {
+                "maxLength": 240,
+                "minLength": 1,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "parser": {
+                "enum": [
+                  "openai"
+                ],
+                "type": "string"
+              },
+              "product": {
+                "additionalProperties": false,
+                "properties": {
+                  "brand": {
+                    "maxLength": 80,
+                    "minLength": 1,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "name": {
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "variant": {
+                    "maxLength": 80,
+                    "minLength": 1,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "brand",
+                  "variant"
+                ],
+                "type": "object"
+              },
+              "rawInput": {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "resolutionMode": {
+                "enum": [
+                  "barcode"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "parsed",
+                  "needs_clarification",
+                  "unsupported"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "rawInput",
+              "product",
+              "amount",
+              "clarificationQuestion",
+              "parser",
+              "resolutionMode",
               "barcode"
             ],
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "parsed",
-              "needs_clarification",
-              "unsupported"
-            ],
-            "type": "string"
+            "type": "object"
           }
-        },
-        "required": [
-          "status",
-          "rawInput",
-          "product",
-          "amount",
-          "resolutionMode",
-          "barcode",
-          "clarificationQuestion",
-          "parser"
-        ],
-        "type": "object"
+        ]
       },
       "ApiAttemptDiagnostic": {
         "additionalProperties": false,
@@ -187,6 +871,7 @@
       "ApiBackend": {
         "enum": [
           "gateway",
+          "search-index",
           "search-a-licious",
           "open-food-facts-legacy",
           "open-food-facts-v3",
@@ -205,6 +890,10 @@
             },
             "type": "array"
           },
+          "code": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,79}$",
+            "type": "string"
+          },
           "detail": {
             "type": "string"
           },
@@ -212,13 +901,28 @@
             "minLength": 1,
             "type": "string"
           },
+          "query_requested": {
+            "type": "string"
+          },
+          "query_used": {
+            "type": "string"
+          },
+          "retryAllowedImmediately": {
+            "type": "boolean"
+          },
           "retryAt": {
             "format": "date-time",
+            "type": "string"
+          },
+          "traceId": {
+            "minLength": 8,
             "type": "string"
           }
         },
         "required": [
-          "error"
+          "error",
+          "code",
+          "traceId"
         ],
         "type": "object"
       },
@@ -239,6 +943,17 @@
             "type": "number"
           },
           "cacheKey": {
+            "type": "string"
+          },
+          "cacheLayer": {
+            "enum": [
+              "none",
+              "browser-memory",
+              "browser-indexeddb",
+              "browser-localstorage",
+              "gateway-memory",
+              "gateway-redis"
+            ],
             "type": "string"
           },
           "cacheStatus": {
@@ -282,6 +997,14 @@
             "format": "date-time",
             "type": "string"
           },
+          "gatewayCacheStatus": {
+            "enum": [
+              "network",
+              "fresh-cache",
+              "stale-cache"
+            ],
+            "type": "string"
+          },
           "networkAttempted": {
             "type": "boolean"
           },
@@ -303,58 +1026,1234 @@
         ],
         "type": "object"
       },
-      "FoodUnit": {
-        "enum": [
-          "g",
-          "kg",
-          "ml",
-          "piece",
-          "bar",
-          "slice",
-          "portion",
-          "package"
-        ],
-        "type": "string"
-      },
       "HealthResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "gatewayCacheEntries": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "inFlightRequests": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "ok": {
-            "enum": [
-              true
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "apiVersion": {
+                "enum": [
+                  "1"
+                ],
+                "type": "string"
+              },
+              "build": {
+                "additionalProperties": false,
+                "properties": {
+                  "builtAt": {
+                    "format": "date-time",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "commit": {
+                    "minLength": 7,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "runtime": {
+                    "enum": [
+                      "node"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "runtime",
+                  "commit",
+                  "builtAt"
+                ],
+                "type": "object"
+              },
+              "cacheBackend": {
+                "additionalProperties": false,
+                "properties": {
+                  "connectivity": {
+                    "enum": [
+                      "unknown",
+                      "ready",
+                      "unavailable"
+                    ],
+                    "type": "string"
+                  },
+                  "degraded": {
+                    "enum": [
+                      false
+                    ],
+                    "type": "boolean"
+                  },
+                  "effective": {
+                    "enum": [
+                      "unknown",
+                      "memory",
+                      "redis"
+                    ],
+                    "type": "string"
+                  },
+                  "requested": {
+                    "enum": [
+                      "memory",
+                      "redis"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "requested",
+                  "effective",
+                  "connectivity",
+                  "degraded"
+                ],
+                "type": "object"
+              },
+              "capabilities": {
+                "additionalProperties": false,
+                "properties": {
+                  "aiParse": {
+                    "type": "boolean"
+                  },
+                  "distributedCoordination": {
+                    "type": "boolean"
+                  },
+                  "offLegacyFallback": {
+                    "type": "boolean"
+                  },
+                  "offProductV2": {
+                    "type": "boolean"
+                  },
+                  "offProductV3": {
+                    "type": "boolean"
+                  },
+                  "searchIndex": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "aiParse",
+                  "searchIndex",
+                  "offLegacyFallback",
+                  "offProductV3",
+                  "offProductV2",
+                  "distributedCoordination"
+                ],
+                "type": "object"
+              },
+              "circuits": {
+                "additionalProperties": false,
+                "properties": {
+                  "offLegacy": {
+                    "enum": [
+                      "closed",
+                      "open",
+                      "half-open"
+                    ],
+                    "type": "string"
+                  },
+                  "offProductV2": {
+                    "enum": [
+                      "closed",
+                      "open",
+                      "half-open"
+                    ],
+                    "type": "string"
+                  },
+                  "offProductV3": {
+                    "enum": [
+                      "closed",
+                      "open",
+                      "half-open"
+                    ],
+                    "type": "string"
+                  },
+                  "searchIndex": {
+                    "enum": [
+                      "closed",
+                      "open",
+                      "half-open"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "searchIndex",
+                  "offLegacy",
+                  "offProductV3",
+                  "offProductV2"
+                ],
+                "type": "object"
+              },
+              "components": {
+                "additionalProperties": false,
+                "properties": {
+                  "aiParse": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "ready",
+                          "disabled",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reason"
+                    ],
+                    "type": "object"
+                  },
+                  "distributedCoordination": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "unknown",
+                          "ready",
+                          "disabled",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reason"
+                    ],
+                    "type": "object"
+                  },
+                  "offProductApi": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "unknown",
+                          "ready",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reason"
+                    ],
+                    "type": "object"
+                  },
+                  "requestBudgets": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "ready",
+                          "disabled",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reason"
+                    ],
+                    "type": "object"
+                  },
+                  "searchIndex": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "unknown",
+                          "ready",
+                          "disabled",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reason"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "aiParse",
+                  "searchIndex",
+                  "distributedCoordination",
+                  "requestBudgets",
+                  "offProductApi"
+                ],
+                "type": "object"
+              },
+              "distributedCacheConfigured": {
+                "type": "boolean"
+              },
+              "gatewayCacheEntries": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "inFlightRequests": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "ok": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
+              },
+              "openaiConfigured": {
+                "type": "boolean"
+              },
+              "rateLimits": {
+                "additionalProperties": false,
+                "properties": {
+                  "clientProductPerMinute": {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  "clientScoped": {
+                    "type": "boolean"
+                  },
+                  "clientSearchPerMinute": {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  "legacySearchPerMinute": {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  "productPerMinute": {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  "scope": {
+                    "enum": [
+                      "instance",
+                      "distributed"
+                    ],
+                    "type": "string"
+                  },
+                  "searchIndexPerMinute": {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "scope",
+                  "searchIndexPerMinute",
+                  "legacySearchPerMinute",
+                  "productPerMinute",
+                  "clientScoped",
+                  "clientSearchPerMinute",
+                  "clientProductPerMinute"
+                ],
+                "type": "object"
+              },
+              "ready": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
+              },
+              "searchIndexConfigured": {
+                "type": "boolean"
+              },
+              "service": {
+                "enum": [
+                  "kh-data-gateway"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "healthy"
+                ],
+                "type": "string"
+              },
+              "version": {
+                "pattern": "^\\d+\\.\\d+\\.\\d+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "service",
+              "apiVersion",
+              "version",
+              "openaiConfigured",
+              "searchIndexConfigured",
+              "distributedCacheConfigured",
+              "gatewayCacheEntries",
+              "inFlightRequests",
+              "build",
+              "capabilities",
+              "components",
+              "circuits",
+              "rateLimits",
+              "ok",
+              "ready",
+              "status",
+              "cacheBackend"
             ],
-            "type": "boolean"
+            "type": "object"
           },
-          "openaiConfigured": {
-            "type": "boolean"
+          {
+            "additionalProperties": false,
+            "properties": {
+              "apiVersion": {
+                "enum": [
+                  "1"
+                ],
+                "type": "string"
+              },
+              "build": {
+                "additionalProperties": false,
+                "properties": {
+                  "builtAt": {
+                    "format": "date-time",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "commit": {
+                    "minLength": 7,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "runtime": {
+                    "enum": [
+                      "node"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "runtime",
+                  "commit",
+                  "builtAt"
+                ],
+                "type": "object"
+              },
+              "cacheBackend": {
+                "additionalProperties": false,
+                "properties": {
+                  "connectivity": {
+                    "enum": [
+                      "unknown",
+                      "ready",
+                      "unavailable"
+                    ],
+                    "type": "string"
+                  },
+                  "degraded": {
+                    "type": "boolean"
+                  },
+                  "effective": {
+                    "enum": [
+                      "unknown",
+                      "memory",
+                      "redis"
+                    ],
+                    "type": "string"
+                  },
+                  "requested": {
+                    "enum": [
+                      "memory",
+                      "redis"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "requested",
+                  "effective",
+                  "connectivity",
+                  "degraded"
+                ],
+                "type": "object"
+              },
+              "capabilities": {
+                "additionalProperties": false,
+                "properties": {
+                  "aiParse": {
+                    "type": "boolean"
+                  },
+                  "distributedCoordination": {
+                    "type": "boolean"
+                  },
+                  "offLegacyFallback": {
+                    "type": "boolean"
+                  },
+                  "offProductV2": {
+                    "type": "boolean"
+                  },
+                  "offProductV3": {
+                    "type": "boolean"
+                  },
+                  "searchIndex": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "aiParse",
+                  "searchIndex",
+                  "offLegacyFallback",
+                  "offProductV3",
+                  "offProductV2",
+                  "distributedCoordination"
+                ],
+                "type": "object"
+              },
+              "circuits": {
+                "additionalProperties": false,
+                "properties": {
+                  "offLegacy": {
+                    "enum": [
+                      "closed",
+                      "open",
+                      "half-open"
+                    ],
+                    "type": "string"
+                  },
+                  "offProductV2": {
+                    "enum": [
+                      "closed",
+                      "open",
+                      "half-open"
+                    ],
+                    "type": "string"
+                  },
+                  "offProductV3": {
+                    "enum": [
+                      "closed",
+                      "open",
+                      "half-open"
+                    ],
+                    "type": "string"
+                  },
+                  "searchIndex": {
+                    "enum": [
+                      "closed",
+                      "open",
+                      "half-open"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "searchIndex",
+                  "offLegacy",
+                  "offProductV3",
+                  "offProductV2"
+                ],
+                "type": "object"
+              },
+              "components": {
+                "additionalProperties": false,
+                "properties": {
+                  "aiParse": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "ready",
+                          "disabled",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reason"
+                    ],
+                    "type": "object"
+                  },
+                  "distributedCoordination": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "unknown",
+                          "ready",
+                          "disabled",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reason"
+                    ],
+                    "type": "object"
+                  },
+                  "offProductApi": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "unknown",
+                          "ready",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reason"
+                    ],
+                    "type": "object"
+                  },
+                  "requestBudgets": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "ready",
+                          "disabled",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reason"
+                    ],
+                    "type": "object"
+                  },
+                  "searchIndex": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "unknown",
+                          "ready",
+                          "disabled",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reason"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "aiParse",
+                  "searchIndex",
+                  "distributedCoordination",
+                  "requestBudgets",
+                  "offProductApi"
+                ],
+                "type": "object"
+              },
+              "distributedCacheConfigured": {
+                "type": "boolean"
+              },
+              "gatewayCacheEntries": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "inFlightRequests": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "ok": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
+              },
+              "openaiConfigured": {
+                "type": "boolean"
+              },
+              "rateLimits": {
+                "additionalProperties": false,
+                "properties": {
+                  "clientProductPerMinute": {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  "clientScoped": {
+                    "type": "boolean"
+                  },
+                  "clientSearchPerMinute": {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  "legacySearchPerMinute": {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  "productPerMinute": {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  "scope": {
+                    "enum": [
+                      "instance",
+                      "distributed"
+                    ],
+                    "type": "string"
+                  },
+                  "searchIndexPerMinute": {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "scope",
+                  "searchIndexPerMinute",
+                  "legacySearchPerMinute",
+                  "productPerMinute",
+                  "clientScoped",
+                  "clientSearchPerMinute",
+                  "clientProductPerMinute"
+                ],
+                "type": "object"
+              },
+              "ready": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
+              },
+              "searchIndexConfigured": {
+                "type": "boolean"
+              },
+              "service": {
+                "enum": [
+                  "kh-data-gateway"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "degraded"
+                ],
+                "type": "string"
+              },
+              "version": {
+                "pattern": "^\\d+\\.\\d+\\.\\d+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "service",
+              "apiVersion",
+              "version",
+              "openaiConfigured",
+              "searchIndexConfigured",
+              "distributedCacheConfigured",
+              "gatewayCacheEntries",
+              "inFlightRequests",
+              "build",
+              "capabilities",
+              "components",
+              "circuits",
+              "rateLimits",
+              "ok",
+              "ready",
+              "status",
+              "cacheBackend"
+            ],
+            "type": "object"
           },
-          "version": {
-            "pattern": "^\\d+\\.\\d+\\.\\d+$",
-            "type": "string"
+          {
+            "additionalProperties": false,
+            "properties": {
+              "apiVersion": {
+                "enum": [
+                  "1"
+                ],
+                "type": "string"
+              },
+              "build": {
+                "additionalProperties": false,
+                "properties": {
+                  "builtAt": {
+                    "format": "date-time",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "commit": {
+                    "minLength": 7,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "runtime": {
+                    "enum": [
+                      "node"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "runtime",
+                  "commit",
+                  "builtAt"
+                ],
+                "type": "object"
+              },
+              "cacheBackend": {
+                "additionalProperties": false,
+                "properties": {
+                  "connectivity": {
+                    "enum": [
+                      "unknown",
+                      "ready",
+                      "unavailable"
+                    ],
+                    "type": "string"
+                  },
+                  "degraded": {
+                    "type": "boolean"
+                  },
+                  "effective": {
+                    "enum": [
+                      "unknown",
+                      "memory",
+                      "redis"
+                    ],
+                    "type": "string"
+                  },
+                  "requested": {
+                    "enum": [
+                      "memory",
+                      "redis"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "requested",
+                  "effective",
+                  "connectivity",
+                  "degraded"
+                ],
+                "type": "object"
+              },
+              "capabilities": {
+                "additionalProperties": false,
+                "properties": {
+                  "aiParse": {
+                    "type": "boolean"
+                  },
+                  "distributedCoordination": {
+                    "type": "boolean"
+                  },
+                  "offLegacyFallback": {
+                    "type": "boolean"
+                  },
+                  "offProductV2": {
+                    "type": "boolean"
+                  },
+                  "offProductV3": {
+                    "type": "boolean"
+                  },
+                  "searchIndex": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "aiParse",
+                  "searchIndex",
+                  "offLegacyFallback",
+                  "offProductV3",
+                  "offProductV2",
+                  "distributedCoordination"
+                ],
+                "type": "object"
+              },
+              "circuits": {
+                "additionalProperties": false,
+                "properties": {
+                  "offLegacy": {
+                    "enum": [
+                      "closed",
+                      "open",
+                      "half-open"
+                    ],
+                    "type": "string"
+                  },
+                  "offProductV2": {
+                    "enum": [
+                      "closed",
+                      "open",
+                      "half-open"
+                    ],
+                    "type": "string"
+                  },
+                  "offProductV3": {
+                    "enum": [
+                      "closed",
+                      "open",
+                      "half-open"
+                    ],
+                    "type": "string"
+                  },
+                  "searchIndex": {
+                    "enum": [
+                      "closed",
+                      "open",
+                      "half-open"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "searchIndex",
+                  "offLegacy",
+                  "offProductV3",
+                  "offProductV2"
+                ],
+                "type": "object"
+              },
+              "components": {
+                "additionalProperties": false,
+                "properties": {
+                  "aiParse": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "ready",
+                          "disabled",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reason"
+                    ],
+                    "type": "object"
+                  },
+                  "distributedCoordination": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "unknown",
+                          "ready",
+                          "disabled",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reason"
+                    ],
+                    "type": "object"
+                  },
+                  "offProductApi": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "unknown",
+                          "ready",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reason"
+                    ],
+                    "type": "object"
+                  },
+                  "requestBudgets": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "ready",
+                          "disabled",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reason"
+                    ],
+                    "type": "object"
+                  },
+                  "searchIndex": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "enum": [
+                          "unknown",
+                          "ready",
+                          "disabled",
+                          "unavailable"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "reason"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "aiParse",
+                  "searchIndex",
+                  "distributedCoordination",
+                  "requestBudgets",
+                  "offProductApi"
+                ],
+                "type": "object"
+              },
+              "distributedCacheConfigured": {
+                "type": "boolean"
+              },
+              "gatewayCacheEntries": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "inFlightRequests": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "ok": {
+                "enum": [
+                  false
+                ],
+                "type": "boolean"
+              },
+              "openaiConfigured": {
+                "type": "boolean"
+              },
+              "rateLimits": {
+                "additionalProperties": false,
+                "properties": {
+                  "clientProductPerMinute": {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  "clientScoped": {
+                    "type": "boolean"
+                  },
+                  "clientSearchPerMinute": {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  "legacySearchPerMinute": {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  "productPerMinute": {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  "scope": {
+                    "enum": [
+                      "instance",
+                      "distributed"
+                    ],
+                    "type": "string"
+                  },
+                  "searchIndexPerMinute": {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "scope",
+                  "searchIndexPerMinute",
+                  "legacySearchPerMinute",
+                  "productPerMinute",
+                  "clientScoped",
+                  "clientSearchPerMinute",
+                  "clientProductPerMinute"
+                ],
+                "type": "object"
+              },
+              "ready": {
+                "enum": [
+                  false
+                ],
+                "type": "boolean"
+              },
+              "searchIndexConfigured": {
+                "type": "boolean"
+              },
+              "service": {
+                "enum": [
+                  "kh-data-gateway"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "unhealthy"
+                ],
+                "type": "string"
+              },
+              "version": {
+                "pattern": "^\\d+\\.\\d+\\.\\d+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "service",
+              "apiVersion",
+              "version",
+              "openaiConfigured",
+              "searchIndexConfigured",
+              "distributedCacheConfigured",
+              "gatewayCacheEntries",
+              "inFlightRequests",
+              "build",
+              "capabilities",
+              "components",
+              "circuits",
+              "rateLimits",
+              "ok",
+              "ready",
+              "status",
+              "cacheBackend"
+            ],
+            "type": "object"
           }
-        },
-        "required": [
-          "ok",
-          "version",
-          "openaiConfigured",
-          "gatewayCacheEntries",
-          "inFlightRequests"
-        ],
-        "type": "object"
+        ]
       },
       "OffProduct": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "brands": {
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "items": {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                "maxItems": 30,
+                "type": "array"
+              }
+            ]
           },
           "categories_tags": {
             "items": {
@@ -363,6 +2262,7 @@
             "type": "array"
           },
           "code": {
+            "pattern": "^\\d{7,14}$",
             "type": "string"
           },
           "countries_tags": {
@@ -378,73 +2278,87 @@
             "type": "array"
           },
           "generic_name": {
+            "maxLength": 500,
             "type": "string"
           },
           "generic_name_de": {
+            "maxLength": 500,
+            "type": "string"
+          },
+          "generic_name_en": {
+            "maxLength": 500,
             "type": "string"
           },
           "image_front_url": {
+            "format": "uri",
             "type": "string"
           },
           "nutriments": {
             "$ref": "#/components/schemas/SearchNutriments"
           },
           "nutrition_data_per": {
+            "maxLength": 500,
             "type": "string"
           },
           "nutrition_data_prepared_per": {
+            "maxLength": 500,
             "type": "string"
           },
           "product_name": {
+            "maxLength": 500,
             "type": "string"
           },
           "product_name_de": {
+            "maxLength": 500,
+            "type": "string"
+          },
+          "product_name_en": {
+            "maxLength": 500,
             "type": "string"
           },
           "product_quantity": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string"
-              }
-            ]
+            "type": "number"
           },
           "product_quantity_unit": {
+            "maxLength": 500,
             "type": "string"
           },
           "quantity": {
+            "maxLength": 500,
             "type": "string"
           },
           "serving_quantity": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string"
-              }
-            ]
+            "type": "number"
           },
           "serving_size": {
+            "maxLength": 500,
             "type": "string"
           }
         },
+        "required": [
+          "code"
+        ],
         "type": "object"
       },
+      "ProductApiMode": {
+        "default": "hybrid",
+        "enum": [
+          "hybrid",
+          "v3",
+          "v2"
+        ],
+        "example": "hybrid",
+        "type": "string"
+      },
       "ProductGatewayResponse": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "api_meta": {
             "$ref": "#/components/schemas/ApiResponseMeta"
           },
           "code": {
+            "pattern": "^\\d{7,14}$",
             "type": "string"
-          },
-          "errors": {
-            "items": {},
-            "type": "array"
           },
           "gateway_attempts": {
             "items": {
@@ -456,17 +2370,33 @@
             "$ref": "#/components/schemas/OffProduct"
           },
           "status": {
+            "minLength": 1,
             "type": "string"
-          },
-          "warnings": {
-            "items": {},
-            "type": "array"
           }
         },
+        "required": [
+          "status",
+          "code",
+          "product",
+          "api_meta",
+          "gateway_attempts"
+        ],
         "type": "object"
       },
+      "SearchApiMode": {
+        "default": "auto",
+        "description": "auto nutzt den eigenen Index primär und OFF Legacy nur als Reserve.",
+        "enum": [
+          "auto",
+          "search-index",
+          "search-a-licious",
+          "legacy"
+        ],
+        "example": "auto",
+        "type": "string"
+      },
       "SearchGatewayResponse": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "api_meta": {
             "$ref": "#/components/schemas/ApiResponseMeta"
@@ -474,10 +2404,6 @@
           "count": {
             "minimum": 0,
             "type": "number"
-          },
-          "errors": {
-            "items": {},
-            "type": "array"
           },
           "gateway_attempts": {
             "items": {
@@ -505,11 +2431,14 @@
             "type": "integer"
           },
           "query_used": {
+            "maxLength": 120,
+            "minLength": 1,
             "type": "string"
           },
           "source": {
             "enum": [
               "gateway",
+              "search-index",
               "search-a-licious",
               "open-food-facts-legacy",
               "none"
@@ -522,43 +2451,39 @@
           "took": {
             "minimum": 0,
             "type": "number"
-          },
-          "warnings": {
-            "items": {},
-            "type": [
-              "array",
-              "null"
-            ]
           }
         },
         "required": [
-          "hits"
+          "hits",
+          "api_meta",
+          "source",
+          "gateway_attempts",
+          "query_used"
         ],
         "type": "object"
       },
       "SearchHit": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "_score": {
             "type": "number"
           },
-          "api_meta": {
-            "$ref": "#/components/schemas/ApiResponseMeta"
-          },
           "brands": {
             "anyOf": [
               {
+                "maxLength": 500,
                 "type": "string"
               },
               {
                 "items": {
+                  "maxLength": 120,
                   "type": "string"
                 },
+                "maxItems": 30,
                 "type": "array"
               }
             ]
           },
-          "categories": {},
           "categories_tags": {
             "items": {
               "type": "string"
@@ -566,12 +2491,12 @@
             "type": "array"
           },
           "code": {
+            "pattern": "^\\d{7,14}$",
             "type": "string"
           },
           "completeness": {
             "type": "number"
           },
-          "countries": {},
           "countries_tags": {
             "items": {
               "type": "string"
@@ -585,101 +2510,100 @@
             "type": "array"
           },
           "generic_name": {
+            "maxLength": 500,
             "type": "string"
           },
           "generic_name_de": {
+            "maxLength": 500,
             "type": "string"
           },
           "generic_name_en": {
+            "maxLength": 500,
             "type": "string"
           },
           "image_front_url": {
-            "type": "string"
-          },
-          "image_url": {
+            "format": "uri",
             "type": "string"
           },
           "nutriments": {
             "$ref": "#/components/schemas/SearchNutriments"
           },
           "nutrition_data_per": {
+            "maxLength": 500,
             "type": "string"
           },
           "nutrition_data_prepared_per": {
+            "maxLength": 500,
             "type": "string"
           },
           "product_name": {
+            "maxLength": 500,
             "type": "string"
           },
           "product_name_de": {
+            "maxLength": 500,
             "type": "string"
           },
           "product_name_en": {
+            "maxLength": 500,
             "type": "string"
           },
           "product_quantity": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string"
-              }
-            ]
+            "type": "number"
           },
           "product_quantity_unit": {
+            "maxLength": 500,
             "type": "string"
           },
           "quantity": {
+            "maxLength": 500,
             "type": "string"
           },
           "serving_quantity": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string"
-              }
-            ]
+            "type": "number"
           },
           "serving_size": {
+            "maxLength": 500,
             "type": "string"
           },
           "unique_scans_n": {
             "type": "number"
           }
         },
+        "required": [
+          "code"
+        ],
         "type": "object"
       },
       "SearchNutriments": {
-        "additionalProperties": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "string"
-            }
-          ]
-        },
+        "additionalProperties": false,
         "properties": {
           "carbohydrates_100g": {
+            "maximum": 100,
+            "minimum": 0,
             "type": "number"
           },
           "carbohydrates_100ml": {
+            "maximum": 200,
+            "minimum": 0,
             "type": "number"
           },
           "carbohydrates_prepared_100g": {
+            "maximum": 100,
+            "minimum": 0,
             "type": "number"
           },
           "carbohydrates_prepared_100ml": {
+            "maximum": 200,
+            "minimum": 0,
             "type": "number"
           },
           "carbohydrates_prepared_serving": {
+            "minimum": 0,
             "type": "number"
           },
           "carbohydrates_serving": {
+            "minimum": 0,
             "type": "number"
           }
         },
@@ -688,14 +2612,14 @@
     }
   },
   "info": {
-    "description": "Generatorvertrag für das optionale Gateway. Die statische GitHub-Pages-PWA bleibt ohne eigenen Server nutzbar; Cache-, Fallback-, Deduplizierungs-, Einheiten-, Kalibrierungs- und Berechnungslogik verbleibt im Projektcode.",
-    "title": "KH Checker optional gateway API",
+    "description": "Kanonischer Vertrag des versionierten Daten-Gateways. Die statische PWA bleibt für manuelle und lokale Funktionen ohne Gateway nutzbar; globale Suche läuft ausschließlich über diese API.",
+    "title": "KH Checker data gateway API",
     "version": "2.2.4"
   },
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "openapi": "3.1.0",
   "paths": {
-    "/api/ai/parse": {
+    "/api/v1/ai/parse": {
       "post": {
         "operationId": "parseFoodRequest",
         "requestBody": {
@@ -729,6 +2653,16 @@
             },
             "description": "Ungültige Anfrage"
           },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "JSON-Request überschreitet das Gateway-Größenlimit"
+          },
           "429": {
             "content": {
               "application/json": {
@@ -746,6 +2680,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unerwarteter interner Gateway-Fehler"
           },
           "502": {
             "content": {
@@ -774,6 +2718,16 @@
                 }
               }
             }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Die absolute Gateway-Deadline wurde überschritten"
           }
         },
         "summary": "Mehrdeutige Nutzereingabe optional strukturieren",
@@ -782,7 +2736,7 @@
         ]
       }
     },
-    "/api/health": {
+    "/api/v1/health": {
       "get": {
         "operationId": "gatewayHealth",
         "responses": {
@@ -794,16 +2748,26 @@
                 }
               }
             },
-            "description": "Gateway ist erreichbar"
+            "description": "Gateway ist bereit oder kontrolliert degradiert"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Gateway-Prozess lebt, ist aber nicht bereit"
           }
         },
-        "summary": "Status des optionalen Gateways lesen",
+        "summary": "Status und Capabilities des Daten-Gateways lesen",
         "tags": [
           "health"
         ]
       }
     },
-    "/api/product/{code}": {
+    "/api/v1/product/{code}": {
       "get": {
         "operationId": "productByBarcode",
         "parameters": [
@@ -812,8 +2776,8 @@
             "name": "code",
             "required": true,
             "schema": {
-              "example": "4000417025005",
-              "pattern": "^\\d{8,14}$",
+              "example": "1234567",
+              "pattern": "^\\d{7,14}$",
               "type": "string"
             }
           },
@@ -822,11 +2786,21 @@
             "name": "known_carbs",
             "required": false,
             "schema": {
+              "default": "0",
               "enum": [
+                "0",
                 "1"
               ],
               "example": "1",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "product_api",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ProductApiMode"
             }
           }
         ],
@@ -861,6 +2835,16 @@
             },
             "description": "Kein Produkt für diesen Barcode"
           },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "JSON-Request überschreitet das Gateway-Größenlimit"
+          },
           "429": {
             "content": {
               "application/json": {
@@ -878,6 +2862,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unerwarteter interner Gateway-Fehler"
           },
           "502": {
             "content": {
@@ -906,6 +2900,16 @@
                 }
               }
             }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Die absolute Gateway-Deadline wurde überschritten"
           }
         },
         "summary": "Nur das ausgewählte Produkt hydratisieren",
@@ -914,7 +2918,7 @@
         ]
       }
     },
-    "/api/search": {
+    "/api/v1/search": {
       "get": {
         "operationId": "searchProducts",
         "parameters": [
@@ -926,6 +2930,7 @@
               "example": "BiFi",
               "maxLength": 120,
               "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             }
           },
@@ -939,6 +2944,15 @@
               "maximum": 20,
               "minimum": 1,
               "type": "integer"
+            }
+          },
+          {
+            "description": "auto nutzt den eigenen Index primär und OFF Legacy nur als Reserve.",
+            "in": "query",
+            "name": "search_api",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/SearchApiMode"
             }
           }
         ],
@@ -963,6 +2977,16 @@
             },
             "description": "Ungültige Anfrage"
           },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "JSON-Request überschreitet das Gateway-Größenlimit"
+          },
           "429": {
             "content": {
               "application/json": {
@@ -980,6 +3004,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Unerwarteter interner Gateway-Fehler"
           },
           "502": {
             "content": {
@@ -1008,6 +3042,16 @@
                 }
               }
             }
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "Die absolute Gateway-Deadline wurde überschritten"
           }
         },
         "summary": "Produkte über das explizit konfigurierte Gateway suchen",
@@ -1048,10 +3092,20 @@
   ],
   "webhooks": {},
   "x-kh-generator": {
-    "appOnlyRelease": true,
     "appVersion": "2.2.4",
     "authoritativeSource": "contracts/source/search-api.contract.mjs",
-    "customServerRequired": false,
+    "browserUpstreamPolicy": "gateway-only",
+    "deploymentMode": "full-stack",
+    "gatewayApiVersion": "1",
+    "gatewayOptionalForManualAndOfflineUse": true,
+    "gatewayRequiredForGlobalSearch": true,
+    "gatewayRuntime": "node",
+    "legacyCompatibilityAliases": {
+      "/api/ai/parse": "/api/v1/ai/parse",
+      "/api/health": "/api/v1/health",
+      "/api/product/{code}": "/api/v1/product/{code}",
+      "/api/search": "/api/v1/search"
+    },
     "localCooldownAllowed": false,
     "maximumDirectSearchBackendsPerAction": 2,
     "productHydrationFanOutAllowed": false,

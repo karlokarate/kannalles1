@@ -1,7 +1,6 @@
 export type ApiBucket = 'search' | 'product';
 
 interface BucketConfig {
-  limit: number;
   windowMs: number;
   label: string;
 }
@@ -19,8 +18,6 @@ interface GovernorState {
 
 export interface ApiUsageBucketSnapshot {
   used: number;
-  limit: number;
-  remaining: number;
   windowMs: number;
   retryAfterMs: number;
   lastStatus: number | null;
@@ -35,11 +32,12 @@ export interface ApiUsageSnapshot {
 
 const STORAGE_KEY = 'kh-checker-v2.2-api-telemetry';
 
-// Official OFF read limits. v2.2 records these values for transparency but
-// never turns them into a local lock or disables a user control.
+// This is intentionally an observation window, not a claimed quota. The
+// gateway may be deployed with different per-client budgets and owns all
+// Search-a-licious/OFF limits.
 const CONFIG: Record<ApiBucket, BucketConfig> = {
-  search: { limit: 10, windowMs: 60_000, label: 'Produktsuche' },
-  product: { limit: 15, windowMs: 60_000, label: 'Produktdetails' }
+  search: { windowMs: 60_000, label: 'Produktsuche' },
+  product: { windowMs: 60_000, label: 'Produktdetails' }
 };
 
 const emptyBucket = (): BucketState => ({ timestamps: [], lastStatus: null, lastRetryAt: 0 });
@@ -139,13 +137,12 @@ export function parseRetryAfter(value: string | null, now = Date.now()): number 
 function snapshotBucket(bucket: ApiBucket, now: number): ApiUsageBucketSnapshot {
   const state = readState();
   const current = prune(bucket, state[bucket], now);
-  state[bucket] = current;
-  writeState(state);
+  // A read-only diagnostics render must not create local persistence before
+  // the user has opted into API caching/telemetry.
+  memoryState = { ...state, [bucket]: current };
   const config = CONFIG[bucket];
   return {
     used: current.timestamps.length,
-    limit: config.limit,
-    remaining: Math.max(0, config.limit - current.timestamps.length),
     windowMs: config.windowMs,
     retryAfterMs: Math.max(0, current.lastRetryAt - now),
     lastStatus: current.lastStatus,

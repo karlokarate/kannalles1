@@ -1,6 +1,6 @@
 {
   "contract": "kh-checker-search-execution",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "input": {
     "rawInput": "string",
     "canonicalQuery": "string",
@@ -28,7 +28,9 @@
       "order": 2,
       "step": "query_cache",
       "rules": [
-        "use_backend_independent_canonical_key",
+        "browser_cache_key_includes_configured_gateway_identity",
+        "gateway_cache_key_includes_effective_upstream_backend_identity",
+        "accept_only_contract_valid_gateway_responses",
         "return_fresh_hit_without_network"
       ]
     },
@@ -36,16 +38,17 @@
       "order": 3,
       "step": "primary_search",
       "rules": [
-        "browser_static_runtime_uses_browser_compatible_backend_first",
-        "configured_gateway_may_use_search_a_licious_first"
+        "browser_calls_only_the_configured_versioned_gateway",
+        "browser_never_calls_open_food_facts_or_search_a_licious_directly",
+        "gateway_uses_the_configured_own_search_index_first"
       ]
     },
     {
       "order": 4,
       "step": "single_fallback",
       "rules": [
-        "only_if_primary_failed_or_returned_zero_hits",
-        "maximum_total_search_requests_per_action_is_two"
+        "gateway_falls_back_to_open_food_facts_only_if_own_index_failed_or_returned_zero_hits",
+        "maximum_total_upstream_search_requests_per_gateway_action_is_two"
       ]
     },
     {
@@ -74,8 +77,13 @@
     "no_source_and_no_cache": "temporarily_unavailable"
   },
   "networkBudgets": {
+    "browserGatewayRequestsPerAction": {
+      "maximum": 1,
+      "hardLocalLock": false
+    },
     "searchRequestsPerAction": {
       "maximum": 2,
+      "scope": "gateway_upstream_requests",
       "hardLocalLock": false
     },
     "selectedProductDetailRequests": {

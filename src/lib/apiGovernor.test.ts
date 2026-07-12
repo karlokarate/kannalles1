@@ -19,8 +19,8 @@ describe('non-blocking API telemetry', () => {
 
     const snapshot = getApiUsageSnapshot(start + 1_200);
     expect(snapshot.search.used).toBe(12);
-    expect(snapshot.search.limit).toBe(10);
-    expect(snapshot.search.remaining).toBe(0);
+    expect(snapshot.search).not.toHaveProperty('limit');
+    expect(snapshot.search).not.toHaveProperty('remaining');
     expect(snapshot.search.blocking).toBe(false);
 
     expect(() => recordApiRequest('search', start + 1_300)).not.toThrow();

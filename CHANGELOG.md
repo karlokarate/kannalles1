@@ -2,64 +2,30 @@
 
 ## 2.2.4
 
-### Reproduzierbarer Pages-Build
+### Zielarchitektur und API
 
-- kombinierter Source-/Release-ZIP-Workflow mit strikter automatischer Moduserkennung
-- Build/Validierung ohne Pages-Schreibrecht, separater OIDC-Deploy-Job
-- Version aus `package.json` für App, Server, Workbox und Release-Namen
-- `OFF_USER_AGENT` aus dem statischen Frontend-Build entfernt
-- statische AI- und Gateway-Endpunkte standardmäßig leer; optionale URLs über öffentliche Repository-Variablen
+- statische, installierbare PWA plus vendor-neutraler Node-Gateway; globale Suche benötigt das Gateway, manuelle und lokal gespeicherte Funktionen nicht
+- Browserdaten-API strikt Gateway-only; eigener Search-a-licious-/OFF-Export-Index primär, OFF Legacy kontrollierte Auto-Reserve, öffentliche Search-a-licious-Instanz nur explizite Diagnose
+- URL-versionierte `/api/v1`-Routen mit generiertem OpenAPI-/Orval-/Zod-Vertrag, strukturierten Fehlern und diagnostizierbarem Health-503
+- OFF Produkt v3.6 primär und v2 nur zur gezielten Ergänzung weiterhin fehlender Produktdaten
+- physisch getrennte Redis-Rollen: Limits/Single-Flight/Circuits fail-closed mit `noeviction`, Antwortcache fail-soft mit `allkeys-lru`; gleiche Production-Keyspaces werden abgelehnt
 
-### PWA- und Paket-Härtung
+### Reproduzierbarer Betrieb
 
-- Apple-Touch-Icon verbindlich im Precache
-- `navigateFallbackDenylist` und `purgeOnQuotaError` verbindlich geprüft
-- CSP- und Referrer-Metadaten für GitHub Pages
-- deploybares Komplett-ZIP ohne eingebetteten Quellcode oder weitere ZIP-Dateien
-- separates Entwickler-Quellcode-ZIP und Repo-Integrationspaket
-- sichere ZIP-Extraktion, Symlink-/Traversal-/Quellcode-/Secret-Prüfung und vollständige SHA-256-Verifikation
+- portable Docker-/Compose-Auslieferung ohne Vercel-Konfiguration oder Serverless-Wrapper; CI validiert Compose, baut das Runtime-Image und verlangt einen gesunden gestarteten Gateway-Container
+- gepinnter offizieller Search-a-licious-Commit mit tatsächlich verwendeten Tag-und-Digest-Images, versioniertem Länderfeld-Patch, Commit- und SHA-256-Preflight; ARM64-Buildgrenze dokumentiert
+- Pages-Workflow baut ausschließlich aktuellen Source; `main` verlangt das Profil `full-app` inklusive HTTPS-Gateway, Redis-/Index-Readiness und echter Such-Canary, PR/lokal ist explizit `manual-only`
+- Search-a-licious verwendet einen eigenen Eventstream-Redis; der Updater liegt hinter dem Profil `search-updates` und setzt einen realen Product-Opener-Producer voraus
+- sichere, reproduzierbare Release- und Quellcode-ZIPs mit vollständiger SHA-256-Verifikation; keine alten Binärartefakte als Fallback
+- gepinnter Gitleaks-Scan mit enger Ausnahme ausschließlich für generierte Manifest-Digests
+- sämtliche GitHub Actions auf volle Commit-SHAs gepinnt; Dependabot pflegt Actions-, npm- und Docker-Updates über prüfbare Pull Requests
 
-### Browser- und UX-Gates
+### Browser, UX und Datenschutz
 
-- Playwright-Tests für Desktop und mobilen Viewport
-- axe-core Accessibility-Smoke
-- deterministische manuelle KH-Berechnung ohne Netzwerk
-- Suchbutton bleibt während laufender Anfrage sofort erneut bedienbar
-- mobile Breiten- und Hauptnavigation-Prüfung
-
-## 2.2.4
-
-### Pages-first-PWA
-
-- GitHub Pages wieder als statischer Hauptbetrieb ohne erforderlichen Node- oder Gateway-Server
-- automatische Same-Origin-Gateway-Erkennung und `/api/health`-Probe entfernt
-- Search-a-licious in jeder HTTP(S)-PWA-Laufzeit als primäre Volltextsuche
-- OFF Legacy Search genau einmal nach technischem Primärfehler oder gültiger Null-Treffer-Antwort
-- manuell konfigurierte Gateway-URL bleibt als optionale Kompatibilität erhalten
-
-### Contract- und Cache-Fixes
-
-- maximal zwei Suchbackends pro Benutzeraktion
-- Fresh Canonical Cache vor Netzwerk und backend-unabhängige Query-Deduplizierung
-- Stale URL-Cache darf einen erforderlichen zweiten Backend-Versuch nicht mehr abbrechen
-- Stale Canonical Cache erst nach Scheitern beider öffentlichen Suchquellen
-- zwei erreichbare Null-Treffer-Antworten werden als typisierter, kurz gecachter Leerzustand geliefert
-- Primärfehler bleibt in der Diagnose erhalten, wenn Legacy einen Treffer liefert
-- sofortiger manueller Retry ohne lokalen Cooldown oder Request-Zähler
-
-### Produkt und Diagnose
-
-- ausgewählter Suchtreffer liefert Nährwert-Seed für die Barcode-Hydrierung
-- OFF v2 nur, wenn Seed plus v3.6 weiterhin keine Kohlenhydratdaten enthalten
-- Such- und Produktdetailversuche bleiben gemeinsam sichtbar
-- optionale Server-Suche folgt derselben Null-Treffer-Fallback-Regel wie der Client
-
-### Release und Qualität
-
-- Komplett-ZIP mit `index.html` direkt am ZIP-Stamm für den vorhandenen Pages-Workflow
-- relative App-, Manifest-, Service-Worker- und Icon-Pfade für GitHub-Pages-Unterpfade
-- neuer `npm run check:pages` prüft Pflichtdateien, Unterpfade, Scope, Start-URL und Icons
-- 67 automatisierte Tests plus TypeScript, Biome, Server-Syntax und PWA-Produktionsbuild
+- Pflichtprojekte Chromium Desktop/Android, Firefox Desktop und WebKit/iPhone sowie Offline-/Service-Worker-, History-, 320-px-, große-Schrift- und axe-WCAG-Smokes
+- deterministische manuelle Berechnung, Gruppenwägung, Kalibrierung, sofortiger Retry sowie getrennte lokale Daten-/Löschgrenzen
+- Suchbegriffe, Barcodes und Produktdaten nur zum Gateway; transparenter Hinweis, dass Produktbilder derzeit direkt vom OFF-CDN geladen werden und nur gecachte Assets/Daten offline vorliegen
+- strukturierte, sicher bereinigte Fehlerdiagnose ohne Offenlegung interner Stackdetails
 
 ## 2.2.1
 

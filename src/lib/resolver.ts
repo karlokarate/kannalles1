@@ -20,6 +20,16 @@ import {
 import type { PreparationState } from './preparation';
 import { candidateIdentityScore, genericIdentityCompatible, isGenericCategoryQuery } from './identity';
 import type { BaseFoodReference } from './baseFoods';
+import { isValidCarbohydratesPer100 } from './nutrition';
+import {
+  isPlausibleFoodAmount,
+  isPlausibleTotalMass,
+  isPlausibleTotalVolume,
+  isPlausibleUnitWeightForUnit,
+  MAX_TOTAL_MASS_G,
+  MAX_TOTAL_VOLUME_ML,
+  MAX_UNIT_WEIGHT_G
+} from './domainLimits';
 
 interface CarbValue {
   value: number | null;
@@ -34,6 +44,152 @@ interface PreparationMatch {
   label: string | null;
 }
 
+const MAX_PACKAGE_WEIGHT_G = MAX_TOTAL_MASS_G;
+const MAX_PACKAGE_VOLUME_ML = MAX_TOTAL_VOLUME_ML;
+const MAX_SERVING_WEIGHT_G = 10_000;
+const MAX_SERVING_VOLUME_ML = 10_000;
+
+type MeasureDimension = 'mass' | 'volume';
+
+interface DimensionedMeasure {
+  dimension: MeasureDimension;
+  /** Grams for mass and millilitres for volume. */
+  amount: number;
+}
+
+interface MultipackMeasure extends DimensionedMeasure {
+  count: number;
+  perUnitAmount: number;
+}
+
+const MEASURE_UNIT_PATTERN = 'mg|kg|ml|cl|g|l';
+
+function convertMeasure(
+  rawValue: unknown,
+  rawUnit: unknown,
+  maximumMassG = MAX_PACKAGE_WEIGHT_G,
+  maximumVolumeMl = MAX_PACKAGE_VOLUME_ML
+): DimensionedMeasure | null {
+  const value = numberOrNull(rawValue);
+  if (value === null || value <= 0) return null;
+  const unit = typeof rawUnit === 'string' ? rawUnit.trim().toLowerCase().replace(/\.$/, '') : '';
+  const converted: DimensionedMeasure | null = unit === 'mg'
+    ? { dimension: 'mass', amount: value / 1_000 }
+    : unit === 'g'
+      ? { dimension: 'mass', amount: value }
+      : unit === 'kg'
+        ? { dimension: 'mass', amount: value * 1_000 }
+        : unit === 'ml'
+          ? { dimension: 'volume', amount: value }
+          : unit === 'cl'
+            ? { dimension: 'volume', amount: value * 10 }
+            : unit === 'l'
+              ? { dimension: 'volume', amount: value * 1_000 }
+              : null;
+  if (!converted || !Number.isFinite(converted.amount) || converted.amount <= 0) return null;
+  const maximum = converted.dimension === 'mass' ? maximumMassG : maximumVolumeMl;
+  return converted.amount <= maximum ? converted : null;
+}
+
+function parseMultipackMeasure(
+  textValue: string | undefined,
+  maximumMassG = MAX_PACKAGE_WEIGHT_G,
+  maximumVolumeMl = MAX_PACKAGE_VOLUME_ML
+): MultipackMeasure | null {
+  if (!textValue) return null;
+  const patterns = [
+    new RegExp(`(?:^|\\s|\\()([1-9]\\d*)\\s*[x×]\\s*(\\d+(?:[.,]\\d+)?)\\s*(${MEASURE_UNIT_PATTERN})\\b`, 'i'),
+    new RegExp(`(?:^|\\s|\\()([1-9]\\d*)\\s*(?:stuck|stueck|pieces?|pcs|units?|sticks?|salzstangen?|salzsticks?|riegel|bars?|scheiben?|slices?)\\s*(?:à|a|je)\\s*(\\d+(?:[.,]\\d+)?)\\s*(${MEASURE_UNIT_PATTERN})\\b`, 'i')
+  ];
+  const match = patterns.map((pattern) => textValue.match(pattern)).find(Boolean);
+  if (!match) return null;
+  const count = Number(match[1]);
+  if (!Number.isInteger(count) || count <= 0 || count > 500) return null;
+  const perUnit = convertMeasure(match[2], match[3], maximumMassG, maximumVolumeMl);
+  if (!perUnit) return null;
+  const total = perUnit.amount * count;
+  const maximum = perUnit.dimension === 'mass' ? maximumMassG : maximumVolumeMl;
+  if (!Number.isFinite(total) || total <= 0 || total > maximum) return null;
+  return { dimension: perUnit.dimension, amount: total, count, perUnitAmount: perUnit.amount };
+}
+
+function parseDimensionedMeasure(
+  textValue: string | undefined,
+  maximumMassG = MAX_PACKAGE_WEIGHT_G,
+  maximumVolumeMl = MAX_PACKAGE_VOLUME_ML
+): DimensionedMeasure | null {
+  if (!textValue) return null;
+  const matches = [...textValue.matchAll(new RegExp(`(\\d+(?:[.,]\\d+)?)\\s*(${MEASURE_UNIT_PATTERN})\\b`, 'gi'))];
+  if (!matches.length) return null;
+  const measures = matches.map((match) => convertMeasure(match[1], match[2], maximumMassG, maximumVolumeMl));
+  if (measures.some((measure) => measure === null)) return null;
+  const valid = measures as DimensionedMeasure[];
+  if (new Set(valid.map((measure) => measure.dimension)).size !== 1) return null;
+
+  const multipack = parseMultipackMeasure(textValue, maximumMassG, maximumVolumeMl);
+  const equality = textValue.match(new RegExp(`=\\s*(\\d+(?:[.,]\\d+)?)\\s*(${MEASURE_UNIT_PATTERN})\\b`, 'i'));
+  const equalityMeasure = equality
+    ? convertMeasure(equality[1], equality[2], maximumMassG, maximumVolumeMl)
+    : null;
+  if (equality && !equalityMeasure) return null;
+  if (multipack && equalityMeasure && (
+    multipack.dimension !== equalityMeasure.dimension
+    || !nearlyEqual(multipack.amount, equalityMeasure.amount, 0.02, 0.05)
+  )) return null;
+  if (equalityMeasure) return equalityMeasure;
+  if (multipack) return multipack;
+
+  const first = valid[0];
+  if (valid.some((measure) => !nearlyEqual(measure.amount, first.amount, 0.02, 0.05))) return null;
+  return first;
+}
+
+function reconcileMeasures(
+  structured: DimensionedMeasure | null,
+  textual: DimensionedMeasure | null
+): DimensionedMeasure | null {
+  if (!structured) return textual;
+  if (!textual) return structured;
+  if (structured.dimension !== textual.dimension
+    || !nearlyEqual(structured.amount, textual.amount, 0.04, 0.1)) return null;
+  return structured;
+}
+
+function dimensionedServingMeasure(value: Pick<SearchHit, 'serving_size' | 'serving_quantity'>): DimensionedMeasure | null {
+  const textual = parseDimensionedMeasure(
+    value.serving_size,
+    MAX_SERVING_WEIGHT_G,
+    MAX_SERVING_VOLUME_ML
+  );
+  if (!textual) return null;
+  const normalizedQuantity = numberOrNull(value.serving_quantity);
+  if (normalizedQuantity !== null) {
+    if (normalizedQuantity <= 0 || !nearlyEqual(normalizedQuantity, textual.amount, 0.005, 0.01)) {
+      return null;
+    }
+  }
+  return textual;
+}
+
+function combinedServingMeasure(product: OffProduct | undefined, hit: SearchHit): DimensionedMeasure | null {
+  const productMeasure = product ? dimensionedServingMeasure(product) : null;
+  const hitMeasure = dimensionedServingMeasure(hit);
+  return reconcileMeasures(productMeasure, hitMeasure);
+}
+
+function structuredPackageMeasure(value: Pick<SearchHit, 'product_quantity' | 'product_quantity_unit'>): DimensionedMeasure | null {
+  if (value.product_quantity === undefined || !value.product_quantity_unit) return null;
+  return convertMeasure(value.product_quantity, value.product_quantity_unit);
+}
+
+function packageMeasure(product: OffProduct | undefined, hit: SearchHit): DimensionedMeasure | null {
+  const structured = product && product.product_quantity !== undefined && product.product_quantity_unit
+    ? structuredPackageMeasure(product)
+    : structuredPackageMeasure(hit);
+  const textual = parseDimensionedMeasure(product?.quantity ?? hit.quantity);
+  return reconcileMeasures(structured, textual);
+}
+
 
 function numberOrNull(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -42,6 +198,10 @@ function numberOrNull(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+function nutrientValue(value: unknown, basis: '100g' | '100ml'): number | null {
+  return isValidCarbohydratesPer100(value, basis) ? value : null;
 }
 
 function nearlyEqual(a: number, b: number, relativeTolerance = 0.08, absoluteTolerance = 0.35): boolean {
@@ -69,18 +229,63 @@ function identityText(hit: SearchHit): string {
   ].filter(Boolean).join(' '));
 }
 
-function rawCarbsPer100(hit: SearchHit): CarbValue {
-  const per100g = numberOrNull(hit.nutriments?.carbohydrates_100g);
-  if (per100g !== null) return { value: per100g, basis: '100g', prepared: false };
-  const per100ml = numberOrNull(hit.nutriments?.carbohydrates_100ml);
-  return { value: per100ml, basis: '100ml', prepared: false };
+function declaredNutritionBasis(hit: SearchHit, prepared: boolean): '100g' | '100ml' | null {
+  const declared = normalizeText(prepared ? hit.nutrition_data_prepared_per : hit.nutrition_data_per)
+    .replace(/\s+/g, '');
+  if (declared.includes('100ml')) return '100ml';
+  if (declared.includes('100g')) return '100g';
+  return null;
 }
 
-function preparedCarbsPer100(hit: SearchHit): CarbValue {
-  const prepared100g = numberOrNull(hit.nutriments?.carbohydrates_prepared_100g);
-  if (prepared100g !== null) return { value: prepared100g, basis: '100g', prepared: true };
-  const prepared100ml = numberOrNull(hit.nutriments?.carbohydrates_prepared_100ml);
-  return { value: prepared100ml, basis: '100ml', prepared: true };
+function selectCarbValue(
+  hit: SearchHit,
+  prepared: boolean,
+  preferredBasis: '100g' | '100ml' | null
+): CarbValue {
+  let per100g = nutrientValue(
+    prepared ? hit.nutriments?.carbohydrates_prepared_100g : hit.nutriments?.carbohydrates_100g,
+    '100g'
+  );
+  let per100ml = nutrientValue(
+    prepared ? hit.nutriments?.carbohydrates_prepared_100ml : hit.nutriments?.carbohydrates_100ml,
+    '100ml'
+  );
+  const servingValue = numberOrNull(
+    prepared ? hit.nutriments?.carbohydrates_prepared_serving : hit.nutriments?.carbohydrates_serving
+  );
+  const serving = dimensionedServingMeasure(hit);
+  if (servingValue !== null && servingValue >= 0 && serving) {
+    const derived = servingValue * 100 / serving.amount;
+    if (serving.dimension === 'mass' && per100g === null && isValidCarbohydratesPer100(derived, '100g')) {
+      per100g = derived;
+    }
+    if (serving.dimension === 'volume' && per100ml === null && isValidCarbohydratesPer100(derived, '100ml')) {
+      per100ml = derived;
+    }
+  }
+  const declared = declaredNutritionBasis(hit, prepared);
+  const basis = preferredBasis && (preferredBasis === '100g' ? per100g !== null : per100ml !== null)
+    ? preferredBasis
+    : declared && (declared === '100g' ? per100g !== null : per100ml !== null)
+      ? declared
+      : per100g !== null && per100ml === null
+        ? '100g'
+        : per100ml !== null && per100g === null
+          ? '100ml'
+          : preferredBasis ?? declared ?? '100g';
+  return {
+    value: basis === '100g' ? per100g : per100ml,
+    basis,
+    prepared
+  };
+}
+
+function rawCarbsPer100(hit: SearchHit, preferredBasis: '100g' | '100ml' | null = null): CarbValue {
+  return selectCarbValue(hit, false, preferredBasis);
+}
+
+function preparedCarbsPer100(hit: SearchHit, preferredBasis: '100g' | '100ml' | null = null): CarbValue {
+  return selectCarbValue(hit, true, preferredBasis);
 }
 
 function preparationFlags(hit: SearchHit) {
@@ -100,11 +305,11 @@ function baseFoodCompatible(query: string, hit: SearchHit): boolean {
   return isPlainBaseFoodText(query, identityText(hit));
 }
 
-function carbsPer100(hit: SearchHit, query = ''): CarbValue {
+function carbsPer100(hit: SearchHit, query = '', preferredBasis: '100g' | '100ml' | null = null): CarbValue {
   const intent = getPreparationIntent(query);
   const flags = preparationFlags(hit);
-  const prepared = preparedCarbsPer100(hit);
-  const raw = rawCarbsPer100(hit);
+  const prepared = preparedCarbsPer100(hit, preferredBasis);
+  const raw = rawCarbsPer100(hit, preferredBasis);
   const profile = intent.profile;
 
   if (!baseFoodCompatible(query, hit)) return { value: null, basis: raw.basis, prepared: false };
@@ -133,10 +338,28 @@ function carbsPer100(hit: SearchHit, query = ''): CarbValue {
   return raw;
 }
 
-function preparationCompatibility(query: string, hit: SearchHit): PreparationMatch {
+/** Safe presentation projection backed by the same sold/prepared logic as calculation. */
+export function displayCarbohydrateValue(
+  hit: SearchHit,
+  query = '',
+  requestedUnit?: FoodUnit
+): CarbValue {
+  const preferredBasis = requestedUnit === 'ml'
+    ? '100ml'
+    : requestedUnit === 'g' || requestedUnit === 'kg'
+      ? '100g'
+      : null;
+  return carbsPer100(hit, query, preferredBasis);
+}
+
+function preparationCompatibility(
+  query: string,
+  hit: SearchHit,
+  preferredBasis: '100g' | '100ml' | null = null
+): PreparationMatch {
   const intent = getPreparationIntent(query);
   if (!intent.state) return { requested: null, compatible: true, explicitEvidence: false, label: null };
-  const selected = carbsPer100(hit, query);
+  const selected = carbsPer100(hit, query, preferredBasis);
   const flags = preparationFlags(hit);
   const explicitEvidence = selected.prepared
     || ((intent.state === 'cooked' || intent.state === 'prepared') && flags.cookedText)
@@ -152,9 +375,14 @@ function germanyRelated(hit: SearchHit): boolean {
 }
 
 
-function scoreHit(query: string, hit: SearchHit, preferGermanMarket: boolean): number {
-  const carb = carbsPer100(hit, query).value;
-  const preparation = preparationCompatibility(query, hit);
+function scoreHit(
+  query: string,
+  hit: SearchHit,
+  preferGermanMarket: boolean,
+  preferredBasis: '100g' | '100ml' | null = null
+): number {
+  const carb = carbsPer100(hit, query, preferredBasis).value;
+  const preparation = preparationCompatibility(query, hit, preferredBasis);
   let score = candidateIdentityScore(query, hit);
 
   if (preferGermanMarket && germanyRelated(hit)) score += 12;
@@ -186,6 +414,7 @@ export function shouldResolveAsExactProduct(query: string, hits: SearchHit[]): b
 
 export interface GenericResolution {
   hits: SearchHit[];
+  sampleSize: number;
   median: number | null;
   basis: '100g' | '100ml';
   middleRange: { from: number; to: number } | null;
@@ -211,19 +440,25 @@ function median(values: number[]): number {
   return ordered.length % 2 ? ordered[middle] : (ordered[middle - 1] + ordered[middle]) / 2;
 }
 
-export function resolveGenericCandidates(query: string, hits: SearchHit[], preferGermanMarket: boolean): GenericResolution {
+export function resolveGenericCandidates(
+  query: string,
+  hits: SearchHit[],
+  preferGermanMarket: boolean,
+  requestedUnit?: FoodUnit
+): GenericResolution {
   const preparationIntent = getPreparationIntent(query);
   const requestedPreparation = preparationIntent.state;
+  const preferredBasis = requestedUnit === 'ml' ? '100ml' : requestedUnit === 'g' || requestedUnit === 'kg' ? '100g' : null;
   const ranked = hits
-    .map((hit) => ({ hit, score: scoreHit(query, hit, preferGermanMarket) }))
+    .map((hit) => ({ hit, score: scoreHit(query, hit, preferGermanMarket, preferredBasis) }))
     .filter(({ hit, score }) => {
-      const carb = carbsPer100(hit, query).value;
-      if (carb === null || carb < 0 || carb > 100) return false;
+      const carb = carbsPer100(hit, query, preferredBasis).value;
+      if (carb === null) return false;
       if ((hit.completeness ?? 0) < 0.3) return false;
       if (score < (requestedPreparation ? 120 : 350)) return false;
       if (!genericIdentityCompatible(query, hit)) return false;
       if (!baseFoodCompatible(query, hit)) return false;
-      if (!preparationCompatibility(query, hit).compatible) return false;
+      if (!preparationCompatibility(query, hit, preferredBasis).compatible) return false;
       return true;
     })
     .sort((a, b) => b.score - a.score);
@@ -233,7 +468,7 @@ export function resolveGenericCandidates(query: string, hits: SearchHit[], prefe
   const deduplicated: SearchHit[] = [];
   const seen = new Set<string>();
   for (const { hit } of pool) {
-    const carb = carbsPer100(hit, query).value;
+    const carb = carbsPer100(hit, query, preferredBasis).value;
     const brand = normalizeText(displayBrand(hit.brands) ?? displayProductName(hit));
     const key = `${brand}|${carb?.toFixed(1)}`;
     if (seen.has(key)) continue;
@@ -242,14 +477,14 @@ export function resolveGenericCandidates(query: string, hits: SearchHit[], prefe
     if (deduplicated.length >= 12) break;
   }
 
-  const carbItems = deduplicated.map((hit) => carbsPer100(hit, query));
+  const carbItems = deduplicated.map((hit) => carbsPer100(hit, query, preferredBasis));
   const bases = carbItems.map((item) => item.basis);
   const basis: '100g' | '100ml' = bases.filter((item) => item === '100ml').length > bases.length / 2 ? '100ml' : '100g';
   const compatibleItems = carbItems.filter((item) => item.basis === basis && item.value !== null);
   const values = compatibleItems.map((item) => item.value as number);
   if (!values.length) {
     return {
-      hits: [], median: null, basis, middleRange: null, confidence: 'missing',
+      hits: [], sampleSize: 0, median: null, basis, middleRange: null, confidence: 'missing',
       preparationLabel: preparationIntent.label,
       preparationInferred: preparationIntent.inferred,
       preparedValuesUsed: 0
@@ -260,8 +495,10 @@ export function resolveGenericCandidates(query: string, hits: SearchHit[], prefe
   const q3 = percentile(values, 0.75);
   const spread = q3 - q1;
   const confidence: Confidence = values.length >= 5 && spread <= 6 ? 'high' : values.length >= 3 ? 'medium' : 'low';
+  const evidenceHits = deduplicated.filter((hit) => carbsPer100(hit, query, preferredBasis).basis === basis);
   return {
-    hits: deduplicated,
+    hits: evidenceHits,
+    sampleSize: values.length,
     median: median(values),
     basis,
     middleRange: { from: q1, to: q3 },
@@ -313,37 +550,19 @@ function parseXWeight(textValue: string | undefined): { count: number; perUnitWe
   if (!match) return null;
   const count = Number(match[1]);
   const perUnitWeightG = Number(match[2].replace(',', '.'));
-  if (!Number.isInteger(count) || count <= 0 || count > 500 || !Number.isFinite(perUnitWeightG) || perUnitWeightG <= 0) return null;
+  if (!Number.isInteger(count)
+    || count <= 0
+    || count > 500
+    || !Number.isFinite(perUnitWeightG)
+    || perUnitWeightG <= 0
+    || perUnitWeightG > MAX_UNIT_WEIGHT_G
+    || count * perUnitWeightG > MAX_PACKAGE_WEIGHT_G) return null;
   return { count, perUnitWeightG };
 }
 
-function parseGramWeight(textValue: string | undefined): number | null {
-  if (!textValue) return null;
-  const match = textValue.match(/(?:^|\s|\()(\d+(?:[.,]\d+)?)\s*g\b/i);
-  if (!match) return null;
-  const value = Number(match[1].replace(',', '.'));
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function parsePackageWeight(textValue: string | undefined): number | null {
-  if (!textValue) return null;
-  const xWeight = parseXWeight(textValue);
-  if (xWeight) return xWeight.count * xWeight.perUnitWeightG;
-  const equality = textValue.match(/=\s*(\d+(?:[.,]\d+)?)\s*g\b/i);
-  if (equality) {
-    const value = Number(equality[1].replace(',', '.'));
-    if (Number.isFinite(value) && value > 0) return value;
-  }
-  return parseGramWeight(textValue);
-}
-
 function packageWeightG(product: OffProduct | undefined, hit: SearchHit): number | null {
-  const unit = product?.product_quantity_unit ?? hit.product_quantity_unit;
-  if (unit?.toLowerCase() === 'g') {
-    const structured = numberOrNull(product?.product_quantity ?? hit.product_quantity);
-    if (structured !== null) return structured;
-  }
-  return parsePackageWeight(product?.quantity ?? hit.quantity);
+  const measure = packageMeasure(product, hit);
+  return measure?.dimension === 'mass' ? measure.amount : null;
 }
 
 function barLike(product: OffProduct, hit: SearchHit): boolean {
@@ -377,15 +596,16 @@ function singlePackageUnit(product: OffProduct | undefined, hit: SearchHit, pack
 }
 
 function productSummary(hit: SearchHit, product?: OffProduct): ProductSummary {
+  const serving = combinedServingMeasure(product, hit);
   return {
     barcode: product?.code ?? hit.code ?? null,
     name: displayProductName(product ?? hit),
-    brand: product?.brands?.trim() || displayBrand(hit.brands),
+    brand: displayBrand(product?.brands) || displayBrand(hit.brands),
     imageUrl: product?.image_front_url ?? hit.image_front_url ?? null,
     packageDescription: product?.quantity ?? hit.quantity ?? null,
     packageWeightG: packageWeightG(product, hit),
     servingDescription: product?.serving_size ?? hit.serving_size ?? null,
-    servingWeightG: numberOrNull(product?.serving_quantity ?? hit.serving_quantity),
+    servingWeightG: serving?.dimension === 'mass' ? serving.amount : null,
     categories: product?.categories_tags ?? hit.categories_tags ?? []
   };
 }
@@ -442,7 +662,8 @@ function resolveCountedUnitWeight(
     };
   }
   const isBar = unit === 'bar' && barLike(product ?? {}, hit);
-  const servingWeight = numberOrNull(product?.serving_quantity ?? hit.serving_quantity);
+  const servingMeasure = combinedServingMeasure(product, hit);
+  const servingWeight = servingMeasure?.dimension === 'mass' ? servingMeasure.amount : null;
   const packageWeight = packageWeightG(product, hit);
   const servingLabel = product?.serving_size ?? hit.serving_size;
   const quantityLabel = product?.quantity ?? hit.quantity;
@@ -476,7 +697,11 @@ function resolveCountedUnitWeight(
     }
   }
 
-  const valid = evidences.filter((evidence) => Number.isFinite(evidence.value) && evidence.value > 0);
+  const valid = evidences.filter((evidence) =>
+    Number.isFinite(evidence.value)
+    && evidence.value > 0
+    && evidence.value <= MAX_UNIT_WEIGHT_G
+  );
   if (!valid.length) {
     return {
       weightG: null,
@@ -515,7 +740,10 @@ export function derivePortionOptions(
 ): PortionOption[] {
   const options: PortionOption[] = [];
   const add = (option: Omit<PortionOption, 'recommended'>) => {
-    if (options.some((item) => item.unit === option.unit && item.weightG === option.weightG && item.source === option.source)) return;
+    if (options.some((item) => item.unit === option.unit
+      && item.weightG === option.weightG
+      && item.volumeMl === option.volumeMl
+      && item.source === option.source)) return;
     options.push({ ...option, recommended: false });
   };
 
@@ -536,14 +764,14 @@ export function derivePortionOptions(
     }
   }
 
-  const servingWeight = numberOrNull(product?.serving_quantity ?? hit.serving_quantity);
-  if (servingWeight !== null && servingWeight > 0) {
+  const serving = combinedServingMeasure(product, hit);
+  if (serving && (basis === '100g' ? serving.dimension === 'mass' : serving.dimension === 'volume')) {
     add({
-      id: portionId('portion', servingWeight, 'manufacturer-serving'),
+      id: portionId('portion', serving.amount, 'manufacturer-serving'),
       unit: 'portion',
       label: 'Portion',
-      weightG: basis === '100g' ? servingWeight : null,
-      volumeMl: basis === '100ml' ? servingWeight : null,
+      weightG: serving.dimension === 'mass' ? serving.amount : null,
+      volumeMl: serving.dimension === 'volume' ? serving.amount : null,
       source: 'manufacturer-serving',
       confidence: 'high',
       note: (product?.serving_size ?? hit.serving_size)
@@ -552,7 +780,8 @@ export function derivePortionOptions(
     });
   }
 
-  const packageWeight = packageWeightG(product, hit);
+  const packageQuantity = packageMeasure(product, hit);
+  const packageWeight = packageQuantity?.dimension === 'mass' ? packageQuantity.amount : null;
   const inferredSingleUnit = singlePackageUnit(product, hit, packageWeight);
   if (inferredSingleUnit && packageWeight !== null) {
     add({
@@ -576,6 +805,18 @@ export function derivePortionOptions(
       source: 'package',
       confidence: 'high',
       note: 'Gesamtgewicht der Verkaufspackung.'
+    });
+  }
+  if (packageQuantity?.dimension === 'volume' && basis === '100ml') {
+    add({
+      id: portionId('package', packageQuantity.amount, 'package-volume'),
+      unit: 'package',
+      label: 'Packung',
+      weightG: null,
+      volumeMl: packageQuantity.amount,
+      source: 'package',
+      confidence: 'high',
+      note: 'Gesamtvolumen der Verkaufspackung.'
     });
   }
 
@@ -852,12 +1093,27 @@ interface EffectiveSelection {
 }
 
 function selectionFromOption(amount: number, option: PortionOption): EffectiveSelection {
-  if (option.unit === 'g') return { amount, unit: 'g', unitWeightG: null, totalMassG: amount, totalVolumeMl: null, selectedPortionId: option.id, confidence: option.confidence, note: option.note };
-  if (option.unit === 'kg') return { amount, unit: 'kg', unitWeightG: null, totalMassG: amount * 1000, totalVolumeMl: null, selectedPortionId: option.id, confidence: option.confidence, note: option.note };
-  if (option.unit === 'ml') return { amount, unit: 'ml', unitWeightG: null, totalMassG: null, totalVolumeMl: amount, selectedPortionId: option.id, confidence: option.confidence, note: option.note };
-  if (option.weightG !== null) return { amount, unit: option.unit, unitWeightG: option.weightG, totalMassG: amount * option.weightG, totalVolumeMl: null, selectedPortionId: option.id, confidence: option.confidence, note: option.note };
-  if (option.volumeMl !== null) return { amount, unit: option.unit, unitWeightG: null, totalMassG: null, totalVolumeMl: amount * option.volumeMl, selectedPortionId: option.id, confidence: option.confidence, note: option.note };
-  return { amount, unit: option.unit, unitWeightG: null, totalMassG: null, totalVolumeMl: null, selectedPortionId: option.id, confidence: 'missing', note: option.note };
+  if (!isPlausibleFoodAmount(amount, option.unit)) {
+    throw new RangeError('Die gewählte Menge ist für eine einzelne Berechnung ungültig oder zu groß.');
+  }
+  let selection: EffectiveSelection;
+  if (option.unit === 'g') selection = { amount, unit: 'g', unitWeightG: null, totalMassG: amount, totalVolumeMl: null, selectedPortionId: option.id, confidence: option.confidence, note: option.note };
+  else if (option.unit === 'kg') selection = { amount, unit: 'kg', unitWeightG: null, totalMassG: amount * 1000, totalVolumeMl: null, selectedPortionId: option.id, confidence: option.confidence, note: option.note };
+  else if (option.unit === 'ml') selection = { amount, unit: 'ml', unitWeightG: null, totalMassG: null, totalVolumeMl: amount, selectedPortionId: option.id, confidence: option.confidence, note: option.note };
+  else if (option.weightG !== null) selection = { amount, unit: option.unit, unitWeightG: option.weightG, totalMassG: amount * option.weightG, totalVolumeMl: null, selectedPortionId: option.id, confidence: option.confidence, note: option.note };
+  else if (option.volumeMl !== null) selection = { amount, unit: option.unit, unitWeightG: null, totalMassG: null, totalVolumeMl: amount * option.volumeMl, selectedPortionId: option.id, confidence: option.confidence, note: option.note };
+  else selection = { amount, unit: option.unit, unitWeightG: null, totalMassG: null, totalVolumeMl: null, selectedPortionId: option.id, confidence: 'missing', note: option.note };
+
+  if (selection.unitWeightG !== null && !isPlausibleUnitWeightForUnit(selection.unitWeightG, selection.unit)) {
+    throw new RangeError('Das Einheitengewicht ist ungültig oder zu groß.');
+  }
+  if (selection.totalMassG !== null && !isPlausibleTotalMass(selection.totalMassG)) {
+    throw new RangeError('Das Gesamtgewicht ist ungültig oder größer als 100 kg.');
+  }
+  if (selection.totalVolumeMl !== null && !isPlausibleTotalVolume(selection.totalVolumeMl)) {
+    throw new RangeError('Die Gesamtmenge ist ungültig oder größer als 100 Liter.');
+  }
+  return selection;
 }
 
 function chooseExactSelection(
@@ -876,10 +1132,17 @@ function chooseExactSelection(
     if (recommended) desiredUnit = recommended.unit;
     if (!explicitAmount) amount = desiredUnit === 'g' ? 100 : desiredUnit === 'kg' ? 0.1 : desiredUnit === 'ml' ? 100 : 1;
   }
+  if (!isPlausibleFoodAmount(amount, desiredUnit)) {
+    throw new RangeError('Die angefragte Menge ist ungültig oder für eine einzelne Berechnung zu groß.');
+  }
 
   const weightOverride = manualWeightG
     ?? (calibration?.unit.kind === desiredUnit ? calibrationWeight(calibration) : null);
   if (weightOverride !== null && weightOverride > 0 && !['g', 'kg', 'ml'].includes(desiredUnit)) {
+    if (!isPlausibleUnitWeightForUnit(weightOverride, desiredUnit)
+      || !isPlausibleTotalMass(amount * weightOverride)) {
+      throw new RangeError('Das manuelle Einheitengewicht ergibt ein ungültiges oder zu großes Gesamtgewicht.');
+    }
     return {
       amount,
       unit: desiredUnit,
@@ -938,6 +1201,19 @@ function effectiveRequest(request: ParsedFoodRequest, selection: EffectiveSelect
   };
 }
 
+function dataSnapshotFromHits(hits: readonly SearchHit[]): Pick<CalculationResult, 'dataFetchedAt' | 'dataCacheAgeMs'> {
+  const metadata = hits.map((hit) => hit.api_meta).find(Boolean);
+  if (!metadata) return { dataFetchedAt: null, dataCacheAgeMs: null };
+  const timestamp = Date.parse(metadata.fetchedAt);
+  if (!Number.isFinite(timestamp)) return { dataFetchedAt: null, dataCacheAgeMs: null };
+  return {
+    dataFetchedAt: new Date(timestamp).toISOString(),
+    dataCacheAgeMs: typeof metadata.cacheAgeMs === 'number' && Number.isFinite(metadata.cacheAgeMs)
+      ? Math.max(0, metadata.cacheAgeMs)
+      : Math.max(0, Date.now() - timestamp)
+  };
+}
+
 export function buildExactResult(
   request: ParsedFoodRequest,
   hit: SearchHit,
@@ -946,7 +1222,14 @@ export function buildExactResult(
   manualWeightG?: number | null
 ): CalculationResult {
   const combinedHit = mergeProductIntoHit(hit, product);
-  const nutrition = carbsPer100(combinedHit, request.product.name);
+  const preferredBasis = request.amount.unitExplicit
+    ? request.amount.unit === 'ml'
+      ? '100ml'
+      : request.amount.unit === 'g' || request.amount.unit === 'kg'
+        ? '100g'
+        : null
+    : null;
+  const nutrition = carbsPer100(combinedHit, request.product.name, preferredBasis);
   const prepared = prepareExactOptions(
     request,
     combinedHit,
@@ -981,6 +1264,7 @@ export function buildExactResult(
       : null
   ].filter((note): note is string => Boolean(note));
   const adjustedRequest = effectiveRequest(request, selection);
+  const dataSnapshot = dataSnapshotFromHits([combinedHit]);
 
   return {
     id: createId(),
@@ -1001,6 +1285,7 @@ export function buildExactResult(
     confidence: carbohydratesG !== null ? selection.confidence : 'missing',
     sourceLabel: 'Open Food Facts',
     methodLabel: 'Konkretes Produkt · deterministische Berechnung',
+    ...dataSnapshot,
     sampleSize: null,
     middleRange: null,
     candidates: [combinedHit],
@@ -1087,6 +1372,8 @@ export function buildBaseFoodReferenceResult(
     confidence: carbohydratesG !== null ? 'high' : selection.confidence,
     sourceLabel: reference.sourceLabel,
     methodLabel: `Generisches Basislebensmittel · ${reference.stateLabel}`,
+    dataFetchedAt: null,
+    dataCacheAgeMs: null,
     sampleSize: null,
     middleRange: reference.middleRange,
     candidates: [],
@@ -1139,11 +1426,12 @@ export function buildGenericResult(
     resolution.preparationLabel ? `Zustand „${resolution.preparationLabel}“ wurde bei der Kandidatenfilterung zwingend berücksichtigt.` : null,
     resolution.preparedValuesUsed > 0 ? `${resolution.preparedValuesUsed} Treffer lieferten ausdrücklich zubereitete Nährwerte.` : null,
     consensus ? `Das ${unitLabels[selectedUnit]}gewicht wurde deterministisch aus ${consensus.sampleSize} übereinstimmenden, ausdrücklich belegten Produktangaben gebildet.` : null,
-    resolution.hits.length ? `Median aus ${resolution.hits.length} gefilterten Basisprodukten.` : resolution.preparationLabel
+    resolution.sampleSize ? `Median aus ${resolution.sampleSize} gefilterten Basisprodukten.` : resolution.preparationLabel
       ? `Keine passenden Basisprodukt-Treffer im Zustand „${resolution.preparationLabel}“ gefunden.`
       : 'Keine ausreichenden Vergleichsprodukte gefunden.'
   ].filter((note): note is string => Boolean(note));
   const adjustedRequest = effectiveRequest(request, selection);
+  const dataSnapshot = dataSnapshotFromHits(resolution.hits);
 
   return {
     id: createId(), createdAt: new Date().toISOString(), request: adjustedRequest,
@@ -1172,7 +1460,8 @@ export function buildGenericResult(
     confidence: carbohydratesG !== null ? resolution.confidence : selection.confidence,
     sourceLabel: 'Open Food Facts',
     methodLabel: resolution.preparationLabel ? `Generischer Basisprodukt-Median (${resolution.preparationLabel})` : 'Generischer Median',
-    sampleSize: resolution.hits.length,
+    ...dataSnapshot,
+    sampleSize: resolution.sampleSize,
     middleRange: resolution.middleRange,
     candidates: resolution.hits,
     notes,
@@ -1213,6 +1502,9 @@ export function recalculateResult(
   amount: number,
   unitWeightG = result.unitWeightG
 ): CalculationResult {
+  if (unitWeightG !== null && !isPlausibleUnitWeightForUnit(unitWeightG, result.unit)) {
+    throw new RangeError('Das Einheitengewicht ist ungültig oder für diese Einheit zu groß.');
+  }
   let option = result.portionOptions.find((item) => item.id === result.selectedPortionId);
   if (unitWeightG !== null && !['g', 'kg', 'ml'].includes(result.unit)) {
     const manualOption: PortionOption = {
@@ -1274,7 +1566,10 @@ export function recalculateWithManualTotalMass(
   result: CalculationResult,
   totalMassG: number
 ): CalculationResult {
-  if (!Number.isFinite(totalMassG) || totalMassG <= 0 || result.basis !== '100g') return result;
+  if (!isPlausibleTotalMass(totalMassG)) {
+    throw new RangeError('Das Gesamtgewicht muss größer als 0 und darf höchstens 100 kg sein.');
+  }
+  if (result.basis !== '100g') return result;
 
   if (result.unit === 'g') return applyPortion(result, totalMassG, massOption(result));
   if (result.unit === 'kg') {
@@ -1308,7 +1603,10 @@ export function recalculateWithManualTotalVolume(
   result: CalculationResult,
   totalVolumeMl: number
 ): CalculationResult {
-  if (!Number.isFinite(totalVolumeMl) || totalVolumeMl <= 0 || result.basis !== '100ml') return result;
+  if (!isPlausibleTotalVolume(totalVolumeMl)) {
+    throw new RangeError('Die Gesamtmenge muss größer als 0 und darf höchstens 100 Liter sein.');
+  }
+  if (result.basis !== '100ml') return result;
   const millilitres = volumeOption(result);
   const withVolumeOption = result.portionOptions.some((item) => item.id === millilitres.id)
     ? result

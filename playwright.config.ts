@@ -1,7 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined;
-const includeWebKit = process.env.PLAYWRIGHT_INCLUDE_WEBKIT === '1';
 const projects = [
   {
     name: 'chromium-desktop',
@@ -17,13 +16,19 @@ const projects = [
       launchOptions: executablePath ? { executablePath } : undefined
     }
   },
-  ...(includeWebKit ? [{
+  {
+    name: 'firefox-desktop',
+    use: {
+      ...devices['Desktop Firefox']
+    }
+  },
+  {
     name: 'webkit-iphone',
     use: {
       ...devices['iPhone 15 Pro'],
       browserName: 'webkit' as const
     }
-  }] : [])
+  }
 ];
 
 export default defineConfig({
@@ -37,15 +42,17 @@ export default defineConfig({
   expect: { timeout: 8_000 },
   use: {
     baseURL: 'http://127.0.0.1:4173',
-    serviceWorkers: 'allow',
+    // Deterministic API route mocks: Playwright cannot intercept requests that
+    // are handled by a Service Worker. The dedicated PWA block opts back in.
+    serviceWorkers: 'block',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'off'
   },
   webServer: {
-    command: 'VITE_DATA_GATEWAY_URL=/api npm run preview -- --host 127.0.0.1 --port 4173',
+    command: 'node scripts/start-e2e-preview.mjs',
     url: 'http://127.0.0.1:4173',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000
   },
   projects

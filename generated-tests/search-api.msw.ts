@@ -1,7 +1,7 @@
 /** Generated MSW/Faker surface for application and contract tests. */
 export {
   getGatewayHealthMockHandler,
-  getKHCheckerOptionalGatewayAPIMock,
+  getKHCheckerDataGatewayAPIMock,
   getParseFoodRequestMockHandler,
   getProductByBarcodeMockHandler,
   getSearchProductsMockHandler

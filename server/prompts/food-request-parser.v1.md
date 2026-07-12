@@ -20,7 +20,12 @@ You may:
 - Preserve the meaningful food name. Remove only the quantity and its unit.
 - Use `exact_product` when a brand or uniquely named retail product is present.
 - Use `generic_category` for general foods such as apples, pasta, bread, or pretzel sticks without a brand.
-- Use `barcode` when an 8 to 14 digit barcode is present.
+- Use `barcode` when a 7 to 14 digit barcode is present. Preserve the digits;
+  the gateway applies Open Food Facts leading-zero normalization afterwards.
+- Return a non-empty food/product name of at most 120 characters.
+- Set `barcode` if and only if `resolutionMode` is `barcode`; otherwise return null.
+- Keep amounts within the supplied schema limits: at most 100 kg, 100,000 g/ml,
+  or 1,000 counted pieces/bars/slices/portions/packages.
 
 ## Prohibited behavior
 Never:

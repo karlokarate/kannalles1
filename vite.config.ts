@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import legacy from '@vitejs/plugin-legacy';
 import { VitePWA } from 'vite-plugin-pwa';
 
 const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
@@ -14,8 +15,30 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    legacy({
+      // This explicit baseline is the intersection of the JS and CSS feature
+      // contract (including native flex-gap). Older browsers keep the static
+      // compatibility notice instead of receiving a falsely supported layout.
+      targets: [
+        'Chrome >= 84',
+        'ChromeAndroid >= 84',
+        'Firefox >= 67',
+        'Safari >= 14.1',
+        'iOS >= 14.5',
+        'Edge >= 84'
+      ],
+      additionalLegacyPolyfills: [
+        'core-js/proposals/global-this',
+        'abortcontroller-polyfill/dist/polyfill-patch-fetch'
+      ],
+      // One compatibility graph avoids a CSP-unsafe data: feature probe and
+      // also makes local/file-like wrappers deterministic across WebViews.
+      renderModernChunks: false
+    }),
     VitePWA({
-      registerType: 'autoUpdate',
+      // Never reload an active calculation/search draft behind the user's
+      // back. `src/main.tsx` exposes the explicit update callback to the UI.
+      registerType: 'prompt',
       injectRegister: 'auto',
       includeAssets: [
         'icons/icon-192.png',

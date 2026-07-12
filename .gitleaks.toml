@@ -1,0 +1,14 @@
+title = "KH Checker secret scanning policy"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+  [[rules.allowlists]]
+  description = "Generated SHA-256 digests are integrity metadata, not credentials"
+  condition = "AND"
+  regexTarget = "secret"
+  paths = ['''(?:^|[\\/])(?:contracts[\\/]generated|(?:\.generated-public|dist)[\\/]api-docs)[\\/]generation-manifest\.json$''']
+  regexes = ['''^[a-f0-9]{64}$''']

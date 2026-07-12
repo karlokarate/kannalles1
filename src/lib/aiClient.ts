@@ -1,29 +1,35 @@
-import { AiParseResponseSchema } from '../generated/search-api';
+import { createGatewayClient } from '../generated/search-api';
 import type { ParsedFoodRequest } from '../types';
+import { evidencedOffBarcodes, normalizeOffBarcode } from './barcode';
 import { parseFoodRequestLocal } from './parser';
 
 export async function parseFoodRequestWithAi(
   rawInput: string,
-  endpoint: string,
+  gatewayUrl: string,
   signal?: AbortSignal
 ): Promise<ParsedFoodRequest> {
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ input: rawInput }),
-    signal
+  const client = createGatewayClient({
+    baseUrl: gatewayUrl,
+    defaultInit: { credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer' }
   });
-
-  if (!response.ok) {
-    throw new Error(`OpenAI-Parser nicht verfügbar (${response.status}).`);
-  }
-
-  const parsed = AiParseResponseSchema.parse(await response.json());
+  const { data: parsed } = await client.parse({ input: rawInput }, { signal });
   const localEvidence = parseFoodRequestLocal(rawInput);
+  if (localEvidence.status !== 'parsed') return { ...localEvidence, rawInput };
+  const normalizedAiBarcode = normalizeOffBarcode(parsed.barcode);
+  const barcodeEvidence = evidencedOffBarcodes(rawInput);
+  if (parsed.barcode !== null && (!normalizedAiBarcode || !barcodeEvidence.has(normalizedAiBarcode))) {
+    return { ...localEvidence, rawInput };
+  }
+  const evidencedBarcode = localEvidence.barcode ?? normalizedAiBarcode;
   return {
     ...parsed,
+    rawInput,
+    barcode: evidencedBarcode,
+    resolutionMode: evidencedBarcode ? 'barcode' : parsed.resolutionMode,
     amount: {
       ...parsed.amount,
+      value: localEvidence.amount.valueExplicit ? localEvidence.amount.value : parsed.amount.value,
+      unit: localEvidence.amount.unitExplicit ? localEvidence.amount.unit : parsed.amount.unit,
       valueExplicit: localEvidence.amount.valueExplicit,
       unitExplicit: localEvidence.amount.unitExplicit
     }

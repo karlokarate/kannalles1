@@ -1,65 +1,52 @@
 {
   "document": "current-code-gap-map",
   "version": "2.0.0",
-  "observedVersion": "2.2.x uploaded files",
+  "observedVersion": "2.2.4 production source",
   "items": [
     {
       "capability": "cache_first_search_and_backend_fallback",
       "status": "implemented",
       "evidence": [
-        "searchFoodCandidates uses canonical query cache",
-        "maximum two search backends",
-        "stale cache fallback"
-      ],
-      "requiredChange": "wrap final UI result in typed SearchOutcome union"
+        "src/lib/api.ts: searchFoodCandidates returns fresh cache first and stale cache after a failed refresh",
+        "server/gateway-core/gateway.mjs: auto search owns the index-to-OFF-Legacy fallback and records at most two attempts",
+        "contracts/core-v2/tests/acceptance-integrity.test.ts: search-primary-fails-fallback-succeeds, search-all-fail-stale-cache and search-all-fail-no-cache execute production paths"
+      ]
     },
     {
       "capability": "no_artificial_wait",
       "status": "implemented",
       "evidence": [
-        "api governor telemetry has blocking=false",
-        "Retry-After is diagnostic only"
-      ],
-      "requiredChange": "keep behavior and add regression gate"
+        "src/lib/api.ts: Retry-After is diagnostic metadata and searchFoodCandidatesOutcome always exposes retryAllowedImmediately=true",
+        "src/lib/api.test.ts: consecutive limited requests each execute without installing a local cooldown",
+        "e2e/app.spec.ts: HTTP 429/503 retry controls remain immediately enabled"
+      ]
     },
     {
       "capability": "group_weighing",
-      "status": "partial",
+      "status": "implemented",
       "evidence": [
-        "ResultScreen derives measuredTotalWeightG / measuredCount",
-        "resolveWeight stores a calibration"
-      ],
-      "gap": [
-        "availability depends on currently selected result unit",
-        "no explicit universal countability state",
-        "no carbs-per-unit live output contract"
-      ],
-      "requiredChange": "drive panel from countability and unit-resolution state, not only selected unit"
+        "src/lib/resolver.ts: countability is explicit on CalculationResult",
+        "src/App.tsx: ResultScreen exposes group weighing for countable units and persists the confirmed measurement",
+        "contracts/core-v2/tests/acceptance-integrity.test.ts: group-weighing-derivation executes deriveGroupCalibration without premature rounding"
+      ]
     },
     {
       "capability": "persistent_calibration",
-      "status": "partial",
+      "status": "implemented",
       "evidence": [
-        "IndexedDB calibrations store exists",
-        "single getCalibration(key) lookup exists"
-      ],
-      "gap": [
-        "single exact key only",
-        "no barcode/exact/generic lookup chain",
-        "no conflict resolution",
-        "no explicit schema version"
-      ],
-      "requiredChange": "migrate PieceCalibration to schemaVersion 2 and multi-scope lookup"
+        "src/lib/calibration.ts: schemaVersion 2 records, barcode/exact/generic lookup keys and deterministic conflict selection",
+        "src/lib/storage.ts: versioned IndexedDB plus local fallback migration, saveCalibration and findCalibration",
+        "contracts/core-v2/tests/acceptance-integrity.test.ts: saved-calibration-reused saves, reloads by scope chain and injects the restored weight into production resolution"
+      ]
     },
     {
       "capability": "smallest_unit_default",
-      "status": "partial",
-      "gap": [
-        "selection is not guaranteed for every countable product",
-        "manufacturer portion can still win when unit semantics are incomplete",
-        "saved calibration is not always injected as first option across aliases"
-      ],
-      "requiredChange": "centralize option ranking using unit-resolution contract"
+      "status": "implemented",
+      "evidence": [
+        "src/lib/resolver.ts: prepareExactPortionOptions orders a proven smallest edible unit before package/mass alternatives",
+        "contracts/core-v2/tests/acceptance-integrity.test.ts: Bueno, explicit piece, user calibration, package-boundary and Nutella cases execute production resolution",
+        "src/lib/resolver.test.ts: regression fixtures cover Bueno, BiFi, Salzstangen, slices, spreads and generic foods"
+      ]
     }
   ]
 }

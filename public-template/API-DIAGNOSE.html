@@ -11,9 +11,9 @@
 <body><main>
   <span class="badge">Diagnose v__KH_APP_VERSION__</span>
   <h1>API-Diagnose</h1>
-  <p class="lead">Jeder Klick führt genau einen Gateway-GET-Test aus. Direkte Browseraufrufe zu Open Food Facts sind in diesem Release deaktiviert.</p>
+  <p class="lead">Jeder Klick führt genau einen Daten-Gateway-Test aus. Direkte Browseraufrufe zu Open Food Facts sind deaktiviert.</p>
 
-  <div class="notice"><strong>Produktionsreihenfolge im Gateway:</strong> Search-a-licious primär, OFF Legacy Search genau einmal nach technischem Fehler oder null Treffern. Produktdetails verwenden v3.6 und nur bei fehlenden Nährwerten v2.</div>
+  <div class="notice"><strong>Produktionsreihenfolge im Gateway:</strong> Eigener Search-a-licious-/OFF-Export-Index primär, OFF Legacy als Reserve. Die öffentliche Search-a-licious-Instanz ist nur explizite Diagnose. Produktdetails verwenden v3.6 und nur bei fehlenden Nährwerten v2.</div>
   <div class="notice warn"><strong>Schonend testen:</strong> Diese Seite umgeht bewusst den App-Cache. Bitte keine schnellen Dauerklicks ausführen.</div>
 
   <p class="context" id="context">Kontext wird geladen …</p>
@@ -22,15 +22,17 @@
       <input id="query" value="Müllermilch Schoko Zero" maxlength="120" autocomplete="off">
     </label>
     <label>Barcode
-      <input id="barcode" value="4071800001371" inputmode="numeric" maxlength="14" autocomplete="off">
+      <input id="barcode" value="4071800001371" inputmode="numeric" minlength="7" maxlength="14" pattern="[0-9]{7,14}" autocomplete="off" required>
     </label>
   </div>
 
   <div class="actions">
-    <button id="searchBtn" type="button">Gateway /api/search testen</button>
-    <button id="legacyBtn" type="button" class="optional">Gateway-Fallbackpfad testen</button>
-    <button id="productV3Btn" type="button">OFF v3.6 testen</button>
-    <button id="productV2Btn" type="button" class="optional">OFF v2 testen</button>
+    <button id="healthBtn" type="button">Gateway-Vertrag testen</button>
+    <button id="searchBtn" type="button">Eigenen Suchindex testen</button>
+    <button id="searchPublicBtn" type="button" class="optional">Öffentliches Search-a-licious testen</button>
+    <button id="legacyBtn" type="button" class="optional">OFF-Legacy-Reserve testen</button>
+    <button id="productV3Btn" type="button">Produktadapter v3.6 testen</button>
+    <button id="productV2Btn" type="button" class="optional">Produktadapter v2 testen</button>
     <button id="clearBtn" type="button" class="secondary">Ausgabe leeren</button>
   </div>
 

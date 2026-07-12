@@ -1,6 +1,6 @@
 {
   "contract": "kh-checker-calibration-persistence",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "authoritativeStoredValue": "derivedUnitWeightG",
   "nonAuthoritativeSnapshots": [
     "carbohydratesPer100gAtMeasurement",
@@ -65,8 +65,10 @@
   ],
   "lifecycle": {
     "expiresAutomatically": false,
-    "userCanEdit": true,
-    "userCanDelete": true,
+    "userInterfaceManagement": "bulkClear",
+    "userCanEditIndividualRecordInApp": false,
+    "userCanDeleteIndividualRecordInApp": false,
+    "repositorySupportsInternalDelete": true,
     "historyPreservedAcrossAppUpdates": true
   }
 }

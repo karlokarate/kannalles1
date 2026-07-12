@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto';
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { canonicalFileBytes } from './canonical-text.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const packageJson = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
@@ -15,7 +16,7 @@ const fixed = [
   'package.json', 'package-lock.json', 'scripts/emit-openapi.mjs',
   'scripts/generate-api.mjs', 'scripts/build-api-docs.mjs',
   'scripts/write-generated-adapters.mjs', 'scripts/write-generated-contract-test.mjs',
-  'scripts/write-generation-manifest.mjs'
+  'scripts/write-generation-manifest.mjs', 'scripts/canonical-text.mjs'
 ];
 
 async function walk(relative) {
@@ -41,7 +42,7 @@ const files = [...new Set([...(await Promise.all(trackedRoots.map(walk))).flat()
 const hashes = {};
 for (const file of files) {
   const bytes = await readFile(path.join(root, file));
-  hashes[file] = createHash('sha256').update(bytes).digest('hex');
+  hashes[file] = createHash('sha256').update(canonicalFileBytes(file, bytes)).digest('hex');
 }
 const depVersion = (name) => packageJson.dependencies?.[name] ?? packageJson.devDependencies?.[name] ?? lock.packages?.[`node_modules/${name}`]?.version;
 const manifest = {

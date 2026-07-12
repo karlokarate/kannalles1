@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kh-checker.local/schemas/search-workflow-state.schema.json",
+  "title": "KH Checker SearchWorkflowState",
+  "type": "object",
+  "required": ["screen", "activity"],
+  "properties": {
+    "screen": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["view", "request"],
+          "properties": { "view": { "const": "home" }, "request": { "type": ["object", "null"] } },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["view", "request", "hits"],
+          "properties": {
+            "view": { "const": "candidates" },
+            "request": { "type": "object" },
+            "hits": { "type": "array", "minItems": 1, "items": { "type": "object" } }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["view", "result", "hits"],
+          "properties": {
+            "view": { "const": "result" },
+            "result": { "type": "object" },
+            "hits": { "type": "array", "items": { "type": "object" } }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "activity": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["status"],
+          "properties": { "status": { "const": "idle" } },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["status", "operation", "announcedAt"],
+          "properties": {
+            "status": { "const": "pending" },
+            "operation": { "enum": ["search", "product", "manual", "voice", "restore"] },
+            "announcedAt": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["status", "issue"],
+          "properties": {
+            "status": { "enum": ["empty", "failed"] },
+            "issue": { "$ref": "#/$defs/issue" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "issue": {
+      "type": "object",
+      "required": ["kind", "title", "message", "technical", "attempts", "occurredAt", "retryLabel"],
+      "properties": {
+        "kind": { "enum": ["error", "empty", "offline", "configuration", "unsupported"] },
+        "title": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "technical": { "type": "string" },
+        "attempts": { "type": "array", "items": { "type": "object" } },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "retryLabel": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

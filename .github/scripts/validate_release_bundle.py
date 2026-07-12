@@ -253,16 +253,19 @@ def validate_runtime(site: Path, version: str) -> None:
     app_js = '\n'.join(path.read_text(encoding='utf-8') for path in app_js_files)
     diagnostic_js = (site / 'api-diagnose.js').read_text(encoding='utf-8')
     combined = app_js + '\n' + diagnostic_js
-    required_strings = (
-        'search.openfoodfacts.org/search',
-        'world.openfoodfacts.org/cgi/search.pl',
-        'world.openfoodfacts.org/api/v3.6/product',
-        'world.openfoodfacts.org/api/v2/product',
-    )
+    required_strings = ('/api/v1/search', '/api/v1/product/', r'^\d{7,14}$')
     for required in required_strings:
         if required not in combined:
             fail(f'required API path missing from built runtime: {required}')
-    for forbidden in ('/api/health', 'boost_phrase', 'OPENAI_API_KEY', 'OFF_USER_AGENT', 'process.env.OFF_USER_AGENT'):
+    for forbidden in (
+        'https://search.openfoodfacts.org',
+        'https://world.openfoodfacts.org/cgi/search.pl',
+        'https://world.openfoodfacts.org/api/',
+        'boost_phrase',
+        'OPENAI_API_KEY',
+        'OFF_USER_AGENT',
+        'process.env.OFF_USER_AGENT',
+    ):
         if forbidden in combined:
             fail(f'forbidden frontend string found: {forbidden}')
     if version not in app_js:
@@ -278,25 +281,40 @@ def validate_release_manifest(site: Path, expected_version: str | None) -> str:
         fail(f'invalid release version: {version!r}')
     if expected_version and version != expected_version:
         fail(f'release version {version} does not match expected {expected_version}')
-    if data.get('artifactType') != 'static-github-pages-pwa':
+    if data.get('artifactType') != 'static-pwa':
         fail('release-manifest artifactType is invalid')
+    deployment_profile = data.get('deploymentProfile')
+    gateway_url = data.get('configuredGatewayUrl')
+    if deployment_profile not in {'full-app', 'manual-only'}:
+        fail('release-manifest deploymentProfile is invalid')
+    if deployment_profile == 'full-app':
+        if not isinstance(gateway_url, str) or not gateway_url.startswith('https://'):
+            fail('full-app release-manifest requires an HTTPS configuredGatewayUrl')
+    elif gateway_url is not None:
+        fail('manual-only release-manifest must not embed a gateway URL')
     if data.get('qualityGatesSkipped') is not False:
         fail('release was built with skipped quality gates')
-    if data.get('schemaVersion') != 2:
-        fail('release-manifest schemaVersion must be 2')
-    if data.get('browserGateAtBuild') not in {'passed_at_build', 'deferred_to_deployment_workflow'}:
+    if data.get('schemaVersion') != 3:
+        fail('release-manifest schemaVersion must be 3')
+    if data.get('browserGateAtBuild') != 'passed_at_build':
         fail('release-manifest browserGateAtBuild is invalid')
-    if data.get('browserGateRequiredBeforeDeploy') is not False:
-        fail('browser gate must be failsoft for the validated prebuilt fallback')
-    if data.get('browserGatePolicy') != 'attempt_in_one_click_workflow_and_failsoft_to_validated_prebuilt_release':
+    if data.get('browserGateRequiredBeforeDeploy') is not True:
+        fail('browser gate must be mandatory before release')
+    if data.get('browserGatePolicy') != 'required_chromium_firefox_webkit_before_release':
         fail('release-manifest browser gate policy is invalid')
-    if data.get('qualityGateMode') not in {'executed_by_release_script', 'prevalidated_by_one_click_pipeline'}:
+    if data.get('qualityGateMode') not in {'executed_by_release_script', 'prevalidated_by_ci_pipeline'}:
         fail('release-manifest qualityGateMode is invalid')
     runtime = data.get('runtime') or {}
-    if runtime.get('requiresCustomServer') is not False:
-        fail('release incorrectly requires a custom server')
+    if runtime.get('staticAssetHostingRequiresApplicationServer') is not False:
+        fail('release static-asset hosting contract is invalid')
     if runtime.get('nativeAndroidApk') is not False:
         fail('release manifest must identify this artifact as PWA, not native APK')
+    if runtime.get('browserDataAccess') != 'gateway-only':
+        fail('release manifest must enforce gateway-only browser data access')
+    if runtime.get('gatewayRuntimeRequiredForGlobalSearch') is not True:
+        fail('release manifest must declare the gateway requirement for global search')
+    if runtime.get('gatewayOptionalForManualAndOfflineUse') is not True:
+        fail('release manifest must keep manual/offline use independent from a gateway')
     version_text = (site / 'VERSION.txt').read_text(encoding='utf-8')
     if f'KH Checker v{version}' not in version_text:
         fail('VERSION.txt does not match release-manifest.json')
@@ -441,6 +459,11 @@ def main() -> None:
         fail('machine-readable runtime contract does not declare the generator authority')
     if generator.get('clientGenerator') != 'Orval fetch':
         fail('machine-readable runtime contract does not declare the Orval Fetch generator')
+    architecture = contract.get('architecture') or {}
+    if architecture.get('portableGatewayRuntime') != 'node-express-container':
+        fail('machine-readable runtime contract does not declare the Node/Express runtime')
+    if architecture.get('optionalAdapters') != []:
+        fail('machine-readable runtime contract contains a retired platform adapter')
     validate_runtime(site, version)
     scan_for_secrets(site)
     smoke_http(site, args.base_path, references, manifest)
