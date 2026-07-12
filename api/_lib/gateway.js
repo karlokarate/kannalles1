@@ -1,4 +1,8 @@
 const MAX_QUERY_LENGTH = 120;
+const SEARCH_A_LICIOUS_TIMEOUT_MS = 2_000;
+const LEGACY_SEARCH_TIMEOUT_MS = 6_000;
+const PRODUCT_TIMEOUT_MS = 8_500;
+
 const SEARCH_FIELDS = [
   'code',
   'product_name',
@@ -18,6 +22,7 @@ const SEARCH_FIELDS = [
   'unique_scans_n',
   'completeness'
 ];
+
 const SEARCH_A_LICIOUS_FIELDS = [
   'code',
   'product_name',
@@ -26,8 +31,6 @@ const SEARCH_A_LICIOUS_FIELDS = [
   'generic_name_de',
   'brands',
   'quantity',
-  'countries',
-  'categories',
   'nutriments',
   'image_front_url',
   'unique_scans_n',
@@ -41,13 +44,6 @@ const gatewayCache = globalThis.__KH_VERCEL_GATEWAY_CACHE__ ?? new Map();
 const gatewayInFlight = globalThis.__KH_VERCEL_GATEWAY_INFLIGHT__ ?? new Map();
 globalThis.__KH_VERCEL_GATEWAY_CACHE__ = gatewayCache;
 globalThis.__KH_VERCEL_GATEWAY_INFLIGHT__ = gatewayInFlight;
-const UPSTREAM_DEFAULT_COOLDOWN_MS = 60_000;
-const UPSTREAM_MAX_COOLDOWN_MS = 5 * 60_000;
-
-const searchALiciousCircuit = globalThis.__KH_SEARCH_A_LICIOUS_CIRCUIT__ ?? { openUntil: 0, reason: '' };
-const legacySearchCircuit = globalThis.__KH_LEGACY_SEARCH_CIRCUIT__ ?? { openUntil: 0, reason: '' };
-globalThis.__KH_SEARCH_A_LICIOUS_CIRCUIT__ = searchALiciousCircuit;
-globalThis.__KH_LEGACY_SEARCH_CIRCUIT__ = legacySearchCircuit;
 
 const APP_VERSION = process.env.npm_package_version || '2.2.4';
 const OFF_CONTACT_EMAIL = 'chrisfischtopher@googlemail.com';
@@ -56,10 +52,9 @@ const OFF_USER_AGENT = `KH-Checker/${APP_VERSION} (+https://karlokarate.github.i
 function parseRetryAfter(value, now = Date.now()) {
   if (!value) return null;
   const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1000);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1_000);
   const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return null;
-  return Math.max(0, timestamp - now);
+  return Number.isFinite(timestamp) ? Math.max(0, timestamp - now) : null;
 }
 
 function cleanPreview(value) {
@@ -74,34 +69,55 @@ function buildUpstreamHeaders() {
   };
 }
 
+function normalizeOrigin(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (raw === '*') return '*';
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return raw.replace(/\/+$/, '');
+  }
+}
+
+function requestOrigin(res) {
+  return String(res?.req?.headers?.origin || '').trim();
+}
+
+function allowedCorsOrigin(res) {
+  const requested = requestOrigin(res);
+  const configured = String(process.env.CORS_ORIGINS || '').trim();
+
+  if (!configured) return '*';
+
+  const allowed = new Set([
+    'https://karlokarate.github.io',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    ...configured.split(',').map(normalizeOrigin).filter(Boolean)
+  ]);
+
+  if (allowed.has('*')) return '*';
+  if (!requested) return '*';
+  return allowed.has(normalizeOrigin(requested)) ? normalizeOrigin(requested) : 'null';
+}
+
 export function setCors(res) {
-  const origin = reqOrigin(res);
-  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Origin', allowedCorsOrigin(res));
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Expose-Headers', 'Retry-After,X-KH-Gateway-Cache');
   res.setHeader('Access-Control-Max-Age', '86400');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
 }
 
-function reqOrigin(res) {
-  const req = res.req;
-  const configured = String(process.env.CORS_ORIGINS || '').trim();
-  if (!configured) return '*';
-  const origin = String(req.headers.origin || '');
-  if (!origin) return 'null';
-  const allowed = configured.split(',').map((item) => item.trim()).filter(Boolean);
-  return allowed.includes(origin) ? origin : 'null';
-}
-
 export function handleOptions(req, res) {
   setCors(res);
-  if (req.method === 'OPTIONS') {
-    res.status(204).end();
-    return true;
-  }
-  return false;
+  if (req.method !== 'OPTIONS') return false;
+  res.status(204).end();
+  return true;
 }
 
 class UpstreamError extends Error {
@@ -114,50 +130,7 @@ class UpstreamError extends Error {
   }
 }
 
-function isTransientSearchError(error) {
-  if (!(error instanceof UpstreamError)) return false;
-  if ([429, 502, 503, 504].includes(Number(error.status))) return true;
-  return error.attempts.some((attempt) =>
-    ['rate-limit', 'http-error', 'network-error', 'timeout'].includes(attempt.outcome)
-  );
-}
-
-function openCircuit(circuit, error) {
-  if (!isTransientSearchError(error)) return;
-  const now = Date.now();
-  const retryWindow = Number.isFinite(error.retryAt)
-    ? Math.max(0, Number(error.retryAt) - now)
-    : UPSTREAM_DEFAULT_COOLDOWN_MS;
-  const cooldownMs = Math.min(
-    UPSTREAM_MAX_COOLDOWN_MS,
-    Math.max(UPSTREAM_DEFAULT_COOLDOWN_MS, retryWindow)
-  );
-  circuit.openUntil = now + cooldownMs;
-  circuit.reason = error.message || 'Temporärer Upstream-Bypass aktiv.';
-}
-
-function closeCircuit(circuit) {
-  circuit.openUntil = 0;
-  circuit.reason = '';
-}
-
-function bypassAttempt(backend, label, url, circuit) {
-  const now = Date.now();
-  const retryAfterMs = Math.max(0, circuit.openUntil - now);
-  return {
-    backend,
-    label: `${label} (temporär übersprungen)`,
-    url: url.toString(),
-    startedAt: new Date(now).toISOString(),
-    durationMs: 0,
-    outcome: 'aborted',
-    errorName: 'CircuitOpen',
-    errorMessage: circuit.reason || 'Temporärer Upstream-Bypass aktiv.',
-    ...(retryAfterMs > 0 ? { retryAfterMs } : {})
-  };
-}
-
-async function fetchUpstreamJson(url, backend, label, timeoutMs = 8500) {
+async function fetchUpstreamJson(url, backend, label, timeoutMs) {
   const startedAt = Date.now();
   const startedIso = new Date(startedAt).toISOString();
   const controller = new AbortController();
@@ -180,14 +153,13 @@ async function fetchUpstreamJson(url, backend, label, timeoutMs = 8500) {
     const retryAfterMs = parseRetryAfter(response.headers.get('Retry-After'));
 
     if (!response.ok) {
-      const outcome = response.status === 429 || response.status === 503 ? 'rate-limit' : 'http-error';
       const attempt = {
         backend,
         label,
         url: url.toString(),
         startedAt: startedIso,
         durationMs,
-        outcome,
+        outcome: response.status === 429 ? 'rate-limit' : 'http-error',
         status: response.status,
         errorName: 'HTTPError',
         errorMessage: `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`,
@@ -202,9 +174,8 @@ async function fetchUpstreamJson(url, backend, label, timeoutMs = 8500) {
     }
 
     try {
-      const parsed = JSON.parse(text);
       return {
-        data: parsed,
+        data: JSON.parse(text),
         attempt: {
           backend,
           label,
@@ -267,8 +238,7 @@ function canonicalQuery(value) {
 function buildSearchALiciousUrl(query, pageSize) {
   const url = new URL('https://search.openfoodfacts.org/search');
   url.searchParams.set('q', query);
-  url.searchParams.set('langs', 'de,en,main');
-  url.searchParams.set('page', '1');
+  url.searchParams.set('langs', 'de,main');
   url.searchParams.set('page_size', String(pageSize));
   url.searchParams.set('fields', SEARCH_A_LICIOUS_FIELDS.join(','));
   return url;
@@ -282,7 +252,6 @@ function buildLegacySearchUrl(query, pageSize) {
   url.searchParams.set('search_terms', query);
   url.searchParams.set('page', '1');
   url.searchParams.set('page_size', String(pageSize));
-  url.searchParams.set('sort_by', 'popularity');
   url.searchParams.set('lc', 'de');
   url.searchParams.set('cc', 'de');
   url.searchParams.set('fields', SEARCH_FIELDS.join(','));
@@ -306,6 +275,18 @@ function buildV2ProductUrl(code) {
   return url;
 }
 
+function normalizeLegacySearch(data, query) {
+  return {
+    hits: Array.isArray(data?.products) ? data.products : [],
+    count: data?.count,
+    page: data?.page,
+    page_size: data?.page_size,
+    page_count: data?.page_count,
+    source: 'open-food-facts-legacy',
+    query_used: query
+  };
+}
+
 function mergeProducts(base, extra) {
   if (!base) return extra;
   if (!extra) return base;
@@ -326,18 +307,6 @@ function hasCarbohydrateData(product) {
   ].some((value) => typeof value === 'number' && Number.isFinite(value));
 }
 
-function normalizeLegacySearch(data, query) {
-  return {
-    hits: Array.isArray(data?.products) ? data.products : [],
-    count: data?.count,
-    page: data?.page,
-    page_size: data?.page_size,
-    page_count: data?.page_count,
-    source: 'open-food-facts-legacy',
-    query_used: query
-  };
-}
-
 function cacheHitAttempt(key, storedAt, stale = false) {
   return {
     backend: 'gateway',
@@ -353,39 +322,37 @@ function cacheHitAttempt(key, storedAt, stale = false) {
 function trimGatewayCache(maxEntries = 240) {
   if (gatewayCache.size <= maxEntries) return;
   const entries = [...gatewayCache.entries()].sort((a, b) => a[1].storedAt - b[1].storedAt);
-  for (const [key] of entries.slice(0, gatewayCache.size - maxEntries)) {
-    gatewayCache.delete(key);
-  }
+  for (const [key] of entries.slice(0, gatewayCache.size - maxEntries)) gatewayCache.delete(key);
 }
 
 async function cachedGatewayLoad({ key, freshMs, staleMs, load }) {
   const now = Date.now();
   const cached = gatewayCache.get(key);
   if (cached && cached.expiresAt > now) {
-    return {
-      value: cached.value,
-      attempts: [cacheHitAttempt(key, cached.storedAt)],
-      cacheStatus: 'fresh'
-    };
+    return { value: cached.value, attempts: [cacheHitAttempt(key, cached.storedAt)], cacheStatus: 'fresh' };
   }
 
   let task = gatewayInFlight.get(key);
   if (!task) {
-    task = load().then((result) => {
-      const storedAt = Date.now();
-      const effectiveFreshMs = Number.isFinite(result.freshMs) ? Math.max(0, result.freshMs) : freshMs;
-      const effectiveStaleMs = Number.isFinite(result.staleMs) ? Math.max(effectiveFreshMs, result.staleMs) : staleMs;
-      gatewayCache.set(key, {
-        value: result.value,
-        storedAt,
-        expiresAt: storedAt + effectiveFreshMs,
-        staleUntil: storedAt + effectiveStaleMs
+    task = load()
+      .then((result) => {
+        const storedAt = Date.now();
+        const effectiveFreshMs = Number.isFinite(result.freshMs) ? Math.max(0, result.freshMs) : freshMs;
+        const effectiveStaleMs = Number.isFinite(result.staleMs)
+          ? Math.max(effectiveFreshMs, result.staleMs)
+          : staleMs;
+        gatewayCache.set(key, {
+          value: result.value,
+          storedAt,
+          expiresAt: storedAt + effectiveFreshMs,
+          staleUntil: storedAt + effectiveStaleMs
+        });
+        trimGatewayCache();
+        return result;
+      })
+      .finally(() => {
+        if (gatewayInFlight.get(key) === task) gatewayInFlight.delete(key);
       });
-      trimGatewayCache();
-      return result;
-    }).finally(() => {
-      if (gatewayInFlight.get(key) === task) gatewayInFlight.delete(key);
-    });
     gatewayInFlight.set(key, task);
   }
 
@@ -407,19 +374,17 @@ async function cachedGatewayLoad({ key, freshMs, staleMs, load }) {
 export function sendGatewayError(res, error, publicMessage) {
   const status = error instanceof UpstreamError && Number.isInteger(error.status) ? error.status : 502;
   if (error?.retryAt && Number.isFinite(Number(error.retryAt))) {
-    const seconds = Math.max(1, Math.ceil((Number(error.retryAt) - Date.now()) / 1000));
+    const seconds = Math.max(1, Math.ceil((Number(error.retryAt) - Date.now()) / 1_000));
     res.setHeader('Retry-After', String(seconds));
   }
-  const payload = {
+  res.status(status).json({
     error: publicMessage,
     detail: error?.message || String(error),
     attempts: error?.attempts || [],
     retryAt: error?.retryAt ? new Date(error.retryAt).toISOString() : undefined
-  };
-  res.status(status).json(payload);
+  });
 }
 
-export async function searchThroughGateway(query, pageSize) {
 function normalizeSearchApiMode(mode) {
   return mode === 'legacy-only' ? 'legacy-only' : 'auto';
 }
@@ -429,71 +394,59 @@ export async function searchThroughGateway(query, pageSize, options = {}) {
   const key = `search:${canonicalQuery(query)}:${pageSize}:${searchApiMode}`;
   const result = await cachedGatewayLoad({
     key,
-    freshMs: 10 * 60 * 1000,
-    staleMs: 24 * 60 * 60 * 1000,
+    freshMs: 10 * 60 * 1_000,
+    staleMs: 24 * 60 * 60 * 1_000,
     load: async () => {
       const attempts = [];
       let reachableEmptyResponse = null;
-      let latestRetryAt = null;
+      let lastError = null;
 
       if (searchApiMode !== 'legacy-only') {
         const searchALiciousUrl = buildSearchALiciousUrl(query, pageSize);
-        if (searchALiciousCircuit.openUntil > Date.now()) {
-          attempts.push(bypassAttempt('search-a-licious', 'Search-a-licious', searchALiciousUrl, searchALiciousCircuit));
-          latestRetryAt = Math.max(latestRetryAt ?? 0, searchALiciousCircuit.openUntil);
-        } else {
-          try {
-            const response = await fetchUpstreamJson(searchALiciousUrl, 'search-a-licious', 'Search-a-licious');
-            closeCircuit(searchALiciousCircuit);
-            attempts.push(response.attempt);
-            const value = {
-              ...response.data,
-              hits: Array.isArray(response.data?.hits) ? response.data.hits : [],
-              source: 'search-a-licious',
-              query_used: query
-            };
-            if (value.hits.length > 0) return { value, attempts };
-            reachableEmptyResponse = value;
-          } catch (error) {
-            if (error instanceof UpstreamError) {
-              attempts.push(...error.attempts);
-              latestRetryAt = Math.max(latestRetryAt ?? 0, Number(error.retryAt || 0));
-              openCircuit(searchALiciousCircuit, error);
-            }
-          }
+        try {
+          const response = await fetchUpstreamJson(
+            searchALiciousUrl,
+            'search-a-licious',
+            'Search-a-licious',
+            SEARCH_A_LICIOUS_TIMEOUT_MS
+          );
+          attempts.push(response.attempt);
+          const value = {
+            ...response.data,
+            hits: Array.isArray(response.data?.hits) ? response.data.hits : [],
+            source: 'search-a-licious',
+            query_used: query
+          };
+          if (value.hits.length > 0) return { value, attempts };
+          reachableEmptyResponse = value;
+        } catch (error) {
+          lastError = error;
+          if (error instanceof UpstreamError) attempts.push(...error.attempts);
         }
       }
 
       const legacyUrl = buildLegacySearchUrl(query, pageSize);
-      if (legacySearchCircuit.openUntil > Date.now()) {
-        attempts.push(bypassAttempt('open-food-facts-legacy', 'Open Food Facts Legacy-Suche', legacyUrl, legacySearchCircuit));
-        latestRetryAt = Math.max(latestRetryAt ?? 0, legacySearchCircuit.openUntil);
-        if (reachableEmptyResponse) return { value: reachableEmptyResponse, attempts };
-        throw new UpstreamError('Keine Open-Food-Facts-Suche war erreichbar.', {
-          status: 503,
-          attempts,
-          retryAt: latestRetryAt ?? undefined
-        });
-      }
-
       try {
-        const response = await fetchUpstreamJson(legacyUrl, 'open-food-facts-legacy', 'Open Food Facts Legacy-Suche');
-        closeCircuit(legacySearchCircuit);
+        const response = await fetchUpstreamJson(
+          legacyUrl,
+          'open-food-facts-legacy',
+          'Open Food Facts Legacy-Suche',
+          LEGACY_SEARCH_TIMEOUT_MS
+        );
         attempts.push(response.attempt);
         return { value: normalizeLegacySearch(response.data, query), attempts };
       } catch (error) {
-        if (error instanceof UpstreamError) {
-          attempts.push(...error.attempts);
-          latestRetryAt = Math.max(latestRetryAt ?? 0, Number(error.retryAt || 0));
-          openCircuit(legacySearchCircuit, error);
-        }
-        if (reachableEmptyResponse) return { value: reachableEmptyResponse, attempts };
-        throw new UpstreamError('Keine Open-Food-Facts-Suche war erreichbar.', {
-          status: error instanceof UpstreamError ? error.status : undefined,
-          attempts,
-          retryAt: latestRetryAt ?? (error instanceof UpstreamError ? error.retryAt : undefined)
-        });
+        lastError = error;
+        if (error instanceof UpstreamError) attempts.push(...error.attempts);
       }
+
+      if (reachableEmptyResponse) return { value: reachableEmptyResponse, attempts };
+
+      throw new UpstreamError('Keine Open-Food-Facts-Suche war erreichbar.', {
+        status: lastError instanceof UpstreamError ? lastError.status : 503,
+        attempts,
+        retryAt: lastError instanceof UpstreamError ? lastError.retryAt : undefined
+      });
     }
   });
 
@@ -514,8 +467,7 @@ export async function searchThroughGateway(query, pageSize, options = {}) {
 }
 
 function normalizeProductApiMode(mode) {
-  if (mode === 'v2' || mode === 'v3' || mode === 'hybrid') return mode;
-  return 'hybrid';
+  return mode === 'v2' || mode === 'v3' || mode === 'hybrid' ? mode : 'hybrid';
 }
 
 export async function productThroughGateway(code, options = {}) {
@@ -524,29 +476,39 @@ export async function productThroughGateway(code, options = {}) {
   const key = `product:${code}:${productApiMode}:${knownCarbohydrates ? 'seeded' : 'complete'}`;
   const result = await cachedGatewayLoad({
     key,
-    freshMs: 24 * 60 * 60 * 1000,
-    staleMs: 30 * 24 * 60 * 60 * 1000,
+    freshMs: 24 * 60 * 60 * 1_000,
+    staleMs: 30 * 24 * 60 * 60 * 1_000,
     load: async () => {
       const attempts = [];
       let v3Data = null;
 
       if (productApiMode === 'v2') {
-        const response = await fetchUpstreamJson(buildV2ProductUrl(code), 'open-food-facts-v2', 'Open Food Facts API v2');
+        const response = await fetchUpstreamJson(
+          buildV2ProductUrl(code),
+          'open-food-facts-v2',
+          'Open Food Facts API v2',
+          PRODUCT_TIMEOUT_MS
+        );
         attempts.push(response.attempt);
         if (!response.data?.product) {
-          throw new UpstreamError('Für diesen Barcode wurde kein Produkt gefunden.', {
-            status: 404,
-            attempts
-          });
+          throw new UpstreamError('Für diesen Barcode wurde kein Produkt gefunden.', { status: 404, attempts });
         }
         return { value: response.data, attempts };
       }
 
       try {
-        const response = await fetchUpstreamJson(buildV3ProductUrl(code), 'open-food-facts-v3', 'Open Food Facts API v3.6');
+        const response = await fetchUpstreamJson(
+          buildV3ProductUrl(code),
+          'open-food-facts-v3',
+          'Open Food Facts API v3.6',
+          PRODUCT_TIMEOUT_MS
+        );
         attempts.push(response.attempt);
         v3Data = response.data;
-        if (v3Data?.product && (productApiMode === 'v3' || knownCarbohydrates || hasCarbohydrateData(v3Data.product))) {
+        if (
+          v3Data?.product &&
+          (productApiMode === 'v3' || knownCarbohydrates || hasCarbohydrateData(v3Data.product))
+        ) {
           return { value: v3Data, attempts };
         }
       } catch (error) {
@@ -561,7 +523,12 @@ export async function productThroughGateway(code, options = {}) {
       }
 
       try {
-        const response = await fetchUpstreamJson(buildV2ProductUrl(code), 'open-food-facts-v2', 'Open Food Facts API v2 (Fallback)');
+        const response = await fetchUpstreamJson(
+          buildV2ProductUrl(code),
+          'open-food-facts-v2',
+          'Open Food Facts API v2 (Fallback)',
+          PRODUCT_TIMEOUT_MS
+        );
         attempts.push(response.attempt);
         const value = {
           ...v3Data,
@@ -569,27 +536,18 @@ export async function productThroughGateway(code, options = {}) {
           product: mergeProducts(v3Data?.product, response.data?.product)
         };
         if (!value.product) {
-          throw new UpstreamError('Für diesen Barcode wurde kein Produkt gefunden.', { status: 404 });
+          throw new UpstreamError('Für diesen Barcode wurde kein Produkt gefunden.', { status: 404, attempts });
         }
         return { value, attempts };
       } catch (error) {
         if (error instanceof UpstreamError) attempts.push(...error.attempts);
         if (v3Data?.product) {
-          const compatibilityUnavailable = !(error instanceof UpstreamError && error.status === 404);
           return {
             value: v3Data,
             attempts,
-            ...(compatibilityUnavailable
-              ? { freshMs: 5 * 60 * 1000, staleMs: 24 * 60 * 60 * 1000 }
-              : {})
+            freshMs: 5 * 60 * 1_000,
+            staleMs: 24 * 60 * 60 * 1_000
           };
-        }
-        if (error instanceof UpstreamError && error.status === 404) {
-          throw new UpstreamError('Für diesen Barcode wurde kein Produkt gefunden.', {
-            status: 404,
-            attempts,
-            retryAt: error.retryAt
-          });
         }
         throw new UpstreamError('Produktdetails konnten über v3.6 und v2 nicht geladen werden.', {
           status: error instanceof UpstreamError ? error.status : undefined,
