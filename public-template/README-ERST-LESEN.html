@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#138a55">
+  <title>KH Checker v__KH_APP_VERSION__ – Erst lesen</title>
+  <link rel="stylesheet" href="./package-info.css">
+</head>
+<body><main>
+  <span class="badge">Version __KH_APP_VERSION__</span>
+  <h1>KH Checker</h1>
+  <p class="lead">Diese ZIP ist direkt für den vorhandenen GitHub-Pages-Workflow gebaut. Die fertige PWA liegt im ZIP-Stamm; ein eigener Server ist für den normalen Betrieb nicht erforderlich.</p>
+
+  <div class="notice"><strong>ZIP unverändert hochladen:</strong> Lege <code>kh-checker-v__KH_APP_VERSION__-komplett.zip</code> im Repository unter <code>releases/</code> ab. Nicht vorher entpacken und nicht neu verpacken.</div>
+
+  <h2>Deployment über GitHub Actions</h2>
+  <ol>
+    <li>Datei als <code>releases/kh-checker-v__KH_APP_VERSION__-komplett.zip</code> hochladen.</li>
+    <li>Unter <strong>Actions</strong> den Workflow <strong>Build, validate and deploy KH Checker PWA</strong> starten.</li>
+    <li><code>mode=release_zip</code> wählen und als <code>zip_path</code> exakt <code>releases/kh-checker-v__KH_APP_VERSION__-komplett.zip</code> eingeben.</li>
+    <li>Nach erfolgreichem Lauf die vom Workflow ausgegebene Pages-Adresse öffnen.</li>
+  </ol>
+
+  <h2>Was auf dem Gerät läuft</h2>
+  <div class="grid">
+    <section class="card"><h3>Direkte Produktsuche</h3><p>Search-a-licious wird primär direkt per HTTPS aufgerufen. OFF Legacy Search folgt höchstens einmal nach Fehler oder null Treffern.</p></section>
+    <section class="card"><h3>Lokaler Cache</h3><p>Fresh-/Stale-Cache, Request-Deduplizierung, Kalibrierungen, Verlauf und Berechnung laufen lokal in der PWA.</p></section>
+    <section class="card"><h3>Gezielte Details</h3><p>Nur das ausgewählte Barcode-Produkt wird über OFF API v3.6 geladen. v2 ergänzt nur weiterhin fehlende Nährwerte.</p></section>
+    <section class="card"><h3>Kontrollierte Fehler</h3><p>Kein lokaler Cooldown: technische Details bleiben sichtbar und ein manueller Retry ist sofort möglich.</p></section>
+  </div>
+
+  <h2>Installation</h2>
+  <ul>
+    <li><strong>iPhone/iPad:</strong> Pages-Seite in Safari öffnen → Teilen → Zum Home-Bildschirm.</li>
+    <li><strong>Android:</strong> Pages-Seite in Chrome öffnen → App installieren.</li>
+    <li><strong>Desktop:</strong> Installationssymbol eines PWA-fähigen Browsers verwenden.</li>
+  </ul>
+  <div class="notice warn"><strong>Nicht per <code>file://</code> betreiben:</strong> Service Worker und PWA-Installation benötigen einen sicheren HTTP(S)-Kontext. GitHub Pages stellt ihn bereit.</div>
+
+  <h2>API auf dem Zielgerät prüfen</h2>
+  <p><a href="./API-DIAGNOSE.html">API-DIAGNOSE.html</a> testet Search-a-licious, den Legacy-Fallback sowie OFF API v3.6 und v2 einzeln. Der tatsächliche Browserfehler, Endpunkt, Status und die Laufzeit werden angezeigt.</p>
+
+  <h2>Validierung</h2>
+  <p>Der Release-Gate umfasst Vitest, TypeScript, Biome, Playwright auf Chromium/WebKit, axe-core, npm audit, Service-Worker-/Manifest-Prüfung, mobile Unterpfade, sichere ZIP-Extraktion und vollständige SHA-256-Prüfsummen.</p>
+
+  <div class="actions">
+    <a class="button" href="./index.html">App öffnen</a>
+    <a class="button" href="./API-DIAGNOSE.html">API-Diagnose öffnen</a>
+  </div>
+  <p class="small">Enthalten: fertige PWA, Diagnose, maschinenlesbarer Vertrag, Dokumentation, Release Notes, Lizenz und Prüfsummen. Der Entwickler-Quellcode wird separat ausgegeben.</p>
+</main></body></html>

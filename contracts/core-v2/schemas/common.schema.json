@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kh-checker.local/schemas/common.schema.json",
+  "title": "KH Checker common definitions",
+  "$defs": {
+    "FoodUnit": {
+      "type": "string",
+      "enum": [
+        "g",
+        "kg",
+        "ml",
+        "piece",
+        "bar",
+        "slice",
+        "portion",
+        "package"
+      ]
+    },
+    "Confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low",
+        "missing"
+      ]
+    },
+    "SourceMode": {
+      "type": "string",
+      "enum": [
+        "api",
+        "clinic"
+      ]
+    },
+    "IsoDateTime": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

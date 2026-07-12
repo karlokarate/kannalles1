@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kh-checker.local/schemas/calculation-result.schema.json",
+  "title": "KH Checker CalculationResult Core",
+  "type": "object",
+  "required": [
+    "status",
+    "product",
+    "nutrition",
+    "unitResolution",
+    "calculation"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "calculated",
+        "needs_unit_calibration",
+        "not_found",
+        "temporarily_unavailable"
+      ]
+    },
+    "product": {
+      "type": "object",
+      "required": [
+        "name",
+        "barcode",
+        "countability"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "brand": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "barcode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "countability": {
+          "type": "string",
+          "enum": [
+            "countable",
+            "non_countable",
+            "unknown"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "nutrition": {
+      "type": "object",
+      "required": [
+        "carbohydratesPer100",
+        "basis",
+        "source"
+      ],
+      "properties": {
+        "carbohydratesPer100": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "basis": {
+          "type": "string",
+          "enum": [
+            "100g",
+            "100ml"
+          ]
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "unitResolution": {
+      "type": "object",
+      "required": [
+        "requestedUnit",
+        "selectedUnit",
+        "state",
+        "options"
+      ],
+      "properties": {
+        "requestedUnit": {
+          "type": "string",
+          "enum": [
+            "g",
+            "kg",
+            "ml",
+            "piece",
+            "bar",
+            "slice",
+            "portion",
+            "package"
+          ]
+        },
+        "selectedUnit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            null,
+            "g",
+            "kg",
+            "ml",
+            "piece",
+            "bar",
+            "slice",
+            "portion",
+            "package"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "resolved",
+            "needs_calibration"
+          ]
+        },
+        "selectedOptionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "unit",
+              "label",
+              "unitWeightG",
+              "source",
+              "confidence",
+              "recommended",
+              "smallestEdibleUnit"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "unit": {
+                "type": "string",
+                "enum": [
+                  "g",
+                  "kg",
+                  "ml",
+                  "piece",
+                  "bar",
+                  "slice",
+                  "portion",
+                  "package"
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "unitWeightG": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "exclusiveMinimum": 0
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "user-calibration",
+                  "explicit-single-unit",
+                  "explicit-multipack",
+                  "count-and-net-weight",
+                  "generic-consensus",
+                  "manufacturer-serving",
+                  "single-package",
+                  "package",
+                  "mass",
+                  "volume",
+                  "unresolved"
+                ]
+              },
+              "confidence": {
+                "type": "string",
+                "enum": [
+                  "high",
+                  "medium",
+                  "low",
+                  "missing"
+                ]
+              },
+              "recommended": {
+                "type": "boolean"
+              },
+              "smallestEdibleUnit": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "calculation": {
+      "type": "object",
+      "required": [
+        "amount",
+        "unitWeightG",
+        "totalWeightG",
+        "carbsPerUnitG",
+        "totalCarbsG"
+      ],
+      "properties": {
+        "amount": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "unitWeightG": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "totalWeightG": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "carbsPerUnitG": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "totalCarbsG": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

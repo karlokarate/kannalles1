@@ -1,0 +1,106 @@
+name: Build, validate and deploy KH Checker v2.2.4
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Generate, validate and prepare Pages artifact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.pipeline.outputs.version }}
+      selected_kind: ${{ steps.pipeline.outputs.selected_kind }}
+      selected_zip: ${{ steps.pipeline.outputs.selected_zip }}
+      selected_sha256: ${{ steps.pipeline.outputs.selected_sha256 }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node.js 24 LTS
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24.x"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Run serial generator, quality and release pipeline
+        id: pipeline
+        shell: bash
+        env:
+          CI: "true"
+          NODE_OPTIONS: "--max-old-space-size=4096"
+          KH_FALLBACK_ZIP: releases/kh-checker-v2.2.4-komplett.zip
+          VITE_DATA_GATEWAY_URL: ${{ vars.VITE_DATA_GATEWAY_URL || '' }}
+          VITE_AI_PARSE_URL: ${{ vars.VITE_AI_PARSE_URL || '' }}
+        run: bash scripts/one-click-prepare.sh
+
+      - name: Upload validation reports and regenerated releases
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kh-checker-v2.2.4-validation-${{ github.run_attempt }}
+          path: |
+            ci-reports/
+            release-out/kh-checker-v2.2.4-komplett.zip
+            release-out/ENTWICKLER-QUELLCODE-v2.2.4.zip
+          if-no-files-found: warn
+          compression-level: 6
+          retention-days: 30
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload validated Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: publish-site
+          include-hidden-files: true
+
+  deploy:
+    name: Deploy validated KH Checker PWA
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - name: Deployment summary
+        shell: bash
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SELECTED_KIND: ${{ needs.prepare.outputs.selected_kind }}
+          SELECTED_ZIP: ${{ needs.prepare.outputs.selected_zip }}
+          SELECTED_SHA256: ${{ needs.prepare.outputs.selected_sha256 }}
+        run: |
+          {
+            echo "## KH Checker v${VERSION} deployed"
+            echo
+            echo "- URL: ${PAGE_URL}"
+            echo "- Deployment candidate: \`${SELECTED_KIND}\`"
+            echo "- Release ZIP: \`${SELECTED_ZIP}\`"
+            echo "- SHA-256: \`${SELECTED_SHA256}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

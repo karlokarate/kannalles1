@@ -1,0 +1,65 @@
+{
+  "document": "current-code-gap-map",
+  "version": "2.0.0",
+  "observedVersion": "2.2.x uploaded files",
+  "items": [
+    {
+      "capability": "cache_first_search_and_backend_fallback",
+      "status": "implemented",
+      "evidence": [
+        "searchFoodCandidates uses canonical query cache",
+        "maximum two search backends",
+        "stale cache fallback"
+      ],
+      "requiredChange": "wrap final UI result in typed SearchOutcome union"
+    },
+    {
+      "capability": "no_artificial_wait",
+      "status": "implemented",
+      "evidence": [
+        "api governor telemetry has blocking=false",
+        "Retry-After is diagnostic only"
+      ],
+      "requiredChange": "keep behavior and add regression gate"
+    },
+    {
+      "capability": "group_weighing",
+      "status": "partial",
+      "evidence": [
+        "ResultScreen derives measuredTotalWeightG / measuredCount",
+        "resolveWeight stores a calibration"
+      ],
+      "gap": [
+        "availability depends on currently selected result unit",
+        "no explicit universal countability state",
+        "no carbs-per-unit live output contract"
+      ],
+      "requiredChange": "drive panel from countability and unit-resolution state, not only selected unit"
+    },
+    {
+      "capability": "persistent_calibration",
+      "status": "partial",
+      "evidence": [
+        "IndexedDB calibrations store exists",
+        "single getCalibration(key) lookup exists"
+      ],
+      "gap": [
+        "single exact key only",
+        "no barcode/exact/generic lookup chain",
+        "no conflict resolution",
+        "no explicit schema version"
+      ],
+      "requiredChange": "migrate PieceCalibration to schemaVersion 2 and multi-scope lookup"
+    },
+    {
+      "capability": "smallest_unit_default",
+      "status": "partial",
+      "gap": [
+        "selection is not guaranteed for every countable product",
+        "manufacturer portion can still win when unit semantics are incomplete",
+        "saved calibration is not always injected as first option across aliases"
+      ],
+      "requiredChange": "centralize option ranking using unit-resolution contract"
+    }
+  ]
+}

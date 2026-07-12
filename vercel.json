@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/**/*.js": {
+      "runtime": "nodejs22.x",
+      "maxDuration": 15
+    }
+  },
+  "regions": ["fra1"]
+}

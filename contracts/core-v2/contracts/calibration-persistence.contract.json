@@ -1,0 +1,72 @@
+{
+  "contract": "kh-checker-calibration-persistence",
+  "version": "2.0.0",
+  "authoritativeStoredValue": "derivedUnitWeightG",
+  "nonAuthoritativeSnapshots": [
+    "carbohydratesPer100gAtMeasurement",
+    "derivedCarbsPerUnitGAtMeasurement"
+  ],
+  "scopeTypes": [
+    {
+      "scope": "barcode",
+      "usage": "default for a concrete scanned or selected product",
+      "automaticReuse": true
+    },
+    {
+      "scope": "exact_product",
+      "usage": "fallback when no barcode exists; canonical name plus brand",
+      "automaticReuse": true
+    },
+    {
+      "scope": "generic_food",
+      "usage": "only after explicit user choice to use measurement for all equivalent foods",
+      "automaticReuse": true
+    }
+  ],
+  "lookupOrder": [
+    "barcode_and_unit",
+    "exact_product_brand_and_unit",
+    "generic_food_and_unit_if_user_authorized",
+    "none"
+  ],
+  "unitIsolation": {
+    "neverEquivalent": [
+      [
+        "package",
+        "piece"
+      ],
+      [
+        "package",
+        "bar"
+      ],
+      [
+        "package",
+        "slice"
+      ],
+      [
+        "portion",
+        "piece"
+      ]
+    ],
+    "conditionalAliases": [
+      {
+        "units": [
+          "piece",
+          "bar"
+        ],
+        "allowedOnlyIf": "product evidence or user explicitly identifies the smallest unit as a bar"
+      }
+    ]
+  },
+  "conflictResolution": [
+    "more_specific_scope",
+    "higher_measured_count",
+    "newer_updated_at"
+  ],
+  "lifecycle": {
+    "expiresAutomatically": false,
+    "userCanEdit": true,
+    "userCanDelete": true,
+    "historyPreservedAcrossAppUpdates": true
+  }
+}

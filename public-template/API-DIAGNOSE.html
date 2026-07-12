@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#138a55">
+  <title>KH Checker v__KH_APP_VERSION__ – API-Diagnose</title>
+  <link rel="stylesheet" href="./package-info.css">
+  <script defer src="./api-diagnose.js"></script>
+</head>
+<body><main>
+  <span class="badge">Diagnose v__KH_APP_VERSION__</span>
+  <h1>API-Diagnose</h1>
+  <p class="lead">Jeder Klick führt genau einen Gateway-GET-Test aus. Direkte Browseraufrufe zu Open Food Facts sind in diesem Release deaktiviert.</p>
+
+  <div class="notice"><strong>Produktionsreihenfolge im Gateway:</strong> Search-a-licious primär, OFF Legacy Search genau einmal nach technischem Fehler oder null Treffern. Produktdetails verwenden v3.6 und nur bei fehlenden Nährwerten v2.</div>
+  <div class="notice warn"><strong>Schonend testen:</strong> Diese Seite umgeht bewusst den App-Cache. Bitte keine schnellen Dauerklicks ausführen.</div>
+
+  <p class="context" id="context">Kontext wird geladen …</p>
+  <div class="field-grid">
+    <label>Suchbegriff
+      <input id="query" value="Müllermilch Schoko Zero" maxlength="120" autocomplete="off">
+    </label>
+    <label>Barcode
+      <input id="barcode" value="4071800001371" inputmode="numeric" maxlength="14" autocomplete="off">
+    </label>
+  </div>
+
+  <div class="actions">
+    <button id="searchBtn" type="button">Gateway /api/search testen</button>
+    <button id="legacyBtn" type="button" class="optional">Gateway-Fallbackpfad testen</button>
+    <button id="productV3Btn" type="button">OFF v3.6 testen</button>
+    <button id="productV2Btn" type="button" class="optional">OFF v2 testen</button>
+    <button id="clearBtn" type="button" class="secondary">Ausgabe leeren</button>
+  </div>
+
+  <section id="results" class="results" aria-live="polite">
+    <article class="result"><strong>Noch kein Test ausgeführt.</strong><p class="small">Der exakte Browserfehler erscheint nach einem Fehlschlag hier.</p></article>
+  </section>
+
+  <div class="actions">
+    <a class="button" href="./index.html">Zurück zur App</a>
+    <a class="button" href="./README-ERST-LESEN.html">Installationshinweise</a>
+  </div>
+</main></body></html>

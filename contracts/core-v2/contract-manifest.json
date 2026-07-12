@@ -1,0 +1,32 @@
+{
+  "bundle": "kh-checker-core-contracts",
+  "version": "2.0.0",
+  "generatedAt": "2026-07-11T11:27:49.990967+00:00",
+  "language": "de",
+  "normative": true,
+  "scope": [
+    "fehlertolerante Produktsuche",
+    "kleinste belastbar belegte Verzehreinheit als Standard",
+    "deterministische Ermittlung fehlender Einzelgewichte durch Gruppenwägung",
+    "dauerhafte Wiederverwendung persönlicher Einheitengewichte",
+    "deterministische Kohlenhydratberechnung"
+  ],
+  "definitionOfAlwaysWorks": "Jede Nutzeraktion endet in einem typisierten, verständlichen Zustand. Externe APIs können ausfallen; die App darf dabei niemals mit einer unbehandelten Ausnahme oder einer unverständlichen Rohfehlermeldung enden.",
+  "files": {
+    "contracts/critical-fields.contract.json": "Zentrale Muss-Anforderungen",
+    "contracts/search-execution.contract.json": "Suchpipeline und Fehlerzustände",
+    "contracts/unit-resolution.contract.json": "Auswahl der kleinsten Einheit",
+    "contracts/calibration-persistence.contract.json": "Speicherung und Wiederverwendung",
+    "contracts/ui-behavior.contract.json": "Verbindliches UI-Verhalten",
+    "schemas/search-outcome.schema.json": "Schema für Suchergebnisse",
+    "schemas/calculation-result.schema.json": "Schema für Ergebnis und Einheitenauswahl",
+    "schemas/piece-calibration.schema.json": "Schema für gespeicherte Kalibrierungen",
+    "implementation/current-code-gap-map.json": "Abgleich mit dem hochgeladenen Stand",
+    "implementation/migration-plan.json": "Datenbank- und Code-Migration",
+    "reference/target-types.ts": "Referenztypen",
+    "reference/core-algorithms.ts": "Referenzalgorithmen",
+    "tests/acceptance-cases.json": "Maschinenlesbare Abnahmetests",
+    "tests/core-contract.test.ts": "Ausführbare Vitest-Referenztests",
+    "release/production-gates.json": "Freigabekriterien"
+  }
+}

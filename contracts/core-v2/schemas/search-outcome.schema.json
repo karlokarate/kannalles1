@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kh-checker.local/schemas/search-outcome.schema.json",
+  "title": "KH Checker SearchOutcome",
+  "type": "object",
+  "required": [
+    "requestId",
+    "status",
+    "query",
+    "sourceMode",
+    "diagnostics"
+  ],
+  "properties": {
+    "requestId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "resolved",
+        "needs_product_choice",
+        "needs_unit_calibration",
+        "not_found",
+        "temporarily_unavailable"
+      ]
+    },
+    "query": {
+      "type": "object",
+      "required": [
+        "raw",
+        "canonical",
+        "productOnly"
+      ],
+      "properties": {
+        "raw": {
+          "type": "string"
+        },
+        "canonical": {
+          "type": "string"
+        },
+        "productOnly": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "sourceMode": {
+      "type": "string",
+      "enum": [
+        "api",
+        "clinic"
+      ]
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "result": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "diagnostics": {
+      "type": "object",
+      "required": [
+        "networkAttempted",
+        "cacheStatus",
+        "attempts"
+      ],
+      "properties": {
+        "networkAttempted": {
+          "type": "boolean"
+        },
+        "cacheStatus": {
+          "type": "string",
+          "enum": [
+            "none",
+            "fresh-cache",
+            "stale-cache",
+            "network"
+          ]
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "backend",
+              "outcome"
+            ],
+            "properties": {
+              "backend": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "success",
+                  "cache-hit",
+                  "network-error",
+                  "timeout",
+                  "http-error",
+                  "rate-limit",
+                  "parse-error",
+                  "aborted"
+                ]
+              },
+              "status": {
+                "type": "integer"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "retryAllowedImmediately": {
+          "const": true
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

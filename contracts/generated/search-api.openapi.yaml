@@ -1,0 +1,706 @@
+components:
+  parameters: {}
+  schemas:
+    AiParseRequest:
+      additionalProperties: false
+      properties:
+        input:
+          maxLength: 200
+          minLength: 1
+          type: string
+      required:
+        - input
+      type: object
+    AiParseResponse:
+      additionalProperties: false
+      properties:
+        amount:
+          additionalProperties: false
+          properties:
+            unit:
+              $ref: "#/components/schemas/FoodUnit"
+            value:
+              exclusiveMinimum: 0
+              type: number
+          required:
+            - value
+            - unit
+          type: object
+        barcode:
+          type:
+            - string
+            - "null"
+        clarificationQuestion:
+          type:
+            - string
+            - "null"
+        parser:
+          enum:
+            - openai
+          type: string
+        product:
+          additionalProperties: false
+          properties:
+            brand:
+              type:
+                - string
+                - "null"
+            name:
+              type: string
+            variant:
+              type:
+                - string
+                - "null"
+          required:
+            - name
+            - brand
+            - variant
+          type: object
+        rawInput:
+          type: string
+        resolutionMode:
+          enum:
+            - generic_category
+            - exact_product
+            - barcode
+          type: string
+        status:
+          enum:
+            - parsed
+            - needs_clarification
+            - unsupported
+          type: string
+      required:
+        - status
+        - rawInput
+        - product
+        - amount
+        - resolutionMode
+        - barcode
+        - clarificationQuestion
+        - parser
+      type: object
+    ApiAttemptDiagnostic:
+      additionalProperties: false
+      properties:
+        backend:
+          $ref: "#/components/schemas/ApiBackend"
+        cacheAgeMs:
+          minimum: 0
+          type: number
+        durationMs:
+          minimum: 0
+          type: number
+        errorMessage:
+          type: string
+        errorName:
+          type: string
+        label:
+          minLength: 1
+          type: string
+        outcome:
+          $ref: "#/components/schemas/ApiAttemptOutcome"
+        responsePreview:
+          maxLength: 500
+          type: string
+        retryAfterMs:
+          minimum: 0
+          type: number
+        startedAt:
+          format: date-time
+          type: string
+        status:
+          maximum: 599
+          minimum: 100
+          type: integer
+        url:
+          minLength: 1
+          type: string
+      required:
+        - backend
+        - label
+        - url
+        - startedAt
+        - durationMs
+        - outcome
+      type: object
+    ApiAttemptOutcome:
+      enum:
+        - cache-hit
+        - success
+        - http-error
+        - rate-limit
+        - network-error
+        - timeout
+        - parse-error
+        - aborted
+      type: string
+    ApiBackend:
+      enum:
+        - gateway
+        - search-a-licious
+        - open-food-facts-legacy
+        - open-food-facts-v3
+        - open-food-facts-v2
+        - query-cache
+        - product-cache
+      type: string
+    ApiError:
+      additionalProperties: false
+      properties:
+        attempts:
+          items:
+            $ref: "#/components/schemas/ApiAttemptDiagnostic"
+          type: array
+        detail:
+          type: string
+        error:
+          minLength: 1
+          type: string
+        retryAt:
+          format: date-time
+          type: string
+      required:
+        - error
+      type: object
+    ApiResponseMeta:
+      additionalProperties: false
+      properties:
+        attempts:
+          items:
+            $ref: "#/components/schemas/ApiAttemptDiagnostic"
+          type: array
+        backend:
+          $ref: "#/components/schemas/ApiBackend"
+        cacheAgeMs:
+          minimum: 0
+          type: number
+        cacheKey:
+          type: string
+        cacheStatus:
+          enum:
+            - network
+            - fresh-cache
+            - stale-cache
+          type: string
+        durationMs:
+          minimum: 0
+          type: number
+        fallbackOrigin:
+          enum:
+            - local-budget
+            - remote-limit
+            - remote-overload
+          type: string
+        fallbackReason:
+          enum:
+            - offline
+            - rate-limit
+            - network
+            - timeout
+            - http
+            - parse
+            - empty-result
+          type: string
+        fallbackStatus:
+          maximum: 599
+          minimum: 100
+          type: integer
+        fetchedAt:
+          format: date-time
+          type: string
+        networkAttempted:
+          type: boolean
+        originBackend:
+          $ref: "#/components/schemas/ApiBackend"
+        retryAt:
+          format: date-time
+          type: string
+        sourceUrl:
+          type: string
+      required:
+        - cacheStatus
+        - fetchedAt
+        - sourceUrl
+      type: object
+    FoodUnit:
+      enum:
+        - g
+        - kg
+        - ml
+        - piece
+        - bar
+        - slice
+        - portion
+        - package
+      type: string
+    HealthResponse:
+      additionalProperties: false
+      properties:
+        gatewayCacheEntries:
+          minimum: 0
+          type: integer
+        inFlightRequests:
+          minimum: 0
+          type: integer
+        ok:
+          enum:
+            - true
+          type: boolean
+        openaiConfigured:
+          type: boolean
+        version:
+          pattern: ^\d+\.\d+\.\d+$
+          type: string
+      required:
+        - ok
+        - version
+        - openaiConfigured
+        - gatewayCacheEntries
+        - inFlightRequests
+      type: object
+    OffProduct:
+      additionalProperties: {}
+      properties:
+        brands:
+          type: string
+        categories_tags:
+          items:
+            type: string
+          type: array
+        code:
+          type: string
+        countries_tags:
+          items:
+            type: string
+          type: array
+        data_quality_errors_tags:
+          items:
+            type: string
+          type: array
+        generic_name:
+          type: string
+        generic_name_de:
+          type: string
+        image_front_url:
+          type: string
+        nutriments:
+          $ref: "#/components/schemas/SearchNutriments"
+        nutrition_data_per:
+          type: string
+        nutrition_data_prepared_per:
+          type: string
+        product_name:
+          type: string
+        product_name_de:
+          type: string
+        product_quantity:
+          anyOf:
+            - type: number
+            - type: string
+        product_quantity_unit:
+          type: string
+        quantity:
+          type: string
+        serving_quantity:
+          anyOf:
+            - type: number
+            - type: string
+        serving_size:
+          type: string
+      type: object
+    ProductGatewayResponse:
+      additionalProperties: {}
+      properties:
+        api_meta:
+          $ref: "#/components/schemas/ApiResponseMeta"
+        code:
+          type: string
+        errors:
+          items: {}
+          type: array
+        gateway_attempts:
+          items:
+            $ref: "#/components/schemas/ApiAttemptDiagnostic"
+          type: array
+        product:
+          $ref: "#/components/schemas/OffProduct"
+        status:
+          type: string
+        warnings:
+          items: {}
+          type: array
+      type: object
+    SearchGatewayResponse:
+      additionalProperties: {}
+      properties:
+        api_meta:
+          $ref: "#/components/schemas/ApiResponseMeta"
+        count:
+          minimum: 0
+          type: number
+        errors:
+          items: {}
+          type: array
+        gateway_attempts:
+          items:
+            $ref: "#/components/schemas/ApiAttemptDiagnostic"
+          type: array
+        hits:
+          items:
+            $ref: "#/components/schemas/SearchHit"
+          type: array
+        page:
+          minimum: 1
+          type: integer
+        page_count:
+          minimum: 0
+          type: number
+        page_size:
+          maximum: 20
+          minimum: 1
+          type: integer
+        query_used:
+          type: string
+        source:
+          enum:
+            - gateway
+            - search-a-licious
+            - open-food-facts-legacy
+            - none
+          type: string
+        timed_out:
+          type: boolean
+        took:
+          minimum: 0
+          type: number
+        warnings:
+          items: {}
+          type:
+            - array
+            - "null"
+      required:
+        - hits
+      type: object
+    SearchHit:
+      additionalProperties: {}
+      properties:
+        _score:
+          type: number
+        api_meta:
+          $ref: "#/components/schemas/ApiResponseMeta"
+        brands:
+          anyOf:
+            - type: string
+            - items:
+                type: string
+              type: array
+        categories: {}
+        categories_tags:
+          items:
+            type: string
+          type: array
+        code:
+          type: string
+        completeness:
+          type: number
+        countries: {}
+        countries_tags:
+          items:
+            type: string
+          type: array
+        data_quality_errors_tags:
+          items:
+            type: string
+          type: array
+        generic_name:
+          type: string
+        generic_name_de:
+          type: string
+        generic_name_en:
+          type: string
+        image_front_url:
+          type: string
+        image_url:
+          type: string
+        nutriments:
+          $ref: "#/components/schemas/SearchNutriments"
+        nutrition_data_per:
+          type: string
+        nutrition_data_prepared_per:
+          type: string
+        product_name:
+          type: string
+        product_name_de:
+          type: string
+        product_name_en:
+          type: string
+        product_quantity:
+          anyOf:
+            - type: number
+            - type: string
+        product_quantity_unit:
+          type: string
+        quantity:
+          type: string
+        serving_quantity:
+          anyOf:
+            - type: number
+            - type: string
+        serving_size:
+          type: string
+        unique_scans_n:
+          type: number
+      type: object
+    SearchNutriments:
+      additionalProperties:
+        anyOf:
+          - type: number
+          - type: string
+      properties:
+        carbohydrates_100g:
+          type: number
+        carbohydrates_100ml:
+          type: number
+        carbohydrates_prepared_100g:
+          type: number
+        carbohydrates_prepared_100ml:
+          type: number
+        carbohydrates_prepared_serving:
+          type: number
+        carbohydrates_serving:
+          type: number
+      type: object
+info:
+  description: Generatorvertrag für das optionale Gateway. Die statische GitHub-Pages-PWA bleibt ohne eigenen Server nutzbar; Cache-, Fallback-, Deduplizierungs-, Einheiten-, Kalibrierungs- und Berechnungslogik verbleibt im Projektcode.
+  title: KH Checker optional gateway API
+  version: 2.2.4
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+openapi: 3.1.0
+paths:
+  /api/ai/parse:
+    post:
+      operationId: parseFoodRequest
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiParseRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiParseResponse"
+          description: Strukturiertes Parser-Ergebnis
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Ungültige Anfrage
+        "429":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Upstream- oder Parser-Limit. Retry-After ist nur ein Hinweis.
+          headers:
+            Retry-After:
+              description: Delta-Sekunden oder HTTP-Datum
+              schema:
+                type: string
+        "502":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Ungültige oder fehlgeschlagene Upstream-Antwort
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Optionaler Dienst vorübergehend nicht verfügbar
+          headers:
+            Retry-After:
+              description: Delta-Sekunden oder HTTP-Datum
+              schema:
+                type: string
+      summary: Mehrdeutige Nutzereingabe optional strukturieren
+      tags:
+        - ai
+  /api/health:
+    get:
+      operationId: gatewayHealth
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+          description: Gateway ist erreichbar
+      summary: Status des optionalen Gateways lesen
+      tags:
+        - health
+  /api/product/{code}:
+    get:
+      operationId: productByBarcode
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema:
+            example: "4000417025005"
+            pattern: ^\d{8,14}$
+            type: string
+        - in: query
+          name: known_carbs
+          required: false
+          schema:
+            enum:
+              - "1"
+            example: "1"
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductGatewayResponse"
+          description: Ausgewähltes Produkt
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Ungültige Anfrage
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Kein Produkt für diesen Barcode
+        "429":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Upstream- oder Parser-Limit. Retry-After ist nur ein Hinweis.
+          headers:
+            Retry-After:
+              description: Delta-Sekunden oder HTTP-Datum
+              schema:
+                type: string
+        "502":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Ungültige oder fehlgeschlagene Upstream-Antwort
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Optionaler Dienst vorübergehend nicht verfügbar
+          headers:
+            Retry-After:
+              description: Delta-Sekunden oder HTTP-Datum
+              schema:
+                type: string
+      summary: Nur das ausgewählte Produkt hydratisieren
+      tags:
+        - product
+  /api/search:
+    get:
+      operationId: searchProducts
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema:
+            example: BiFi
+            maxLength: 120
+            minLength: 1
+            type: string
+        - in: query
+          name: page_size
+          required: false
+          schema:
+            default: 15
+            example: 15
+            maximum: 20
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchGatewayResponse"
+          description: Suche abgeschlossen; auch null Treffer sind HTTP 200
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Ungültige Anfrage
+        "429":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Upstream- oder Parser-Limit. Retry-After ist nur ein Hinweis.
+          headers:
+            Retry-After:
+              description: Delta-Sekunden oder HTTP-Datum
+              schema:
+                type: string
+        "502":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Ungültige oder fehlgeschlagene Upstream-Antwort
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Optionaler Dienst vorübergehend nicht verfügbar
+          headers:
+            Retry-After:
+              description: Delta-Sekunden oder HTTP-Datum
+              schema:
+                type: string
+      summary: Produkte über das explizit konfigurierte Gateway suchen
+      tags:
+        - search
+security: []
+servers:
+  - description: Same-origin optionales Gateway
+    url: /
+  - description: Beispiel für ein externes HTTPS-Gateway
+    url: https://kh-api.example
+tags:
+  - description: Gateway-Status
+    name: health
+  - description: Produktsuche
+    name: search
+  - description: Ausgewählte Produktdetails
+    name: product
+  - description: Optionaler Sprachparser
+    name: ai
+webhooks: {}
+x-kh-generator:
+  appOnlyRelease: true
+  appVersion: 2.2.4
+  authoritativeSource: contracts/source/search-api.contract.mjs
+  customServerRequired: false
+  localCooldownAllowed: false
+  maximumDirectSearchBackendsPerAction: 2
+  productHydrationFanOutAllowed: false
+  retryAfterAdvisoryOnly: true
+  version: 1

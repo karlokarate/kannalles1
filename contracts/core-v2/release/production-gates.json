@@ -1,0 +1,52 @@
+{
+  "release": "KH Checker core behavior",
+  "version": "2.0.0",
+  "allMustPass": true,
+  "gates": [
+    {
+      "id": "search-outcome-totality",
+      "check": "every search action returns one allowed SearchOutcome status",
+      "severity": "blocker"
+    },
+    {
+      "id": "no-unhandled-ui-errors",
+      "check": "no rejected search promise reaches React render path",
+      "severity": "blocker"
+    },
+    {
+      "id": "no-local-cooldown",
+      "check": "retry is never disabled by local request telemetry",
+      "severity": "blocker"
+    },
+    {
+      "id": "single-unit-first",
+      "check": "all fixtures with reliable smallest-unit evidence select it first",
+      "severity": "blocker"
+    },
+    {
+      "id": "no-silent-unit-substitution",
+      "check": "explicit piece/bar/slice requests never resolve through portion or package",
+      "severity": "blocker"
+    },
+    {
+      "id": "universal-group-weighing",
+      "check": "every countable needs-calibration result exposes editable count and total weight",
+      "severity": "blocker"
+    },
+    {
+      "id": "calibration-persistence",
+      "check": "saved calibration survives reload and app update migration",
+      "severity": "blocker"
+    },
+    {
+      "id": "current-carbs-recalculation",
+      "check": "saved unit weight is combined with current carbohydrates-per-100g",
+      "severity": "blocker"
+    },
+    {
+      "id": "regression-fixtures",
+      "check": "Bueno, BiFi, Salzstangen, bread slice, Nutella and generic cooked foods pass",
+      "severity": "blocker"
+    }
+  ]
+}

@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kh-checker.local/schemas/piece-calibration.schema.json",
+  "title": "KH Checker PieceCalibration v2",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "calibrationId",
+    "scope",
+    "scopeKey",
+    "product",
+    "unit",
+    "measurement",
+    "derivedUnitWeightG",
+    "createdAt",
+    "updatedAt",
+    "active"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "calibrationId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scope": {
+      "type": "string",
+      "enum": [
+        "barcode",
+        "exact_product",
+        "generic_food"
+      ]
+    },
+    "scopeKey": {
+      "type": "string",
+      "minLength": 1
+    },
+    "product": {
+      "type": "object",
+      "required": [
+        "canonicalName",
+        "barcode"
+      ],
+      "properties": {
+        "canonicalName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "brandCanonical": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "barcode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]{8,14}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "unit": {
+      "type": "object",
+      "required": [
+        "kind",
+        "label",
+        "smallestEdibleUnit"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "piece",
+            "bar",
+            "slice",
+            "portion"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "smallestEdibleUnit": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "measurement": {
+      "type": "object",
+      "required": [
+        "mode",
+        "measuredCount",
+        "measuredTotalWeightG"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "single_unit",
+            "group_weighing"
+          ]
+        },
+        "measuredCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "measuredTotalWeightG": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "group_weighing"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "measuredCount": {
+                "minimum": 2
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "derivedUnitWeightG": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "nutritionSnapshot": {
+      "type": "object",
+      "properties": {
+        "carbohydratesPer100g": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "derivedCarbsPerUnitG": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "active": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

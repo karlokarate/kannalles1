@@ -1,0 +1,149 @@
+{
+  "suite": "kh-checker-core-acceptance",
+  "version": "2.0.0",
+  "cases": [
+    {
+      "id": "search-primary-fails-fallback-succeeds",
+      "given": {
+        "primary": "network-error",
+        "fallback": "success"
+      },
+      "expect": {
+        "status": [
+          "resolved",
+          "needs_product_choice",
+          "needs_unit_calibration"
+        ],
+        "networkRequests": 2,
+        "rawExceptionInUi": false,
+        "retryDisabled": false
+      }
+    },
+    {
+      "id": "search-all-fail-stale-cache",
+      "given": {
+        "primary": "network-error",
+        "fallback": "timeout",
+        "staleCache": true
+      },
+      "expect": {
+        "cacheStatus": "stale-cache",
+        "statusNot": "temporarily_unavailable",
+        "warningVisible": true
+      }
+    },
+    {
+      "id": "search-all-fail-no-cache",
+      "given": {
+        "primary": "network-error",
+        "fallback": "timeout",
+        "staleCache": false
+      },
+      "expect": {
+        "status": "temporarily_unavailable",
+        "retryAllowedImmediately": true,
+        "localCountdown": false
+      }
+    },
+    {
+      "id": "kinder-bueno-default-single-bar",
+      "given": {
+        "query": "Kinder Bueno",
+        "carbohydratesPer100g": 49.5,
+        "evidence": [
+          "2 x 21.5 g",
+          "package 43 g"
+        ]
+      },
+      "expect": {
+        "selectedUnit": "bar",
+        "unitWeightG": 21.5,
+        "carbsPerUnitG": 10.6425,
+        "firstSelectorOption": "bar",
+        "packageStillAvailable": true
+      }
+    },
+    {
+      "id": "explicit-unit-never-replaced",
+      "given": {
+        "query": "12 Salzstangen",
+        "requestedUnit": "piece",
+        "serving": "30 g",
+        "unitWeightEvidence": null
+      },
+      "expect": {
+        "status": "needs_unit_calibration",
+        "selectedUnit": "piece",
+        "totalCarbsG": null
+      }
+    },
+    {
+      "id": "group-weighing-derivation",
+      "given": {
+        "requestedAmount": 12,
+        "measuredCount": 10,
+        "measuredTotalWeightG": 24,
+        "carbohydratesPer100g": 72
+      },
+      "expect": {
+        "unitWeightG": 2.4,
+        "carbsPerUnitG": 1.728,
+        "requestedTotalWeightG": 28.8,
+        "requestedTotalCarbsG": 20.736
+      }
+    },
+    {
+      "id": "saved-calibration-reused",
+      "given": {
+        "scope": "barcode",
+        "barcode": "12345678",
+        "unit": "piece",
+        "savedUnitWeightG": 2.4,
+        "currentCarbohydratesPer100g": 73
+      },
+      "expect": {
+        "firstSelectorOptionSource": "user-calibration",
+        "unitWeightG": 2.4,
+        "carbsPerUnitG": 1.752
+      }
+    },
+    {
+      "id": "current-nutrition-replaces-snapshot",
+      "given": {
+        "savedUnitWeightG": 21.5,
+        "snapshotCarbohydratesPer100g": 49.5,
+        "currentCarbohydratesPer100g": 50
+      },
+      "expect": {
+        "authoritativeWeightG": 21.5,
+        "carbsPerUnitG": 10.75
+      }
+    },
+    {
+      "id": "calibration-does-not-cross-package-boundary",
+      "given": {
+        "saved": {
+          "unit": "piece",
+          "weightG": 2.4
+        },
+        "requestedUnit": "package"
+      },
+      "expect": {
+        "calibrationApplied": false
+      }
+    },
+    {
+      "id": "nutella-not-forced-to-piece",
+      "given": {
+        "query": "Nutella",
+        "countability": "non_countable",
+        "manufacturerServingG": 15
+      },
+      "expect": {
+        "selectedUnit": "portion",
+        "selectedWeightG": 15,
+        "needsUnitCalibration": false
+      }
+    }
+  ]
+}

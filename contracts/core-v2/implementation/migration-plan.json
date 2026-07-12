@@ -1,0 +1,42 @@
+{
+  "plan": "kh-checker-calibration-v2-migration",
+  "targetDbVersion": 3,
+  "steps": [
+    {
+      "order": 1,
+      "action": "create_or_upgrade_calibrations_store",
+      "indexes": [
+        "scopeKey",
+        "barcode",
+        "canonicalProductUnit",
+        "updatedAt"
+      ]
+    },
+    {
+      "order": 2,
+      "action": "migrate_legacy_piece_calibration",
+      "mapping": {
+        "schemaVersion": 2,
+        "scope": "barcode if barcode exists else exact_product",
+        "scopeKey": "barcode|unit OR canonicalName|brand|unit",
+        "derivedUnitWeightG": "legacy.weightG",
+        "measurement.measuredCount": "legacy.measuredPieces or 1",
+        "measurement.measuredTotalWeightG": "legacy.measuredTotalWeightG or legacy.weightG",
+        "measurement.mode": "group_weighing if measuredPieces >= 2 else single_unit"
+      }
+    },
+    {
+      "order": 3,
+      "action": "retain_legacy_history_and_api_cache"
+    },
+    {
+      "order": 4,
+      "action": "replace_single_getCalibration_with_lookupCalibrationChain"
+    },
+    {
+      "order": 5,
+      "action": "inject_calibration_option_before_other_portion_options"
+    }
+  ],
+  "rollback": "Do not delete legacy records until migrated record is written and read back successfully."
+}

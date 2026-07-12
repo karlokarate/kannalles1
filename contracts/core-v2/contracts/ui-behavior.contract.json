@@ -1,0 +1,50 @@
+{
+  "contract": "kh-checker-ui-behavior",
+  "version": "2.0.0",
+  "resultSelector": {
+    "firstOption": "recommended smallest edible unit",
+    "unknownWeightLabel": "Einzelgewicht ermitteln",
+    "mustKeepAlternativeOptions": true
+  },
+  "calibrationPanel": {
+    "visibleWhen": [
+      "status_is_needs_unit_calibration",
+      "user_opens_manual_weight_editor_for_countable_unit"
+    ],
+    "modes": [
+      {
+        "id": "single_unit",
+        "fields": [
+          "unitWeightG"
+        ]
+      },
+      {
+        "id": "group_weighing",
+        "fields": [
+          "measuredCount",
+          "measuredTotalWeightG"
+        ],
+        "liveOutputs": [
+          "derivedUnitWeightG",
+          "derivedCarbsPerUnitG",
+          "requestedTotalCarbsG"
+        ]
+      }
+    ],
+    "groupCountDefault": 10,
+    "groupCountEditable": true,
+    "confirmAction": [
+      "persist_calibration",
+      "recalculate_result",
+      "select_calibrated_unit",
+      "move_calibrated_unit_to_first_option"
+    ]
+  },
+  "errors": {
+    "rawExceptionVisible": false,
+    "technicalDetailsExpandable": true,
+    "retryAlwaysAvailable": true,
+    "localCountdownAllowed": false,
+    "retryAfter": "display_only"
+  }
+}
