@@ -30,6 +30,20 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Apply contract-critical no-cooldown runtime hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch_file=.github/patches/kh-checker-v2.2.4-no-cooldown-runtime.patch
+          test -f "$patch_file"
+          git apply --check "$patch_file"
+          git apply "$patch_file"
+          ! grep -q 'setSearchBlockedUntil' src/App.tsx
+          ! grep -q 'Warte ${formatCountdown' src/App.tsx
+          grep -q "response.status === 429" src/lib/api.ts
+          grep -q "retryAllowedImmediately" api/search.js
+          echo "No-cooldown and immediate-retry invariants applied."
+
       - name: Set up Node.js 24 LTS
         uses: actions/setup-node@v6
         with:
@@ -103,4 +117,5 @@ jobs:
             echo "- Deployment candidate: \`${SELECTED_KIND}\`"
             echo "- Release ZIP: \`${SELECTED_ZIP}\`"
             echo "- SHA-256: \`${SELECTED_SHA256}\`"
+            echo "- Contract: no local cooldown; Retry-After remains diagnostic only"
           } >> "$GITHUB_STEP_SUMMARY"
