@@ -432,6 +432,10 @@ function normalizeProductApiMode(mode) {
   return 'hybrid';
 }
 
+function normalizeSearchApiMode(mode) {
+  return mode === 'legacy-only' ? 'legacy-only' : 'auto';
+}
+
 function normalizeLegacySearch(data, query) {
   return {
     hits: Array.isArray(data?.products) ? data.products : [],
@@ -552,7 +556,8 @@ app.get('/api/search', async (req, res) => {
   if (!query) return res.status(400).json({ error: 'q ist erforderlich.' });
   const rawPageSize = Number(req.query.page_size || 15);
   const pageSize = Number.isFinite(rawPageSize) ? Math.min(20, Math.max(1, Math.round(rawPageSize))) : 15;
-  const key = `search:${canonicalQuery(query)}:${pageSize}`;
+  const searchApiMode = normalizeSearchApiMode(req.query.search_api === 'v2' ? 'legacy-only' : 'auto');
+  const key = `search:${canonicalQuery(query)}:${pageSize}:${searchApiMode}`;
 
   try {
     const result = await cachedGatewayLoad({
@@ -564,30 +569,32 @@ app.get('/api/search', async (req, res) => {
         let reachableEmptyResponse = null;
         let primaryError = null;
 
-        if (searchALiciousCircuit.openUntil > Date.now()) {
-          attempts.push(bypassAttemptForOpenCircuit(query));
-        } else {
-          try {
-            const response = await fetchUpstreamJson(
-              buildSearchALiciousUrl(query, pageSize),
-              'search-a-licious',
-              'Search-a-licious'
-            );
-            closeSearchALiciousCircuit();
-            attempts.push(response.attempt);
-            const value = {
-              ...response.data,
-              hits: Array.isArray(response.data?.hits) ? response.data.hits : [],
-              source: 'search-a-licious',
-              query_used: query
-            };
-            if (value.hits.length > 0) return { value, attempts };
-            reachableEmptyResponse = value;
-          } catch (error) {
-            primaryError = error;
-            if (error instanceof UpstreamError) {
-              attempts.push(...error.attempts);
-              openSearchALiciousCircuit(error);
+        if (searchApiMode !== 'legacy-only') {
+          if (searchALiciousCircuit.openUntil > Date.now()) {
+            attempts.push(bypassAttemptForOpenCircuit(query));
+          } else {
+            try {
+              const response = await fetchUpstreamJson(
+                buildSearchALiciousUrl(query, pageSize),
+                'search-a-licious',
+                'Search-a-licious'
+              );
+              closeSearchALiciousCircuit();
+              attempts.push(response.attempt);
+              const value = {
+                ...response.data,
+                hits: Array.isArray(response.data?.hits) ? response.data.hits : [],
+                source: 'search-a-licious',
+                query_used: query
+              };
+              if (value.hits.length > 0) return { value, attempts };
+              reachableEmptyResponse = value;
+            } catch (error) {
+              primaryError = error;
+              if (error instanceof UpstreamError) {
+                attempts.push(...error.attempts);
+                openSearchALiciousCircuit(error);
+              }
             }
           }
         }

@@ -16,9 +16,10 @@ export default async function handler(req, res) {
 
   const rawPageSize = Number(req.query.page_size || 15);
   const pageSize = Number.isFinite(rawPageSize) ? Math.min(20, Math.max(1, Math.round(rawPageSize))) : 15;
+  const searchApiMode = req.query.search_api === 'v2' ? 'legacy-only' : 'auto';
 
   try {
-    const payload = await searchThroughGateway(query, pageSize);
+    const payload = await searchThroughGateway(query, pageSize, { searchApiMode });
     res.setHeader('Cache-Control', 'public, max-age=120, stale-while-revalidate=900');
     res.status(200).json(payload);
   } catch (error) {

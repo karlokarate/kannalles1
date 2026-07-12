@@ -1933,6 +1933,7 @@ export default function App() {
   ): Promise<{ candidate: SearchHit; product?: OffProduct; result: CalculationResult }> {
     let candidate = hit;
     let product: OffProduct | undefined;
+    const productApiMode = configuredProductApiMode();
     let compatibilityFallbackAttempted = false;
     const calibration = await findCalibration({
       productName: displayProductName(candidate),
@@ -1971,7 +1972,7 @@ export default function App() {
 
     // OFF v3 can omit nutriments. Use exactly one compact v2 fallback for the
     // already selected barcode; never fetch the large unfiltered document.
-    if (!hasCarbohydrateData(candidate) && candidate.code && !compatibilityFallbackAttempted) {
+    if (productApiMode === 'hybrid' && !hasCarbohydrateData(candidate) && candidate.code && !compatibilityFallbackAttempted) {
       try {
         const fallbackHit = await getSearchDocumentByBarcode(candidate.code, controller.signal, {
           gatewayUrl: configuredGatewayUrl(),
@@ -2022,15 +2023,16 @@ export default function App() {
       setRequest(parsed);
 
       if (parsed.resolutionMode === 'barcode' && parsed.barcode) {
+        const productApiMode = configuredProductApiMode();
         const productResponse = await getProductByBarcode(parsed.barcode, controller.signal, {
           gatewayUrl: configuredGatewayUrl(),
-          productApiMode: configuredProductApiMode()
+          productApiMode
         });
         ensureControllerActive(controller);
         observeApiMeta(productResponse.api_meta, 'Barcode-Produkt');
         if (!productResponse.product) throw new Error('Zu diesem Barcode wurde kein Produkt gefunden.');
         let hit = syntheticHit(productResponse.product);
-        if (!hasCarbohydrateData(hit) && !productCompatibilityFallbackAttempted(productResponse.api_meta)) {
+        if (productApiMode === 'hybrid' && !hasCarbohydrateData(hit) && !productCompatibilityFallbackAttempted(productResponse.api_meta)) {
           try {
             const fallbackHit = await getSearchDocumentByBarcode(parsed.barcode, controller.signal, {
               gatewayUrl: configuredGatewayUrl(),
@@ -2083,6 +2085,7 @@ export default function App() {
             || Boolean(parsed.product.brand)
             || parsed.product.name.trim().split(/\s+/).length >= 3,
           gatewayUrl: configuredGatewayUrl(),
+          searchApiMode: configuredProductApiMode() === 'v2' ? 'legacy-only' : 'auto',
           productOnly: parsed.product.name
         }
       );
@@ -2289,6 +2292,7 @@ export default function App() {
         {
           preserveVariants: true,
           gatewayUrl: configuredGatewayUrl(),
+          searchApiMode: configuredProductApiMode() === 'v2' ? 'legacy-only' : 'auto',
           productOnly: request.product.name
         }
       );

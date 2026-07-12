@@ -98,6 +98,8 @@ export interface SearchFoodOptions {
   gatewayUrl?: string;
   /** Product-only query, kept in the typed outcome for transparent diagnostics. */
   productOnly?: string;
+  /** Search backend mode: auto keeps Search-a-licious-first, legacy-only disables Search-a-licious. */
+  searchApiMode?: 'auto' | 'legacy-only';
 }
 
 export interface ProductRequestOptions {
@@ -739,6 +741,17 @@ function buildGatewaySearchUrl(base: string, query: string, pageSize = LEGACY_NE
   return buildGeneratedGatewaySearchUrl(base, query, pageSize);
 }
 
+function buildGatewaySearchUrlForMode(
+  base: string,
+  query: string,
+  pageSize = LEGACY_NETWORK_SEARCH_PAGE_SIZE,
+  searchApiMode: SearchFoodOptions['searchApiMode'] = 'auto'
+): string {
+  const url = new URL(buildGatewaySearchUrl(base, query, pageSize));
+  if (searchApiMode === 'legacy-only') url.searchParams.set('search_api', 'v2');
+  return url.toString();
+}
+
 function searchPolicy(backend: SearchBackend): FetchPolicy {
   if (backend === 'gateway') {
     return { bucket: 'search', backend, label: 'Eigener Daten-Gateway', freshMs: SEARCH_FRESH_MS, staleMs: SEARCH_STALE_MS, timeoutMs: 12_000, allowStaleOnError: false };
@@ -749,8 +762,14 @@ function searchPolicy(backend: SearchBackend): FetchPolicy {
   return { bucket: 'search', backend, label: 'Open Food Facts Legacy-Suche', freshMs: SEARCH_FRESH_MS, staleMs: SEARCH_STALE_MS, timeoutMs: 9_000, allowStaleOnError: false };
 }
 
-function searchUrl(backend: SearchBackend, query: string, pageSize: number, gatewayUrl = ''): string {
-  if (backend === 'gateway') return buildGatewaySearchUrl(gatewayUrl, query, pageSize);
+function searchUrl(
+  backend: SearchBackend,
+  query: string,
+  pageSize: number,
+  gatewayUrl = '',
+  searchApiMode: SearchFoodOptions['searchApiMode'] = 'auto'
+): string {
+  if (backend === 'gateway') return buildGatewaySearchUrlForMode(gatewayUrl, query, pageSize, searchApiMode);
   if (backend === 'search-a-licious') return buildSearchALiciousUrl(query, pageSize);
   return buildLegacySearchUrl(query, pageSize);
 }
@@ -873,9 +892,10 @@ async function searchViaBackend(
   query: string,
   signal?: AbortSignal,
   gatewayUrl = '',
-  pageSize = LEGACY_NETWORK_SEARCH_PAGE_SIZE
+  pageSize = LEGACY_NETWORK_SEARCH_PAGE_SIZE,
+  searchApiMode: SearchFoodOptions['searchApiMode'] = 'auto'
 ): Promise<SearchResponse> {
-  const url = searchUrl(backend, query, pageSize, gatewayUrl);
+  const url = searchUrl(backend, query, pageSize, gatewayUrl, searchApiMode);
   const rawResult = await fetchJson<(SearchResponse | LegacySearchResponse) & { api_meta?: ApiResponseMeta }>(
     url,
     searchPolicy(backend),
@@ -887,8 +907,9 @@ async function searchViaBackend(
   return normalizeSearchPayload(backend, result, query);
 }
 
-function searchBackendOrder(gatewayUrl = ''): SearchBackend[] {
+function searchBackendOrder(gatewayUrl = '', searchApiMode: SearchFoodOptions['searchApiMode'] = 'auto'): SearchBackend[] {
   if (gatewayUrl.trim()) return ['gateway'];
+  if (searchApiMode === 'legacy-only') return ['open-food-facts-legacy'];
   // Search-a-licious is the official full-text API and explicitly enables CORS
   // for HTTP(S) origins. The legacy CGI endpoint remains the single fallback.
   return ['search-a-licious', 'open-food-facts-legacy'];
@@ -989,13 +1010,14 @@ async function findMigratableSearchCache(
   query: string,
   requestedPageSize: number,
   gatewayUrl = '',
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  searchApiMode: SearchFoodOptions['searchApiMode'] = 'auto'
 ): Promise<SearchResponse | null> {
   throwIfAborted(signal);
   const sizes = [...new Set([LEGACY_NETWORK_SEARCH_PAGE_SIZE, requestedPageSize, 15, 10])];
-  for (const backend of searchBackendOrder(gatewayUrl)) {
+  for (const backend of searchBackendOrder(gatewayUrl, searchApiMode)) {
     for (const size of sizes) {
-      const url = searchUrl(backend, query, size, gatewayUrl);
+      const url = searchUrl(backend, query, size, gatewayUrl, searchApiMode);
       const raw = await peekCachedJson<(SearchResponse | LegacySearchResponse) & { api_meta?: ApiResponseMeta }>(
         url,
         searchPolicy(backend),
@@ -1041,12 +1063,13 @@ export async function searchFoodCandidates(
   if (!corrected) return { hits: [], count: 0, source: 'none', query_used: '' };
   const safePageSize = normalizeSearchPageSize(pageSize);
   const gatewayUrl = await resolveGatewayUrl(options.gatewayUrl, signal);
+  const searchApiMode = options.searchApiMode === 'legacy-only' ? 'legacy-only' : 'auto';
   throwIfAborted(signal);
   const cached = await readQueryCache(corrected, safePageSize);
   throwIfAborted(signal);
   if (cached) return cached;
 
-  const migrated = await findMigratableSearchCache(corrected, safePageSize, gatewayUrl, signal);
+  const migrated = await findMigratableSearchCache(corrected, safePageSize, gatewayUrl, signal, searchApiMode);
   throwIfAborted(signal);
   if (migrated) return migrated;
 
@@ -1059,7 +1082,7 @@ export async function searchFoodCandidates(
   let reachableEmptyResponse: SearchResponse | null = null;
   let primaryReturnedEmpty = false;
 
-  for (const backend of searchBackendOrder(gatewayUrl)) {
+  for (const backend of searchBackendOrder(gatewayUrl, searchApiMode)) {
     try {
       const priorAttempts = [...attempts];
       const response = await searchViaBackend(
@@ -1067,7 +1090,8 @@ export async function searchFoodCandidates(
         corrected,
         signal,
         gatewayUrl,
-        safePageSize
+        safePageSize,
+        searchApiMode
       );
       attempts.push(...responseAttempts(response));
       const withPrior = combineResponseMeta(
@@ -1508,7 +1532,7 @@ function productBackendOrder(
 ): Array<'gateway' | 'open-food-facts-v3' | 'open-food-facts-v2'> {
   if (gatewayUrl) {
     if (mode === 'v3') return ['gateway', 'open-food-facts-v3'];
-    if (mode === 'v2') return ['gateway', 'open-food-facts-v2'];
+    if (mode === 'v2') return ['gateway'];
     return ['gateway', 'open-food-facts-v3', 'open-food-facts-v2'];
   }
   if (mode === 'v3') return ['open-food-facts-v3'];

@@ -420,7 +420,13 @@ export function sendGatewayError(res, error, publicMessage) {
 }
 
 export async function searchThroughGateway(query, pageSize) {
-  const key = `search:${canonicalQuery(query)}:${pageSize}`;
+function normalizeSearchApiMode(mode) {
+  return mode === 'legacy-only' ? 'legacy-only' : 'auto';
+}
+
+export async function searchThroughGateway(query, pageSize, options = {}) {
+  const searchApiMode = normalizeSearchApiMode(options.searchApiMode);
+  const key = `search:${canonicalQuery(query)}:${pageSize}:${searchApiMode}`;
   const result = await cachedGatewayLoad({
     key,
     freshMs: 10 * 60 * 1000,
@@ -430,28 +436,30 @@ export async function searchThroughGateway(query, pageSize) {
       let reachableEmptyResponse = null;
       let latestRetryAt = null;
 
-      const searchALiciousUrl = buildSearchALiciousUrl(query, pageSize);
-      if (searchALiciousCircuit.openUntil > Date.now()) {
-        attempts.push(bypassAttempt('search-a-licious', 'Search-a-licious', searchALiciousUrl, searchALiciousCircuit));
-        latestRetryAt = Math.max(latestRetryAt ?? 0, searchALiciousCircuit.openUntil);
-      } else {
-        try {
-          const response = await fetchUpstreamJson(searchALiciousUrl, 'search-a-licious', 'Search-a-licious');
-          closeCircuit(searchALiciousCircuit);
-          attempts.push(response.attempt);
-          const value = {
-            ...response.data,
-            hits: Array.isArray(response.data?.hits) ? response.data.hits : [],
-            source: 'search-a-licious',
-            query_used: query
-          };
-          if (value.hits.length > 0) return { value, attempts };
-          reachableEmptyResponse = value;
-        } catch (error) {
-          if (error instanceof UpstreamError) {
-            attempts.push(...error.attempts);
-            latestRetryAt = Math.max(latestRetryAt ?? 0, Number(error.retryAt || 0));
-            openCircuit(searchALiciousCircuit, error);
+      if (searchApiMode !== 'legacy-only') {
+        const searchALiciousUrl = buildSearchALiciousUrl(query, pageSize);
+        if (searchALiciousCircuit.openUntil > Date.now()) {
+          attempts.push(bypassAttempt('search-a-licious', 'Search-a-licious', searchALiciousUrl, searchALiciousCircuit));
+          latestRetryAt = Math.max(latestRetryAt ?? 0, searchALiciousCircuit.openUntil);
+        } else {
+          try {
+            const response = await fetchUpstreamJson(searchALiciousUrl, 'search-a-licious', 'Search-a-licious');
+            closeCircuit(searchALiciousCircuit);
+            attempts.push(response.attempt);
+            const value = {
+              ...response.data,
+              hits: Array.isArray(response.data?.hits) ? response.data.hits : [],
+              source: 'search-a-licious',
+              query_used: query
+            };
+            if (value.hits.length > 0) return { value, attempts };
+            reachableEmptyResponse = value;
+          } catch (error) {
+            if (error instanceof UpstreamError) {
+              attempts.push(...error.attempts);
+              latestRetryAt = Math.max(latestRetryAt ?? 0, Number(error.retryAt || 0));
+              openCircuit(searchALiciousCircuit, error);
+            }
           }
         }
       }

@@ -167,6 +167,53 @@ describe('v2.2 cache-first public API search', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('disables Search-a-licious in legacy-only search mode (v2)', async () => {
+    vi.stubGlobal('window', {});
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.hostname === 'world.openfoodfacts.org' && url.pathname === '/cgi/search.pl') {
+        return jsonResponse({
+          products: [{ code: 'legacy-only-1', product_name_de: 'Pizza Margharita' }],
+          count: 1,
+          page: 1,
+          page_size: 15
+        });
+      }
+      throw new Error(`unexpected URL in legacy-only mode: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await searchFoodCandidates('Pizza Margharita', 15, undefined, { searchApiMode: 'legacy-only' });
+
+    expect(result.source).toBe('open-food-facts-legacy');
+    expect(result.hits.map((hit) => hit.code)).toEqual(['legacy-only-1']);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes search_api=v2 to gateway in legacy-only search mode', async () => {
+    let requestedUrl = '';
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      requestedUrl = String(input);
+      return jsonResponse({
+        hits: [{ code: 'gateway-legacy-search', product_name_de: 'Pizza Margharita' }],
+        count: 1,
+        source: 'gateway'
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await searchFoodCandidates('Pizza Margharita', 15, undefined, {
+      gatewayUrl: 'https://gateway.example/',
+      searchApiMode: 'legacy-only'
+    });
+
+    const url = new URL(requestedUrl);
+    expect(url.origin).toBe('https://gateway.example');
+    expect(url.pathname).toBe('/api/search');
+    expect(url.searchParams.get('search_api')).toBe('v2');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('never returns a cached search result to an already aborted UI operation', async () => {
     vi.stubGlobal('window', {});
     const fetchMock = vi.fn(async () => jsonResponse({
@@ -647,6 +694,91 @@ describe('v2.2 product cache', () => {
     expect(url.origin).toBe('https://gateway.example');
     expect(url.pathname).toBe('/api/product/4001724819806');
     expect(url.searchParams.get('product_api')).toBe('v2');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps gateway v2 mode strict: no direct OFF fallback request is made', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.origin === 'https://gateway.example') {
+        return jsonResponse({
+          status: 'success',
+          product: {
+            code: '5000112603002',
+            product_name: 'Gateway v2 strict',
+            nutriments: { carbohydrates_100g: 41 }
+          }
+        });
+      }
+      throw new Error(`no direct OFF fallback expected in gateway v2 mode: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await getProductByBarcode('5000112603002', undefined, {
+      gatewayUrl: 'https://gateway.example/',
+      productApiMode: 'v2'
+    });
+
+    expect(result.product?.product_name).toBe('Gateway v2 strict');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses product_api=v3 on gateway and keeps v3 backend identity', async () => {
+    let requestedUrl = '';
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      requestedUrl = String(input);
+      return jsonResponse({
+        status: 'success',
+        product: {
+          code: '3017620422003',
+          product_name: 'Gateway v3 strict',
+          nutriments: { carbohydrates_100g: 58 }
+        },
+        api_meta: {
+          cacheStatus: 'network',
+          fetchedAt: new Date().toISOString(),
+          sourceUrl: '/api/product/3017620422003',
+          backend: 'gateway',
+          originBackend: 'open-food-facts-v3',
+          attempts: []
+        }
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await getProductByBarcode('3017620422003', undefined, {
+      gatewayUrl: 'https://gateway.example/',
+      productApiMode: 'v3'
+    });
+
+    const url = new URL(requestedUrl);
+    expect(url.searchParams.get('product_api')).toBe('v3');
+    expect(result.product?.product_name).toBe('Gateway v3 strict');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses product_api=hybrid on gateway', async () => {
+    let requestedUrl = '';
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      requestedUrl = String(input);
+      return jsonResponse({
+        status: 'success',
+        product: {
+          code: '7613035459739',
+          product_name: 'Gateway hybrid mode',
+          nutriments: { carbohydrates_100g: 34 }
+        }
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getProductByBarcode('7613035459739', undefined, {
+      gatewayUrl: 'https://gateway.example/',
+      productApiMode: 'hybrid'
+    });
+
+    const url = new URL(requestedUrl);
+    expect(url.searchParams.get('product_api')).toBe('hybrid');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
