@@ -18,7 +18,12 @@ const TOKEN_CORRECTIONS: Record<string, string> = {
   schokobons: 'schokobons',
   'schoko-bons': 'schokobons',
   bifie: 'bifi',
-  bifii: 'bifi'
+  bifii: 'bifi',
+  erdnusse: 'erdnuss',
+  erdnuesse: 'erdnuss',
+  erdnuss: 'erdnuss',
+  peanut: 'erdnuss',
+  peanuts: 'erdnuss'
 };
 
 const LUCENE_SPECIAL = /([+\-!(){}[\]^"~*?:\\/]|&&|\|\|)/g;
@@ -33,7 +38,7 @@ function preserveCaseReplacement(original: string, replacement: string): string 
 
 export function correctCommonFoodTypos(value: string): string {
   return value
-    .split(/(\s+|[-/])/)
+    .split(/(\s+|[-/])/) 
     .map((part) => {
       const normalized = normalizeText(part);
       const replacement = TOKEN_CORRECTIONS[normalized];
