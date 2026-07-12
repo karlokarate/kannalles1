@@ -23,6 +23,8 @@ const DEFAULT_PORT = 8787;
 const MAX_QUERY_LENGTH = 120;
 const MAX_GATEWAY_CACHE_ENTRIES = 240;
 const MAX_AI_BUCKETS = 1_000;
+const SEARCH_A_LICIOUS_DEFAULT_COOLDOWN_MS = 90_000;
+const SEARCH_A_LICIOUS_MAX_COOLDOWN_MS = 5 * 60_000;
 
 function safePort(value) {
   const parsed = Number(value);
@@ -128,6 +130,55 @@ const PRODUCT_FIELDS = [...SEARCH_FIELDS];
 
 const gatewayCache = new Map();
 const gatewayInFlight = new Map();
+const searchALiciousCircuit = {
+  openUntil: 0,
+  reason: ''
+};
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function isSearchALiciousTransient(error) {
+  if (!(error instanceof UpstreamError)) return false;
+  if ([429, 502, 503, 504].includes(Number(error.status))) return true;
+  return error.attempts.some((attempt) => ['network-error', 'timeout', 'rate-limit', 'http-error'].includes(attempt.outcome));
+}
+
+function openSearchALiciousCircuit(error) {
+  if (!isSearchALiciousTransient(error)) return;
+  const now = Date.now();
+  const retryWindow = error instanceof UpstreamError && Number.isFinite(error.retryAt)
+    ? Math.max(0, error.retryAt - now)
+    : SEARCH_A_LICIOUS_DEFAULT_COOLDOWN_MS;
+  const cooldownMs = Math.min(
+    SEARCH_A_LICIOUS_MAX_COOLDOWN_MS,
+    Math.max(SEARCH_A_LICIOUS_DEFAULT_COOLDOWN_MS, retryWindow)
+  );
+  searchALiciousCircuit.openUntil = now + cooldownMs;
+  searchALiciousCircuit.reason = errorMessage(error);
+}
+
+function closeSearchALiciousCircuit() {
+  searchALiciousCircuit.openUntil = 0;
+  searchALiciousCircuit.reason = '';
+}
+
+function bypassAttemptForOpenCircuit(query) {
+  const now = Date.now();
+  const retryAfterMs = Math.max(0, searchALiciousCircuit.openUntil - now);
+  return {
+    backend: 'search-a-licious',
+    label: 'Search-a-licious (temporär übersprungen)',
+    url: buildSearchALiciousUrl(query, 1).toString(),
+    startedAt: nowIso(),
+    durationMs: 0,
+    outcome: 'aborted',
+    errorName: 'CircuitOpen',
+    errorMessage: searchALiciousCircuit.reason || 'Temporärer Upstream-Bypass aktiv.',
+    ...(retryAfterMs > 0 ? { retryAfterMs } : {})
+  };
+}
 
 class UpstreamError extends Error {
   constructor(message, { status, attempt, attempts, retryAt, cause } = {}) {
@@ -511,24 +562,32 @@ app.get('/api/search', async (req, res) => {
         let reachableEmptyResponse = null;
         let primaryError = null;
 
-        try {
-          const response = await fetchUpstreamJson(
-            buildSearchALiciousUrl(query, pageSize),
-            'search-a-licious',
-            'Search-a-licious'
-          );
-          attempts.push(response.attempt);
-          const value = {
-            ...response.data,
-            hits: Array.isArray(response.data?.hits) ? response.data.hits : [],
-            source: 'search-a-licious',
-            query_used: query
-          };
-          if (value.hits.length > 0) return { value, attempts };
-          reachableEmptyResponse = value;
-        } catch (error) {
-          primaryError = error;
-          if (error instanceof UpstreamError) attempts.push(...error.attempts);
+        if (searchALiciousCircuit.openUntil > Date.now()) {
+          attempts.push(bypassAttemptForOpenCircuit(query));
+        } else {
+          try {
+            const response = await fetchUpstreamJson(
+              buildSearchALiciousUrl(query, pageSize),
+              'search-a-licious',
+              'Search-a-licious'
+            );
+            closeSearchALiciousCircuit();
+            attempts.push(response.attempt);
+            const value = {
+              ...response.data,
+              hits: Array.isArray(response.data?.hits) ? response.data.hits : [],
+              source: 'search-a-licious',
+              query_used: query
+            };
+            if (value.hits.length > 0) return { value, attempts };
+            reachableEmptyResponse = value;
+          } catch (error) {
+            primaryError = error;
+            if (error instanceof UpstreamError) {
+              attempts.push(...error.attempts);
+              openSearchALiciousCircuit(error);
+            }
+          }
         }
 
         try {
