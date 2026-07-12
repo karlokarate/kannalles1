@@ -8,7 +8,7 @@ Generatorgetriebene API-Schicht
 - Redocly CLI 2.38.0 lintet den Contract und erzeugt statische API-Dokumentation.
 - Orval 8.20.0 erzeugt Fetch-Client/URL-Builder, TypeScript-Modelle, Zod-Validatoren, MSW-Handler und Faker-Factories.
 - Generierte Contract-Tests und eine Hash-/Neu-Generierungsprüfung verhindern Drift.
-- Browser-App und optionaler Gateway-Server konsumieren die erzeugten Typen und Validatoren; Fachorchestrierung bleibt handgeschrieben.
+- Browser-App und Gateway konsumieren die erzeugten Typen und Validatoren; der kanonische Transport ist unter /api/v1 URL-versioniert.
 
 Integrations- und Workflow-Fix
 ------------------------------
@@ -19,22 +19,29 @@ Integrations- und Workflow-Fix
 - Actions: checkout v7, setup-node v6, upload-artifact v7, configure-pages v6, upload-pages-artifact v5, deploy-pages v5
 - Node.js 24 LTS im Workflow; lokale Entwicklungsuntergrenze Node.js 22.18
 
-Failsoft mit harter Sicherheitsgrenze
--------------------------------------
-- vorgebautes v2.2.4-App-ZIP wird vor jedem Source-Versuch vollständig validiert
-- npm-/Registry-/Generator-/Audit-/Build-/Playwright-Störungen fallen auf dieses geprüfte ZIP zurück
-- nur ein vollständig bestandener Source-Kandidat ersetzt das Fallback
+Release mit harter Sicherheitsgrenze
+------------------------------------
+- nur ein vollständig bestandener, aus aktuellem Source neu gebauter Kandidat darf veröffentlicht werden
 - Traversal, Symlinks, Verschlüsselung, Zip-Bomb-Muster, Checksummenlücken, Secrets, JAR/AAR/APK, Server- und Datenbankartefakte blockieren hart
 - finales Pages-Verzeichnis wird nach Auswahl nochmals per PWA-, Unterpfad- und HTTP-Smoke geprüft
 
 Qualität
 --------
-- 82 Vitest-/Contract-Tests
+- vollständige Vitest-/Contract-Suite ohne hart codierte, schnell veraltende Testzahl
 - TypeScript, Biome, Server-/Script-Syntax und Vite/PWA-Build
-- Playwright Desktop/Android/iPhone, Offline-Service-Worker, sofortiger Retry und axe WCAG-A/AA
+- Playwright Chromium Desktop/Android, Firefox Desktop und WebKit/iPhone, Offline-Service-Worker, sofortiger Retry und axe WCAG-A/AA
 - sichere, vollständig SHA-256-abgedeckte und reproduzierbare Release-ZIPs
 - öffentlich portable npm-Lockfile-URLs
+- gepinnter Secret-Scan, Container-Build/-Health-Smoke und statischer Search-a-licious-Overlay-Preflight im CI-Gate
+- alle verwendeten GitHub Actions sind unveränderlich auf volle Commit-SHAs gepinnt; Dependabot schlägt kontrollierte Actions-/npm-/Docker-Aktualisierungen vor
+- Node, Redis, Search-a-licious API/Updater und Elasticsearch sind per Tag und OCI-Digest fixiert; unnötige Such-/Admin-UIs laufen nicht im Produktionsdefault
+- getrennte Redis-Dienste: Koordination mit `noeviction`/fail-closed, Antwortcache mit `allkeys-lru`/fail-soft und ein eigener persistenter Search-a-licious-Eventstream
+- Search-a-licious-Updater nur im expliziten `search-updates`-Profil und erst nach Anbindung eines Product-Opener-Producers
+- Pages-main ist zwingend `full-app`: HTTPS-Gateway, verteilte Koordination, eigener Index und reale Such-Canary; PR/lokal bleibt explizit `manual-only`
+- Production verlangt einen separaten `GATEWAY_CLIENT_SALT`; pseudonyme IP-Budgets begrenzen standardmäßig 6 Suchen/10 Produktaufrufe je Minute und teilen sich bewusst hinter NAT/VPN
+- Paid-AI kombiniert Minutenlimits (global 30/Nutzer 6) mit rollierenden 24-h-Kostenbudgets (global 300/Nutzer 30), fail-closed in der Koordinations-Redis
 
 Betriebsgrenze
 --------------
-Das Release ist eine installierbare browserbasierte PWA, keine nativ signierte Android-APK. Ein eigener Server ist für den normalen GitHub-Pages-Betrieb nicht erforderlich.
+Das Release ist eine installierbare browserbasierte PWA, keine nativ signierte Android-APK. Manuell/offline ist kein Gateway nötig; neue globale Produktsuche benötigt den vendor-neutral deploybaren Node/Express-Gateway. Vercel-Konfiguration und Serverless-Wrapper wurden vollständig entfernt; PWA-Host und Gatewayanbieter bleiben frei wählbar.
+Suchbegriffe, Barcodes und Produktdaten-API-Aufrufe sind Gateway-only. Produktbilder können direkt vom OFF-Bild-CDN geladen werden; dabei werden IP-Adresse und Bild-URL technisch sichtbar. Offline sind nur bereits gecachte Assets, Bilder und Daten verfügbar.

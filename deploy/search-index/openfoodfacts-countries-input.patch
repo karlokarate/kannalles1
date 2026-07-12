@@ -1,0 +1,13 @@
+diff --git a/data/config/openfoodfacts.yml b/data/config/openfoodfacts.yml
+index ff238d7..8235d15 100644
+--- a/data/config/openfoodfacts.yml
++++ b/data/config/openfoodfacts.yml
+@@ -77,7 +77,7 @@ indices:
+         type: text
+       countries:
+         type: taxonomy
+-        input_field: conutries_tags
++        input_field: countries_tags
+         bucket_agg: true
+         taxonomy_name: countries
+       states:

@@ -1,8 +1,6 @@
 (() => {
-  'use strict';
-
   const APP_VERSION = '__KH_APP_VERSION__';
-  const GATEWAY_BASE = '__KH_DATA_GATEWAY_URL__';
+  const GATEWAY_BASE = __KH_DATA_GATEWAY_URL_JSON__;
   const TIMEOUT_MS = 15_000;
   const controllers = new Map();
   const generations = new Map();
@@ -27,7 +25,7 @@
 
   function cleanBarcode() {
     const value = String(barcodeInput.value || '').replace(/\D/g, '').slice(0, 14);
-    if (!/^\d{8,14}$/.test(value)) throw new Error('Barcode muss aus 8 bis 14 Ziffern bestehen.');
+    if (!/^\d{7,14}$/.test(value)) throw new Error('Barcode muss aus 7 bis 14 Ziffern bestehen.');
     return value;
   }
 
@@ -174,24 +172,42 @@
     }
   }
 
-  function searchALiciousUrl() {
+  function gatewayUrl(pathname, params) {
     if (!GATEWAY_BASE) throw new Error('Gateway ist nicht konfiguriert.');
+    const query = params ? `?${params}` : '';
+    return `${GATEWAY_BASE.replace(/\/$/, '')}${pathname}${query}`;
+  }
+
+  function healthUrl() {
+    return gatewayUrl('/api/v1/health');
+  }
+
+  function searchUrl(searchApi) {
     const params = new URLSearchParams({
       q: cleanQuery(),
       page_size: '10',
-      product_only: cleanQuery()
+      search_api: searchApi
     });
-    return `${GATEWAY_BASE.replace(/\/$/, '')}/api/search?${params}`;
-  }
-
-  function legacyUrl() {
-    return searchALiciousUrl();
+    return gatewayUrl('/api/v1/search', params);
   }
 
   function productUrl(version) {
     if (!GATEWAY_BASE) throw new Error('Gateway ist nicht konfiguriert.');
-    const params = new URLSearchParams({ known_carbs: '0' });
-    return `${GATEWAY_BASE.replace(/\/$/, '')}/api/product/${cleanBarcode()}?${params}`;
+    const params = new URLSearchParams({ known_carbs: '0', product_api: version });
+    return gatewayUrl(`/api/v1/product/${cleanBarcode()}`, params);
+  }
+
+  function healthSummary(data) {
+    return {
+      ok: data.ok,
+      service: data.service,
+      apiVersion: data.apiVersion,
+      appVersion: data.version,
+      cacheBackend: data.cacheBackend,
+      searchIndexConfigured: data.searchIndexConfigured,
+      capabilities: data.capabilities,
+      circuits: data.circuits
+    };
   }
 
   function searchSummary(data) {
@@ -208,21 +224,6 @@
         quantity: hits[0].quantity,
         score: hits[0]._score,
         carbs100g: hits[0].nutriments?.carbohydrates_100g
-      } : null
-    };
-  }
-
-  function legacySummary(data) {
-    const products = Array.isArray(data.products) ? data.products : [];
-    return {
-      count: data.count,
-      returned: products.length,
-      first: products[0] ? {
-        code: products[0].code,
-        name: products[0].product_name_de || products[0].product_name,
-        brand: products[0].brands,
-        quantity: products[0].quantity,
-        carbs100g: products[0].nutriments?.carbohydrates_100g
       } : null
     };
   }
@@ -244,19 +245,35 @@
     };
   }
 
-  document.getElementById('searchBtn').addEventListener('click', () => {
-    const url = searchALiciousUrl();
-    void runTest('search-a', 'Gateway /api/search', url, searchSummary);
-  });
+  function bindGet(buttonId, id, label, buildUrl, summarize) {
+    document.getElementById(buttonId).addEventListener('click', () => {
+      try {
+        void runTest(id, label, buildUrl(), summarize);
+      } catch (error) {
+        const generation = (generations.get(id) || 0) + 1;
+        generations.set(id, generation);
+        createResult(id, label, 'Kein gültiger Endpunkt');
+        render(id, label, 'Kein gültiger Endpunkt', {
+          generation,
+          ok: false,
+          startedAt: new Date().toISOString(),
+          durationMs: 0,
+          errorName: error?.name || 'Error',
+          errorMessage: error?.message || String(error),
+          interpretation: 'Eingabe lokal abgelehnt; es wurde keine API-Anfrage ausgeführt.'
+        });
+      }
+    });
+  }
 
-  document.getElementById('legacyBtn').addEventListener('click', () => {
-    const url = legacyUrl();
-    void runTest('legacy', 'Gateway /api/search (Fallback-Pfad im Gateway)', url, legacySummary);
-  });
+  bindGet('healthBtn', 'health', 'Gateway /api/v1/health', healthUrl, healthSummary);
+  bindGet('searchBtn', 'search-index', 'Eigener Suchindex', () => searchUrl('search-index'), searchSummary);
+  bindGet('searchPublicBtn', 'search-public', 'Search-a-licious (explizite Reserve)', () => searchUrl('search-a-licious'), searchSummary);
+  bindGet('legacyBtn', 'legacy', 'OFF Legacy (explizite Reserve)', () => searchUrl('legacy'), searchSummary);
 
   for (const [buttonId, version, id, label] of [
-    ['productV3Btn', 'v3.6', 'product-v3', 'Gateway /api/product'],
-    ['productV2Btn', 'v2', 'product-v2', 'Gateway /api/product (erneuter Abruf)']
+    ['productV3Btn', 'v3', 'product-v3', 'Gateway /api/v1/product (v3.6)'],
+    ['productV2Btn', 'v2', 'product-v2', 'Gateway /api/v1/product (v2)']
   ]) {
     document.getElementById(buttonId).addEventListener('click', () => {
       try {

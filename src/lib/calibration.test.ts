@@ -46,6 +46,14 @@ describe('calibration contract v2', () => {
     })).toBeNull();
   });
 
+  it('rejects excessive counts, weights and requested derived totals before persistence', () => {
+    const base = { productName: 'Test', unit: 'piece' as const };
+    expect(createPieceCalibration({ ...base, measuredCount: 10_001, measuredTotalWeightG: 10_001 })).toBeNull();
+    expect(createPieceCalibration({ ...base, measuredCount: 1, measuredTotalWeightG: 5_001 })).toBeNull();
+    expect(createPieceCalibration({ ...base, measuredCount: 100, measuredTotalWeightG: 100_001 })).toBeNull();
+    expect(deriveGroupCalibration(2, 10_000, 100, 50)).toBeNull();
+  });
+
   it('looks up barcode, exact product and explicitly-authorized generic scopes in order', () => {
     expect(calibrationLookupKeys({
       productName: 'Salzstangen Classic',
@@ -65,6 +73,18 @@ describe('calibration contract v2', () => {
       unit: 'package',
       allowGenericScope: true
     })).toEqual([]);
+  });
+
+  it('uses the same OFF barcode normalization for UPC-E and short UPC identities', () => {
+    expect(calibrationLookupKeys({
+      productName: 'Test', barcode: '1234567', unit: 'piece', allowGenericScope: false
+    })[0]).toBe('barcode:01234567|piece');
+    expect(calibrationLookupKeys({
+      productName: 'Test', barcode: '123456789', unit: 'piece', allowGenericScope: false
+    })[0]).toBe('barcode:0000123456789|piece');
+    expect(calibrationLookupKeys({
+      productName: 'Test', barcode: '000123456', unit: 'piece', allowGenericScope: false
+    })[0]).toBe('barcode:00123456|piece');
   });
 
   it('resolves conflicts by scope, measured count, then recency', () => {
@@ -117,6 +137,16 @@ describe('calibration contract v2', () => {
       unit: 'package',
       allowGenericScope: true
     })).toEqual([]);
+  });
+
+  it('recomputes derived v2 values from the immutable measurement evidence', () => {
+    const stored = calibration({
+      derivedUnitWeightG: 1,
+      nutritionSnapshot: { carbohydratesPer100g: 50, derivedCarbsPerUnitG: 999 }
+    });
+    const normalized = normalizeStoredCalibration(stored);
+    expect(normalized?.derivedUnitWeightG).toBe(21.5);
+    expect(normalized?.nutritionSnapshot?.derivedCarbsPerUnitG).toBe(10.75);
   });
 
   it('migrates legacy measurements while preserving their proven unit weight', () => {

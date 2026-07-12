@@ -4,7 +4,10 @@ import type {
   LegacyPieceCalibration,
   PieceCalibration
 } from '../types';
+import { isOffBarcodeInput, normalizeOffBarcode } from './barcode';
 import { createId, normalizeText, unitLabels } from './format';
+import { isPlausibleCalibration, isPlausibleUnitWeight } from './domainLimits';
+import { isValidCarbohydratesPer100 } from './nutrition';
 
 export type CalibratableUnit = Extract<FoodUnit, 'piece' | 'bar' | 'slice' | 'portion'>;
 
@@ -49,8 +52,7 @@ export function canonicalBrand(value: string | null | undefined): string | null 
 }
 
 export function normalizeBarcode(value: string | null | undefined): string | null {
-  const code = (value ?? '').replace(/\D/g, '');
-  return /^\d{8,14}$/.test(code) ? code : null;
+  return isOffBarcodeInput(value) ? normalizeOffBarcode(value) : null;
 }
 
 export function calibrationScopeKey(
@@ -87,14 +89,10 @@ export function deriveGroupCalibration(
   requestedAmount: number,
   carbohydratesPer100g: number | null
 ): CalibrationDerivation | null {
-  if (!Number.isInteger(measuredCount) || measuredCount < 2) return null;
-  if (!Number.isFinite(measuredTotalWeightG) || measuredTotalWeightG <= 0) return null;
-  if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) return null;
+  if (measuredCount < 2 || !isPlausibleCalibration(measuredCount, measuredTotalWeightG, requestedAmount)) return null;
 
   const unitWeightG = measuredTotalWeightG / measuredCount;
-  const validCarbs = carbohydratesPer100g !== null
-    && Number.isFinite(carbohydratesPer100g)
-    && carbohydratesPer100g >= 0;
+  const validCarbs = isValidCarbohydratesPer100(carbohydratesPer100g, '100g');
   const carbsPerUnitG = validCarbs ? unitWeightG * carbohydratesPer100g / 100 : null;
   const requestedTotalWeightG = requestedAmount * unitWeightG;
   const requestedTotalCarbsG = validCarbs
@@ -115,8 +113,7 @@ export function createPieceCalibration(input: CreateCalibrationInput): PieceCali
   if (!isCalibratableUnit(input.unit)) return null;
   const measuredCount = input.measuredCount;
   const measuredTotalWeightG = input.measuredTotalWeightG;
-  if (!Number.isInteger(measuredCount) || measuredCount < 1) return null;
-  if (!Number.isFinite(measuredTotalWeightG) || measuredTotalWeightG <= 0) return null;
+  if (!isPlausibleCalibration(measuredCount, measuredTotalWeightG)) return null;
 
   const barcode = normalizeBarcode(input.barcode);
   const inferredScope: CalibrationScope = input.scope
@@ -130,7 +127,7 @@ export function createPieceCalibration(input: CreateCalibrationInput): PieceCali
   const now = input.now ?? new Date().toISOString();
   const derivedUnitWeightG = measuredTotalWeightG / measuredCount;
   const carbsPer100g = input.carbohydratesPer100g ?? null;
-  const validCarbs = carbsPer100g !== null && Number.isFinite(carbsPer100g) && carbsPer100g >= 0;
+  const validCarbs = isValidCarbohydratesPer100(carbsPer100g, '100g');
 
   return {
     schemaVersion: 2,
@@ -202,13 +199,12 @@ function isV2Calibration(value: unknown): value is PieceCalibration {
     && typeof unit?.kind === 'string'
     && Boolean(measurement)
     && Number.isInteger(measurement?.measuredCount)
-    && (measurement?.measuredCount ?? 0) >= 1
     && typeof measurement?.measuredTotalWeightG === 'number'
     && Number.isFinite(measurement.measuredTotalWeightG)
-    && measurement.measuredTotalWeightG > 0
+    && isPlausibleCalibration(measurement.measuredCount ?? Number.NaN, measurement.measuredTotalWeightG)
     && typeof candidate.derivedUnitWeightG === 'number'
     && Number.isFinite(candidate.derivedUnitWeightG)
-    && candidate.derivedUnitWeightG > 0;
+    && isPlausibleUnitWeight(candidate.derivedUnitWeightG);
 }
 
 /** Migrates one legacy calibration record without changing the proven weight. */
@@ -237,18 +233,14 @@ export function normalizeStoredCalibration(value: unknown): PieceCalibration | n
     if (!scopeKey) return null;
 
     const carbohydratesPer100g = unwrapped.nutritionSnapshot?.carbohydratesPer100g;
-    const snapshotCarbs = typeof carbohydratesPer100g === 'number'
-      && Number.isFinite(carbohydratesPer100g)
-      && carbohydratesPer100g >= 0
+    const snapshotCarbs = isValidCarbohydratesPer100(carbohydratesPer100g, '100g')
       ? carbohydratesPer100g
       : null;
-    const derivedSnapshot = unwrapped.nutritionSnapshot?.derivedCarbsPerUnitG;
-    const snapshotPerUnit = typeof derivedSnapshot === 'number'
-      && Number.isFinite(derivedSnapshot)
-      && derivedSnapshot >= 0
-      ? derivedSnapshot
-      : null;
     const measuredCount = unwrapped.measurement.measuredCount;
+    const derivedUnitWeightG = unwrapped.measurement.measuredTotalWeightG / measuredCount;
+    const snapshotPerUnit = snapshotCarbs === null
+      ? null
+      : derivedUnitWeightG * snapshotCarbs / 100;
 
     return {
       ...unwrapped,
@@ -273,6 +265,7 @@ export function normalizeStoredCalibration(value: unknown): PieceCalibration | n
         measuredCount,
         measuredTotalWeightG: unwrapped.measurement.measuredTotalWeightG
       },
+      derivedUnitWeightG,
       nutritionSnapshot: {
         carbohydratesPer100g: snapshotCarbs,
         derivedCarbsPerUnitG: snapshotPerUnit

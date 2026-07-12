@@ -1,0 +1,85 @@
+# Production overlay: runs the gateway against a pinned, self-hosted
+# Search-a-licious checkout. See deploy/search-index/README.md before use.
+include:
+  - path: ${SEARCH_A_LICIOUS_DIR:-../search-a-licious}/docker-compose.yml
+    env_file: ${SEARCH_A_LICIOUS_ENV:-../search-a-licious/.env}
+
+services:
+  es01:
+    image: ${SEARCH_ELASTIC_IMAGE:-docker.elastic.co/elasticsearch/elasticsearch:8.3.3@sha256:caef7887384d9c77f309508ce72722bf21c7991d5fe81f23eaf843d1ca891fe4}
+
+  es02:
+    image: ${SEARCH_ELASTIC_IMAGE:-docker.elastic.co/elasticsearch/elasticsearch:8.3.3@sha256:caef7887384d9c77f309508ce72722bf21c7991d5fe81f23eaf843d1ca891fe4}
+
+  # The upstream TAG remains pinned in its .env, while the containers that
+  # process search data are additionally immutable by digest. The published
+  # digest is linux/amd64-only; ARM64 operators must provide their own
+  # commit-pinned multi-arch/ARM64 digest via SEARCH_A_LICIOUS_API_IMAGE.
+  api:
+    image: ${SEARCH_A_LICIOUS_API_IMAGE:-ghcr.io/openfoodfacts/search-a-licious/search_service_image:sha-f7b32f29d6de5f17e2fe10bf6235de8e9ce7d32f@sha256:13ce9c2eeb13a3b4e75e1f79bcb4282733304bf0685111a7a255e3830cbd02ca}
+    environment:
+      ELASTICSEARCH_URL: http://es01:9200
+      CONFIG_PATH: /opt/search/data/config/openfoodfacts.yml
+      REDIS_HOST: search-updates-redis
+      REDIS_PORT: "6379"
+    depends_on:
+      search-updates-redis:
+        condition: service_healthy
+
+  updater:
+    profiles: [search-updates]
+    image: ${SEARCH_A_LICIOUS_API_IMAGE:-ghcr.io/openfoodfacts/search-a-licious/search_service_image:sha-f7b32f29d6de5f17e2fe10bf6235de8e9ce7d32f@sha256:13ce9c2eeb13a3b4e75e1f79bcb4282733304bf0685111a7a255e3830cbd02ca}
+    environment:
+      ELASTICSEARCH_URL: http://es01:9200
+      CONFIG_PATH: /opt/search/data/config/openfoodfacts.yml
+      REDIS_HOST: search-updates-redis
+      REDIS_PORT: "6379"
+    depends_on:
+      search-updates-redis:
+        condition: service_healthy
+
+  # Search-a-licious health and incremental indexing require the Product
+  # Opener event stream. This Redis is reachable only through common_net and
+  # can never alias either gateway Redis role.
+  search-updates-redis:
+    image: ${REDIS_IMAGE:-redis:8.0.3-alpine@sha256:25c0ae32c6c2301798579f5944af53729766a18eff5660bbef196fc2e6214a9c}
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "${SEARCH_UPDATES_REDIS_MAXMEMORY:-128mb}", "--maxmemory-policy", "noeviction"]
+    mem_limit: ${SEARCH_UPDATES_REDIS_CONTAINER_MEMORY_LIMIT:-192m}
+    volumes:
+      - search-updates-redis:/data
+    networks:
+      - common_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+
+  # Neither browser UI nor Elasticsearch admin UI is needed by the gateway.
+  # They stay outside the production default and require an explicit profile.
+  search_frontend:
+    profiles: [search-ui]
+    image: ${SEARCH_A_LICIOUS_FRONT_IMAGE:-ghcr.io/openfoodfacts/search-a-licious/search_front_image:sha-f7b32f29d6de5f17e2fe10bf6235de8e9ce7d32f@sha256:62a710612af99adcb64359d53346e6658b683b9cfbe7058629a6b785798fd1ef}
+
+  elasticvue:
+    profiles: [search-admin]
+
+  gateway:
+    environment:
+      SEARCH_INDEX_URL: http://api:8000/search
+      # Explicitly scoped exception: `api` is an internal Compose-network
+      # service, never a public clear-text origin.
+      SEARCH_INDEX_ALLOW_INSECURE_HTTP: "1"
+    depends_on:
+      api:
+        condition: service_started
+      redis-coordination:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+
+volumes:
+  search-updates-redis:

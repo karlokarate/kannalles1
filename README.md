@@ -1,259 +1,125 @@
 # KH Checker v2.2.4
 
-KH Checker ist eine installierbare, statische Progressive Web App für iPhone, iPad, Android, Windows, macOS und Linux. GitHub Pages veröffentlicht ausschließlich die fertigen Web-Dateien. Produktsuche, Cache, Produktauflösung, Kalibrierung und Kohlenhydratberechnung laufen auf dem Endgerät. Netzwerkzugriffe auf Open Food Facts laufen verpflichtend über ein serverloses Daten-Gateway.
+KH Checker ist eine installierbare Web-App zur nachvollziehbaren Kohlenhydratberechnung. Manuelle Berechnung, App-Shell und lokal gespeicherte Daten funktionieren ohne Gateway. Eine neue globale Produktsuche benötigt ein konfiguriertes Daten-Gateway; der Browser ruft Open Food Facts niemals direkt auf.
 
-## Was v2.2.4 ändert
+## Autoritäten
 
-v2.2.4 übernimmt v2.2.3 als Funktionsbaseline und ersetzt den fehleranfälligen Repo-Selbstintegrationsweg durch einen One-Click-Releasepfad:
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ist die Architektur- und Betriebsautorität.
+- [contracts/source/search-api.contract.mjs](contracts/source/search-api.contract.mjs) ist die einzige manuell gepflegte Gateway-API-Quelle.
+- `package.json` ist die Versions- und Scriptquelle.
+- Generierte Dateien unter `contracts/generated`, `src/generated`, `server/generated`, `generated-tests` und `docs/generated` werden nicht manuell editiert.
+- [docs/AUDIT-FIX-MATRIX.md](docs/AUDIT-FIX-MATRIX.md) verfolgt P0–P2-Funde und ihre Evidenz.
 
-```text
-contracts/source/search-api.contract.mjs
-  Hono + Zod OpenAPI
-            ↓
-OpenAPI 3.1 JSON/YAML
-            ↓
-Orval 8.20.0
-  ├─ Fetch-Client und URL-Builder
-  ├─ TypeScript-Modelle
-  ├─ Zod-Laufzeitvalidatoren
-  └─ MSW-/Faker-Mocks
-            ↓
-Redocly 2.38.0
-  ├─ Contract-Lint
-  └─ statische API-Dokumentation
-            ↓
-Vitest + TypeScript + Biome + Playwright + axe
-            ↓
-Vite/PWA-App-only-ZIP
-            ↓
-GitHub Pages
-```
-
-Die Generatoren ersetzen Transport-Boilerplate, Typen, Query-/Pfad-Builder, Validatoren, Mocks und Dokumentation. Die projektspezifische Fachlogik bleibt bewusst handgeschrieben und getestet: Fresh-/Stale-Cache, In-Flight-Deduplizierung, höchstens zwei Suchbackends, sofortiger Retry, Produktdetail-Hydrierung, Ranking, Einheitenauflösung, Kalibrierung, Provenance und KH-Berechnung.
-
-## Autoritative Generatorquelle
-
-Die einzige Generatorquelle für das Gateway ist:
+## Laufzeit
 
 ```text
-contracts/source/search-api.contract.mjs
+React-PWA
+  → typisierte Search/Result-State-Machine
+  → generierter, Zod-validierender Gateway-Client
+  → /api/v1
+      → eigener Search-a-licious-/OFF-Export-Index
+      → OFF Legacy als Suchreserve; öffentliche Search-a-licious-Instanz nur explizit
+      → OFF v3.6-Adapter, v2-Kompatibilitätsadapter
+      → Redis-Koordination: Single-Flight, Limiter und Circuit Breaker
+      → separater Redis-Antwortcache
+  → versionierte lokale Repositories (Memory → IndexedDB → kontrollierter Fallback)
 ```
 
-Sie enthält Hono-Routen und Zod-Schemas für:
+Kanonische Endpunkte:
 
-- `GET /api/health`
-- `GET /api/search`
-- `GET /api/product/{code}`
-- `POST /api/ai/parse`
+- `GET /api/v1/health`
+- `GET /api/v1/search?q=…&page_size=…&search_api=auto|search-index|search-a-licious|legacy`
+- `GET /api/v1/product/{code}?known_carbs=0|1&product_api=hybrid|v3|v2`
+- `POST /api/v1/ai/parse` (optional; lokaler Parser bleibt Standard)
 
-`npm run api:generate` erzeugt deterministisch:
+Unversionierte `/api/...`-Pfade sind ausschließlich vorübergehende, deprecated Kompatibilitätsaliases.
 
-```text
-contracts/generated/search-api.openapi.json
-contracts/generated/search-api.openapi.yaml
-contracts/generated/generation-manifest.json
-src/generated/gateway/client.ts
-src/generated/gateway/client.msw.ts
-src/generated/gateway/client.faker.ts
-src/generated/gateway.zod.ts
-src/generated/models/
-src/generated/search-api/
-server/generated/
-generated-tests/
-docs/api/index.html
-contracts/generated/search-api.generated.test.ts
-```
+## Lokale Entwicklung
 
-`npm run api:check` regeneriert alles und schlägt bei Drift fehl. `npm run api:verify` prüft die OpenAPI-Datei sowie SHA-256 aller Generatorquellen und -ergebnisse.
+Voraussetzung: Node.js `>=22.18.0` (Node 24 LTS empfohlen) und Python 3 für die reproduzierbare ZIP-/Releaseprüfung.
 
-## Laufzeitarchitektur
-
-```text
-GitHub Pages
-└── statische PWA
-    ├── Service Worker und App-Shell-Cache
-    ├── IndexedDB/localStorage/Memory-Fallback
-    ├── lokale Such-, Ranking-, Einheiten- und Berechnungslogik
-  └── Gateway-only API-Zugriff
-    └── https://<gateway>.vercel.app/api
-      ├── Search-a-licious als Primärsuche
-      ├── OFF Legacy Search als genau ein Fallback
-      ├── Produktmodus `hybrid`: OFF API v3.6 primär, OFF API v2 nur bei fehlenden Kompatibilitätsfeldern
-      ├── Produktmodus `v3`: nur OFF API v3.6
-      └── Produktmodus `v2`: nur OFF API v2
-```
-
-Die Pages-PWA darf keine direkten Browseraufrufe zu Open Food Facts mehr ausführen. `VITE_DATA_GATEWAY_URL` ist daher im Build zwingend und muss auf einen laufenden Gateway-Dienst zeigen. Gateway-Antworten werden im Browser und im optionalen Express-Server gegen den generierten Zod-Vertrag geprüft.
-
-## Gateway Setup (z. B. Vercel)
-
-Der Workspace enthält serverlose Endpunkte unter `api/` (direkt kompatibel mit Vercel):
-
-- `GET /api/health`
-- `GET /api/search`
-- `GET /api/product/{code}`
-
-`/api/product/{code}` unterstützt zusätzlich folgende Query-Parameter:
-
-- `known_carbs=1` für seed-basierte Hybrid-Optimierung (überspringt unnötigen v2-Nachzug)
-- `product_api=hybrid|v3|v2` zur expliziten Auswahl der Produktquelle
-
-Die Upstream-Requests setzen die für OFF erforderliche Identität:
-
-- `User-Agent: $OFF_USER_AGENT`
-- `From: $OFF_CONTACT_EMAIL` (wenn gesetzt)
-
-Optional kann der Gateway zusätzlich einen OFF-Account ausschließlich serverseitig verwenden:
-
-- `OFF_USERNAME`
-- `OFF_PASSWORD`
-
-Wenn beide Variablen gesetzt sind, meldet sich der Gateway serverseitig einmal gegen `https://world.openfoodfacts.org/cgi/login.pl` an, cached die Session-Cookie pro laufender Instanz und verwendet diese für Folgeanfragen wieder. Bei erkennbar abgelaufener Session wird genau ein Re-Login versucht. Diese Credentials dürfen niemals als `VITE_*`-Variable oder in die statische Pages-App gelangen.
-
-Erforderliche Vercel-Umgebungsvariablen:
-
-- `OFF_USER_AGENT`
-- `OFF_CONTACT_EMAIL`
-- `OFF_USERNAME` (optional)
-- `OFF_PASSWORD` (optional)
-- `CORS_ORIGINS` (kommagetrennte Origins, optional)
-
-Für den Pages-Build muss zusätzlich im GitHub-Repository als Actions-Variable gesetzt sein:
-
-- `VITE_DATA_GATEWAY_URL=https://<dein-gateway-domain>`
-
-Wichtig: Der GitHub-Workflow deployt nur die statische PWA nach GitHub Pages. Das Gateway selbst wird dadurch nicht gebaut oder deployed und muss separat in deiner Serverless-Umgebung bereitgestellt werden.
-
-## One-Click-Deployment
-
-Das Lieferpaket enthält ein direkt kopierbares `repo-overlay/`. Dessen Inhalt wird einmal in den Repository-Stamm übernommen. Alternativ erledigt `install-into-repo.sh` diesen lokalen Kopiervorgang.
-
-Vor dem Commit müssen die drei alten beziehungsweise konkurrierenden Workflows entfernt sein:
-
-```text
-.github/workflows/deploy-pages.yml
-.github/workflows/build-deploy-pages-v2.2.3.yml
-.github/workflows/unpack-kh-checker-repo-integration.yml
-```
-
-Danach darf nur noch dieser Workflow existieren:
-
-```text
-.github/workflows/build-deploy-pages.yml
-```
-
-Der alte Entpack-Workflow wird absichtlich nicht mehr verwendet. Er scheiterte daran, dass ein GitHub-App-Token ohne spezielle `workflows`-Berechtigung keine Workflow-Datei pushen darf. v2.2.4 installiert deshalb keinen Workflow aus einem Workflow heraus.
-
-Nach dem direkten Kopieren, Committen und Pushen:
-
-1. **Actions → Build, validate and deploy KH Checker v2.2.4** öffnen.
-2. **Run workflow** starten.
-3. Es sind keine Eingaben und kein zweiter Folgeworkflow erforderlich.
-
-Der Workflow arbeitet seriell und failsoft:
-
-- Zuerst wird `releases/kh-checker-v2.2.4-komplett.zip` sicher entpackt und hart validiert.
-- Danach werden mit `npm ci` die gelockten Abhängigkeiten installiert und alle Generatorartefakte neu erzeugt.
-- Nur ein Kandidat mit bestandenen Generator-, Typ-, Lint-, Unit-/Contract-, Build-, Browser-, ZIP-, Pages- und HTTP-Gates ersetzt das vorvalidierte Fallback.
-- Scheitern Registry, Generator, Audit, Build oder Browserinfrastruktur, bleibt die bereits geprüfte v2.2.4-PWA ausgewählt.
-- Unsichere ZIPs, Checksummenlücken, Secrets, native/serverseitige Artefakte, ungültige Pages-Pfade und der finale Pages-Deploy bleiben harte Fehler.
-- Der Workflow besitzt kein `contents: write`, führt weder `git commit` noch `git push` aus und mutiert das Repository nicht.
-
-## Release-Artefakte
-
-`npm run release` erzeugt getrennt:
-
-```text
-release-out/kh-checker-v2.2.4-komplett.zip
-release-out/ENTWICKLER-QUELLCODE-v2.2.4.zip
-```
-
-Das Komplett-ZIP enthält nur die deploybare PWA, Prüfnachweise, OpenAPI-Dateien und statische API-Dokumentation. Es enthält weder Quellcode noch `node_modules`, JAR/AAR, Server-Runtime, Datenbank, globalen Produktdatensatz oder verschachtelte ZIPs. Das Quellcode-ZIP wird separat erzeugt.
-
-Das äußere Lieferpaket enthält zusätzlich das Repository-Overlay, Installer, Anleitung, Validierungsbericht und beide Release-ZIPs. Der GitHub-Workflow veröffentlicht ausschließlich das final geprüfte Web-Verzeichnis.
-
-## Lokale Entwicklung und Reproduktion
-
-Voraussetzung ist **Node.js 22.18.0 oder neuer**; für neue lokale Installationen und CI wird Node.js 24 LTS empfohlen.
-
-```bash
+```sh
 npm ci
 npm run api:generate
 npm run check
+npm run test:e2e:install
+npm run test:e2e
 npm run audit
 ```
 
-Vollständige Browsergates:
+Die E2E-Suite läuft verpflichtend in Chromium Desktop/Android, Firefox Desktop und WebKit/iPhone. Die Scripts verwenden keine POSIX-Env-Zuweisung und laufen unter Windows, Linux und macOS.
 
-```bash
-npm run test:e2e:install
-PLAYWRIGHT_INCLUDE_WEBKIT=1 npm run test:e2e
+## Primäres Deployment: Container/Self-host
+
+```sh
+cp .env.example .env
+# OFF_USER_AGENT, OFF_CONTACT_EMAIL, GATEWAY_CLIENT_SALT, Origins und URLs setzen
+docker compose up -d --build
+curl --fail http://127.0.0.1:8787/api/v1/health
 ```
 
-Release:
+Für den vollständigen Produktionsstack mit eigenem Search-a-licious-Index siehe [deploy/search-index/README.md](deploy/search-index/README.md):
 
-```bash
+```sh
+docker compose -f compose.yml -f compose.production.yml up -d --build
+```
+
+Externe `SEARCH_INDEX_URL`-Werte müssen in Production HTTPS verwenden. Nur das Produktions-Compose-Overlay setzt `SEARCH_INDEX_ALLOW_INSECURE_HTTP=1`, weil `http://api:8000/search` ausschließlich im privaten Compose-Netz aufgelöst wird; diese Ausnahme darf nicht auf einen öffentlichen Host übertragen werden.
+
+Das finale Gateway-Image installiert ausschließlich den separaten Lock unter `deploy/runtime`: `dotenv`, Express, OpenAI, Redis und Zod. React/Lucide sind bereits gebundelte Frontend-Assets; Hono/OpenAPI und die Generatorwerkzeuge bleiben im Build-Stage. Der Server konsumiert dafür einen deterministisch generierten, eigenständigen Zod-Graphen statt der Hono-Contract-Datei zur Laufzeit.
+
+Production trennt die Redis-Rollen physisch. `REDIS_COORDINATION_URL` hält Single-Flight, Limiter und Circuit-State über mehrere Gateway-Instanzen, verwendet `noeviction` und bleibt bei Ausfall fail-closed. `REDIS_CACHE_URL` zeigt auf einen anderen Dienst, verwendet `allkeys-lru` und darf unabhängig fail-soft auf Memory degradieren. Dieselbe Redis-URL/DB für beide Rollen wird in Production abgelehnt. Prozesslokale Koordination ist dort nur mit `ALLOW_SINGLE_INSTANCE_COORDINATION=1` für einen bewusst genau einmal gestarteten, nicht autoskalierten Prozess zulässig. Der Search-a-licious-Eventstream besitzt zusätzlich einen eigenen Redis; sein `updater` wird erst mit `--profile search-updates` und einem tatsächlich angebundenen Product-Opener-Producer aktiviert.
+
+Der optionale Paid-AI-Parser ist in Production nur aktiv, wenn sowohl `OPENAI_API_KEY` als auch ein zufälliger `AI_SAFETY_SALT` mit mindestens 32 Zeichen gesetzt sind. Ohne starken Salt bleibt `/api/v1/ai/parse` fail-closed und der Healthvertrag meldet die Capability als nicht verfügbar; der lokale Parser der Web-App bleibt nutzbar. Ein geeignetes Secret lässt sich beispielsweise mit `openssl rand -base64 32` erzeugen. Der geprüfte Default ist `OPENAI_MODEL=gpt-5.6-luna` mit maximal 512 Ausgabetokens und `reasoning.effort=none`; Modell, Tokenlimit (256–2048) und zulässiger Reasoning-Aufwand bleiben serverseitige Konfiguration. Zusätzlich gelten kombinierte globale/Nutzerbudgets: 30/6 Aufrufe pro Minute sowie rollierend 300/30 Aufrufe je 24 Stunden. Ein Request muss alle vier Budgets bestehen; damit kann ein kurzer Minutenburst das Tageskostenlimit nicht umgehen.
+
+`GATEWAY_CLIENT_SALT` ist ein zweites, unabhängiges Production-Secret für pseudonyme Client-Budgets (standardmäßig 6 Suchen und 10 Produktaufrufe pro Minute). Es HMACt ausschließlich die vom Express-Trust-Proxy-Modell bestätigte Client-IP; Rohadressen werden nicht als Budget-Key abgelegt. Weil mehrere Personen hinter demselben NAT/VPN dieselbe öffentliche Adresse teilen, teilen sie auch dieses konservative Missbrauchsbudget und können sich gegenseitig kurz drosseln. Bei Klinik-/Schulnetzen die Werte kontrolliert erhöhen oder einen authentifizierten First-Party-Clientschlüssel ergänzen, jedoch niemals ungeprüfte Forwarded-Header vertrauen.
+
+Vercel ist weder Laufzeit- noch Deploymentabhängigkeit. Die frühere Plattformkonfiguration und die Serverless-Wrapper wurden entfernt; der einzige gepflegte Backendpfad ist der vendor-neutrale Node/Express-Gateway, der als Container oder normaler Node-Prozess betrieben werden kann. Die statische PWA kann unabhängig davon auf jedem HTTPS-Host liegen.
+
+## Statisches PWA-Deployment
+
+`VITE_DATA_GATEWAY_URL=https://gateway.example.org` bindet das Gateway beim Build ein. Ein leerer Wert ist zulässig und erzeugt das explizite Profil `manual-only`: manuell/offline nutzbar, aber ohne globale Netzwerksuche. Ein vollständiges Release verwendet `RELEASE_DEPLOYMENT_PROFILE=full-app`, verlangt eine öffentliche HTTPS-Gateway-URL und besteht vor dem Deploy Health, verteilte Koordination, eigenen Index sowie eine echte `search_api=search-index`-Canary. Das Release-Gate verbietet direkte OFF-/Search-a-licious-API-URLs im Browserbundle.
+
+```sh
+npm run build
+npm run check:pages
 npm run release
 ```
 
-Wichtige Einzelprüfungen:
+Der Pages-Workflow veröffentlicht nur ein aus dem aktuellen Source-Stand neu gebautes und validiertes Artefakt. Auf `main` ist `vars.DATA_GATEWAY_URL` verpflichtend; ein leerer oder nicht erreichbarer Wert kann nicht als Full-App deployt werden. Pull Requests und lokale gatewayfreie Builds werden dagegen ausdrücklich als `manual-only` geprüft und gekennzeichnet.
 
-```bash
-npm run api:verify
-npm run api:check
-npm run check:workflow
-npm run typecheck
-npm run lint
-npm test
-npm run check:server
-npm run check:scripts
-npm run build
-npm run check:pages
-npm run check:release
+## Browser- und Geräte-Support
+
+Der Kern ist progressiv und benötigt JavaScript, Fetch, IndexedDB und einen sicheren HTTPS-/Loopback-Kontext. Verbindlich getestet werden:
+
+Die ausgelieferte Kompatibilitätsbaseline ist Chrome/Android/Edge 84, Firefox 67 sowie Safari 14.1/iOS 14.5 oder neuer. Sie entspricht bewusst auch dem CSS-Vertrag (unter anderem Flex-Gap), statt nur JavaScript für ältere Browser zu transpiliieren und dort ein unzuverlässiges Layout zu versprechen.
+
+| Familie | CI-Profil | Erwartung |
+|---|---|---|
+| Chromium | Desktop Chrome, Pixel 7 | vollständige Kernfunktion und PWA |
+| WebKit | iPhone 15 Pro | vollständige Kernfunktion; Installation über „Zum Home-Bildschirm“ |
+| Firefox | Desktop Firefox | vollständige Kernfunktion; PWA-Installation je Browserangebot |
+
+Zusätzlich gelten 320-px-Reflow (entspricht 400 % Zoom bei 1280 px Ausgangsbreite), 200 % Textvergrößerung, Landscape, primäre 44-px-Touchziele und tatsächlich reduzierte Animationen als UX-Gates. Sehr alte oder eingebettete Browser ohne die Mindest-APIs erhalten eine verständliche Unsupported-/Fallback-Anzeige; „jeder beliebige Browser“ ist keine technisch ehrliche Garantie.
+
+## Datenschutz, Lizenz und Sicherheit
+
+- Suchbegriffe und Barcodes gehen nur an das konfigurierte Gateway. Der Browser sendet sie nicht direkt an OFF oder Search-a-licious.
+- Produktbilder können derzeit direkt von `images.openfoodfacts.org` geladen werden. Dabei erhält das OFF-Bild-CDN technisch IP-Adresse und angeforderte Bild-URL; vollständig drittanbieterfreier Betrieb erfordert einen eigenen Bild-Proxy. Offline erscheinen nur bereits gecachte Bilder und Daten.
+- Verlauf, Favoriten, Kalibrierungen und API-Cache sind getrennte lokale Datenbereiche und können unabhängig gelöscht werden.
+- Keine OFF-, Redis- oder OpenAI-Credentials dürfen `VITE_*` heißen oder im statischen Bundle landen.
+- CORS ist keine Authentifizierung: Der kostenpflichtige AI-Endpunkt benötigt in Production zusätzlich den geheimen `AI_SAFETY_SALT`, damit globale und pseudonyme Nutzerbudgets immer gemeinsam greifen.
+- Produktdaten stammen von Open Food Facts und stehen unter ODbL; Bilder können abweichende Einzel-Lizenzen haben. Quellen- und Altersangaben müssen im Ergebnis sichtbar bleiben. Siehe [OFF API-Dokumentation](https://openfoodfacts.github.io/documentation/docs/Product-Opener/api/).
+- Search-a-licious ist AGPL-3.0; beim Self-hosting gelten dessen Lizenz- und Source-Angebotspflichten. Siehe [offizielles Repository](https://github.com/openfoodfacts/search-a-licious).
+- Produktdaten sind nutzergeneriert und können unvollständig oder falsch sein. Etikett prüfen; KH-Ergebnisse nicht ungeprüft für Therapie- oder Insulindosierungsentscheidungen verwenden.
+
+## API- und Generatorpflege
+
+```sh
+npm run api:generate   # OpenAPI, Orval, Zod, MSW/Faker, Docs
+npm run api:check      # deterministische Regeneration/Drift
+npm run api:verify     # kanonische SHA-256-Prüfung, CRLF/LF-neutral
+npm run check:gateway  # optionales Live-Health-Gate
 ```
 
-## Installation auf Geräten
-
-### iPhone und iPad
-
-Die GitHub-Pages-Seite in Safari öffnen, **Teilen** wählen und **Zum Home-Bildschirm** ausführen.
-
-### Android
-
-Die Pages-Seite in Chrome öffnen und **App installieren** beziehungsweise **Zum Startbildschirm hinzufügen** wählen.
-
-### Desktop
-
-Die Pages-Seite in einem PWA-fähigen Browser öffnen und das Installationssymbol verwenden. Safari auf macOS kann sie ebenfalls als Web-App hinzufügen.
-
-Ein direktes Öffnen von `index.html` über `file://` ist kein Produktionsweg. Service Worker und PWA-Installation benötigen einen sicheren HTTP(S)-Kontext.
-
-## Cache- und Fehlervertrag
-
-| Daten | Frisch | Ausfallreserve |
-|---|---:|---:|
-| erfolgreiche Suche | 24 Stunden | 30 Tage |
-| leere Suche | 15 Minuten | 24 Stunden |
-| Produktdetails | 30 Tage | 180 Tage |
-
-Der Service Worker cached App-Shell und Produktbilder. API-JSON wird durch den Request Manager verwaltet, damit Fresh-/Stale-Status und Diagnose eindeutig bleiben. Ein externer Ausfall erzeugt einen typisierten Zustand; er darf weder die UI abstürzen lassen noch einen lokalen Cooldown oder gesperrten Retry installieren.
-
-## Einheiten und Berechnung
-
-- Explizite Nutzereinheiten bleiben erhalten.
-- Bewiesene Einzelgewichte stehen vor Portion und Packung.
-- Ein Einzelgewicht darf aus expliziter Stückzahl und Nettogewicht abgeleitet werden.
-- Ein unbekanntes zählbares Gewicht führt zur Einzel- oder Gruppenwägung statt zu einer Schätzung.
-- Gespeichert wird das präzise Einheitengewicht mit Scope und Provenance.
-- Kohlenhydrate werden immer mit dem aktuellen Wert pro 100 g beziehungsweise 100 ml neu berechnet.
-- Intern wird vor dem Endergebnis nicht gerundet.
-
-## Qualitätswerkzeuge
-
-Integriert sind Redocly, Orval, Hono/Zod OpenAPI, TypeScript, Biome, Vitest, MSW, Faker, Playwright, axe-core, npm audit und ein eigener sicherer ZIP-/Pages-/HTTP-Validator. Dependabot ist gelockt vorkonfiguriert.
-
-Sinnvolle nächste Ergänzungen sind Lighthouse CI für Performance/PWA-Regressionswerte, CodeQL für statische Sicherheitsanalyse und ein datenschutzgeprüftes Sentry-Setup für Produktionsfehler. Diese Werkzeuge sind nicht Voraussetzung für den v2.2.4-Deploy und sollten erst nach eigener Policy-Entscheidung aktiviert werden.
-
-## Grenzen
-
-Die App kann Open Food Facts oder das Gerätenetz nicht verfügbar machen. Ohne Netzwerk und ohne passenden Cache kann keine neue globale Produktsuche erfolgen. Das finale Artefakt ist eine installierbare PWA und keine nativ signierte Android-APK; eine APK würde einen separaten TWA-/Capacitor-, Signing- und Store-Prozess benötigen.
+Die ausführbaren Core-Vertragstests importieren Produktionsmodule. Historische Referenzalgorithmen sind nur Migrationskontext und dürfen nicht als Ersatz für Produktionsverifikation dienen.

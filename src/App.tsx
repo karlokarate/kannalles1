@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import type { KeyboardEvent, ReactNode, RefObject } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -52,7 +52,6 @@ import {
   clearApiGovernor,
   getApiUsageSnapshot,
   getProductByBarcode,
-  getSearchDocumentByBarcode,
   searchFoodCandidatesOutcome
 } from './lib/api';
 import type { ApiUsageSnapshot } from './lib/apiGovernor';
@@ -60,6 +59,7 @@ import {
   buildBaseFoodReferenceResult,
   buildExactResult,
   buildGenericResult,
+  displayCarbohydrateValue,
   rankExactCandidates,
   recalculateResult,
   recalculateWithManualTotalMass,
@@ -71,6 +71,23 @@ import {
 import { getBaseFoodReference } from './lib/baseFoods';
 import { candidateIdentityScore, isGenericCategoryQuery, sameProductFamily } from './lib/identity';
 import { buildManualResult } from './lib/manual';
+import { isValidCarbohydratesPer100, maximumCarbohydratesPer100 } from './lib/nutrition';
+import { isOffBarcodeInput, normalizeOffBarcode } from './lib/barcode';
+import {
+  isPlausibleFoodAmount,
+  isPlausibleTotalMass,
+  isPlausibleTotalVolume,
+  isPlausibleUnitWeightForUnit
+} from './lib/domainLimits';
+import { GatewayUrlError, validatedGatewayBase } from './lib/gatewayUrl';
+import { startSpeechRecognitionSafely } from './lib/speech';
+import { resultDataAttribution } from './lib/attribution';
+import { clearOffProductImageCache } from './lib/pwaCache';
+import {
+  isParsedFoodRequest,
+  parseSearchHits,
+  parseStoredCalculationResult
+} from './lib/resultValidation';
 import {
   clearApiCache,
   clearCalibrations,
@@ -83,35 +100,48 @@ import {
   pruneApiCache,
   saveCalibration,
   saveResult,
-  saveSettings
+  saveSettings,
+  synchronizeExternalRepositoryMutation
 } from './lib/storage';
 import { createPieceCalibration, deriveGroupCalibration, isCalibratableUnit } from './lib/calibration';
+import {
+  currentWorkflowIssue,
+  restoreSearchWorkflowState,
+  searchWorkflowReducer,
+  workflowHits,
+  workflowRequest,
+  workflowResult
+} from './lib/searchState';
+import type { SearchScreen, SearchView, WorkflowIssue } from './lib/searchState';
 import type { ApiCacheStats } from './lib/storage';
 import {
+  createId,
   displayBrand,
   displayProductName,
   formatNumber,
   normalizeText,
+  parseLocalizedDecimal,
   unitLabels
 } from './lib/format';
-import './styles.css';
 
 type Tab = 'search' | 'history' | 'favorites' | 'settings';
-type SearchView = 'home' | 'candidates' | 'result';
 
 const APP_VERSION = __APP_VERSION__;
 const DEVELOPER_SUPPORT_EMAIL = 'chrisfischtopher@googlemail.com';
 const MAX_SEARCH_QUERY_LENGTH = 120;
-const SESSION_KEY = 'kh-checker-v2.0-session';
-const RATE_LIMIT_DEFAULT_BLOCK_MS = 60 * 1000;
+const SESSION_KEY = 'kh-checker-session-v3';
+const LEGACY_SESSION_KEY = 'kh-checker-v2.0-session';
+const SESSION_SCHEMA_VERSION = 3;
 
 const DEFAULT_SETTINGS: AppSettings = {
   aiEnabled: false,
-  aiParseUrl: import.meta.env.VITE_AI_PARSE_URL || '',
   decimalPlaces: 1,
   searchPageSize: 10,
   preferGermanMarket: true,
-  saveHistory: true,
+  saveHistory: false,
+  saveSearchSession: false,
+  saveCalibrations: false,
+  cacheApiData: false,
   dataGatewayUrl: import.meta.env.VITE_DATA_GATEWAY_URL || import.meta.env.VITE_DATA_API_BASE_URL || '',
   productApiMode: 'hybrid'
 };
@@ -123,7 +153,8 @@ const DEFAULT_MANUAL: ManualFormValues = {
   unit: 'portion',
   barcode: '',
   unitWeightG: null,
-  carbsPer100g: null
+  nutritionBasis: '100g',
+  carbsPer100: null
 };
 
 const UNIT_OPTIONS: Array<{ value: FoodUnit; label: string }> = [
@@ -149,14 +180,26 @@ interface SessionSnapshot {
   result: CalculationResult | null;
 }
 
-interface UiIssue {
-  title: string;
-  message: string;
-  technical: string;
-  attempts: ApiAttemptDiagnostic[];
-  occurredAt: string;
-  retryLabel: string;
+interface StoredSessionSnapshot {
+  schemaVersion: typeof SESSION_SCHEMA_VERSION;
+  consent: true;
+  value: SessionSnapshot;
 }
+
+interface AppHistoryState {
+  khChecker: true;
+  tab: Tab;
+  view: SearchView;
+  entryId: string;
+  scrollY?: number;
+  focusId?: string | null;
+}
+
+export function createNavigationHistoryState(tab: Tab, view: SearchView, entryId: string): AppHistoryState {
+  return { khChecker: true, tab, view, entryId };
+}
+
+type UiIssue = WorkflowIssue;
 
 interface ApiTraceNotice {
   label: string;
@@ -224,46 +267,40 @@ function ensureControllerActive(controller: AbortController): void {
   });
 }
 
-function productCompatibilityFallbackAttempted(meta: ApiResponseMeta | undefined): boolean {
-  return meta?.originBackend === 'gateway'
-    || meta?.originBackend === 'open-food-facts-v2'
-    || Boolean(meta?.attempts?.some((attempt) => attempt.backend === 'open-food-facts-v2'));
-}
-
 interface EndpointValidation {
   value: string;
   error: string | null;
 }
 
 function validateHttpEndpoint(value: string): EndpointValidation {
-  const clean = value.trim();
-  if (!clean) return { value: '', error: null };
   try {
-    const url = clean.startsWith('/')
-      ? new URL(clean, window.location.origin)
-      : new URL(clean);
-    if (!/^https?:$/.test(url.protocol)) {
-      return { value: '', error: 'Erlaubt sind nur HTTP- oder HTTPS-Endpunkte.' };
-    }
-    if (window.location.protocol === 'https:' && url.protocol === 'http:' && url.origin !== window.location.origin) {
-      return { value: '', error: 'Eine HTTPS-App darf keinen externen HTTP-Gateway laden. Verwende HTTPS oder einen relativen Same-Origin-Pfad.' };
-    }
-    return { value: clean, error: null };
-  } catch {
-    return { value: '', error: 'Die Gateway-Adresse ist keine gültige URL.' };
+    return {
+      value: validatedGatewayBase(value, window.location.origin, true),
+      error: null
+    };
+  } catch (cause) {
+    return {
+      value: '',
+      error: cause instanceof GatewayUrlError
+        ? cause.message
+        : 'Die Gateway-Adresse ist keine gültige oder sichere URL.'
+    };
   }
 }
 
-function requiredGatewayEndpoint(value: string): EndpointValidation {
-  const validated = validateHttpEndpoint(value);
-  if (validated.error) return validated;
-  if (!validated.value) {
-    return {
-      value: '',
-      error: 'Für diesen Release ist ein aktiver Daten-Gateway-Endpunkt erforderlich.'
-    };
-  }
-  return validated;
+interface PwaStatusNotice {
+  message: string;
+  updateAvailable?: boolean;
+  applyUpdate?: () => void | Promise<void>;
+}
+
+function missingNetworkCapabilities(): string[] {
+  const missing: string[] = [];
+  if (typeof fetch === 'undefined') missing.push('Fetch');
+  if (typeof AbortController === 'undefined') missing.push('AbortController');
+  if (typeof URL === 'undefined') missing.push('URL');
+  if (typeof TextDecoder === 'undefined') missing.push('TextDecoder');
+  return missing;
 }
 
 function formatCountdown(milliseconds: number): string {
@@ -274,46 +311,43 @@ function formatCountdown(milliseconds: number): string {
   return rest ? `${minutes}:${String(rest).padStart(2, '0')} min` : `${minutes} min`;
 }
 
-function latestRetryAtFromAttempts(attempts: ApiAttemptDiagnostic[], now = Date.now()): number | null {
-  let latest: number | null = null;
-  for (const attempt of attempts) {
-    if (!Number.isFinite(attempt.retryAfterMs) || Number(attempt.retryAfterMs) <= 0) continue;
-    const candidate = now + Number(attempt.retryAfterMs);
-    if (latest === null || candidate > latest) latest = candidate;
-  }
-  return latest;
-}
-
-function isLocalAndroidViewer(): boolean {
-  return ['127.0.0.1', 'localhost'].includes(window.location.hostname)
-    && /\/storage\/emulated\//i.test(window.location.pathname);
-}
-
 function sanitizeSettings(value: AppSettings | null): AppSettings {
   const merged = { ...DEFAULT_SETTINGS, ...(value ?? {}) };
   const defaultGatewayUrl = DEFAULT_SETTINGS.dataGatewayUrl.trim();
-  const persistedGatewayUrl = typeof merged.dataGatewayUrl === 'string'
-    ? merged.dataGatewayUrl.trim()
-    : '';
-  // Old saved settings may still contain an empty gateway URL from releases
-  // before the required gateway build variable was introduced.
-  merged.dataGatewayUrl = persistedGatewayUrl || defaultGatewayUrl;
+  const persistedGatewayUrl = value && typeof value.dataGatewayUrl === 'string'
+    ? value.dataGatewayUrl.trim()
+    : null;
+  // Empty is an intentional manual/offline-only choice. Apply the build
+  // default only before any settings record exists.
+  merged.dataGatewayUrl = persistedGatewayUrl ?? defaultGatewayUrl;
   if (!['hybrid', 'v3', 'v2'].includes(String(merged.productApiMode))) {
     merged.productApiMode = 'hybrid';
   }
-  const endpoint = merged.aiParseUrl.trim();
-  if (isLocalAndroidViewer()) {
-    let validExternalEndpoint = false;
-    try {
-      const url = new URL(endpoint);
-      validExternalEndpoint = /^https?:$/.test(url.protocol)
-        && !['127.0.0.1', 'localhost'].includes(url.hostname);
-    } catch {
-      validExternalEndpoint = false;
-    }
-    if (!validExternalEndpoint) return { ...merged, aiEnabled: false, aiParseUrl: '' };
-  }
-  return merged;
+  return {
+    aiEnabled: merged.aiEnabled === true,
+    decimalPlaces: [0, 1, 2].includes(Number(merged.decimalPlaces)) ? merged.decimalPlaces : 1,
+    searchPageSize: [10, 15, 20].includes(Number(merged.searchPageSize)) ? merged.searchPageSize : 10,
+    preferGermanMarket: merged.preferGermanMarket !== false,
+    saveHistory: merged.saveHistory === true,
+    saveSearchSession: merged.saveSearchSession === true,
+    saveCalibrations: merged.saveCalibrations === true,
+    cacheApiData: merged.cacheApiData === true,
+    dataGatewayUrl: merged.dataGatewayUrl,
+    productApiMode: merged.productApiMode
+  };
+}
+
+function sameSettings(left: AppSettings, right: AppSettings): boolean {
+  return left.aiEnabled === right.aiEnabled
+    && left.decimalPlaces === right.decimalPlaces
+    && left.searchPageSize === right.searchPageSize
+    && left.preferGermanMarket === right.preferGermanMarket
+    && left.saveHistory === right.saveHistory
+    && left.saveSearchSession === right.saveSearchSession
+    && left.saveCalibrations === right.saveCalibrations
+    && left.cacheApiData === right.cacheApiData
+    && left.dataGatewayUrl === right.dataGatewayUrl
+    && left.productApiMode === right.productApiMode;
 }
 
 function attemptOutcomeLabel(outcome: ApiAttemptDiagnostic['outcome']): string {
@@ -348,6 +382,7 @@ function backendLabel(backend: ApiResponseMeta['backend'] | ApiResponseMeta['ori
   if (!backend) return 'unbekannt';
   return ({
     gateway: 'eigener Gateway',
+    'search-index': 'eigener Suchindex',
     'search-a-licious': 'Search-a-licious',
     'open-food-facts-legacy': 'OFF Legacy-Suche',
     'open-food-facts-v3': 'OFF API v3.6',
@@ -443,56 +478,84 @@ async function copyText(value: string): Promise<void> {
   area.remove();
 }
 
-function fallbackPortionOption(result: CalculationResult): PortionOption {
-  const source = ['g', 'kg'].includes(result.unit) ? 'mass' : result.unit === 'ml' ? 'volume' : 'manual';
+function normalizeStoredResult(value: CalculationResult): CalculationResult {
+  const parsed = parseStoredCalculationResult(value);
+  if (!parsed) throw new Error('Ungültiges Berechnungsergebnis.');
+  return parsed;
+}
+
+function normalizeManualForm(value: unknown): ManualFormValues {
+  if (!value || typeof value !== 'object') return DEFAULT_MANUAL;
+  const candidate = value as Partial<ManualFormValues> & { carbsPer100g?: unknown };
+  const amount = typeof candidate.amount === 'number' && Number.isFinite(candidate.amount) && candidate.amount > 0
+    ? candidate.amount
+    : DEFAULT_MANUAL.amount;
+  const unit = UNIT_OPTIONS.some((option) => option.value === candidate.unit)
+    ? candidate.unit as FoodUnit
+    : DEFAULT_MANUAL.unit;
+  const legacyCarbs = typeof candidate.carbsPer100g === 'number' ? candidate.carbsPer100g : null;
+  const candidateCarbs = typeof candidate.carbsPer100 === 'number' && Number.isFinite(candidate.carbsPer100)
+    ? candidate.carbsPer100
+    : legacyCarbs;
+  const unitWeightG = typeof candidate.unitWeightG === 'number'
+    && Number.isFinite(candidate.unitWeightG)
+    && candidate.unitWeightG > 0
+    ? candidate.unitWeightG
+    : null;
+  const nutritionBasis = candidate.nutritionBasis === '100ml' && unit === 'ml' ? '100ml' : '100g';
   return {
-    id: `${result.unit}:${result.unitWeightG ?? 'variable'}:migration`,
-    unit: result.unit,
-    label: unitLabels[result.unit],
-    weightG: result.unit === 'g' ? 1 : result.unit === 'kg' ? 1000 : result.unitWeightG,
-    volumeMl: result.unit === 'ml' ? 1 : null,
-    source,
-    confidence: result.unitWeightG !== null || ['g', 'kg', 'ml'].includes(result.unit) ? result.confidence : 'missing',
-    note: 'Aus einem älteren lokalen Eintrag übernommen.',
-    recommended: true
+    productName: typeof candidate.productName === 'string' ? candidate.productName.slice(0, 160) : '',
+    brand: typeof candidate.brand === 'string' ? candidate.brand.slice(0, 120) : '',
+    amount,
+    unit,
+    barcode: typeof candidate.barcode === 'string' ? candidate.barcode.replace(/\D/g, '').slice(0, 14) : '',
+    unitWeightG,
+    nutritionBasis,
+    carbsPer100: isValidCarbohydratesPer100(candidateCarbs, nutritionBasis) ? candidateCarbs : null
   };
 }
 
-function normalizeStoredResult(value: CalculationResult): CalculationResult {
-  const portionOptions = Array.isArray(value.portionOptions) && value.portionOptions.length
-    ? value.portionOptions
-    : [fallbackPortionOption(value)];
-  const selectedPortionId = value.selectedPortionId && portionOptions.some((item) => item.id === value.selectedPortionId)
-    ? value.selectedPortionId
-    : (portionOptions.find((item) => item.recommended) ?? portionOptions[0])?.id ?? null;
-  return {
-    ...value,
-    request: {
-      ...value.request,
-      amount: {
-        ...value.request.amount,
-        valueExplicit: value.request.amount.valueExplicit ?? true,
-        unitExplicit: value.request.amount.unitExplicit ?? true
-      }
-    },
-    portionOptions,
-    selectedPortionId,
-    notes: Array.isArray(value.notes) ? value.notes : [],
-    candidates: Array.isArray(value.candidates) ? value.candidates : []
-  };
+function isTab(value: unknown): value is Tab {
+  return value === 'search' || value === 'history' || value === 'favorites' || value === 'settings';
+}
+
+function isSearchView(value: unknown): value is SearchView {
+  return value === 'home' || value === 'candidates' || value === 'result';
+}
+
+export function decodeSessionSnapshot(raw: string): SessionSnapshot | null {
+  try {
+    const stored = JSON.parse(raw) as { schemaVersion?: unknown; consent?: unknown; value?: unknown };
+    if (stored.schemaVersion !== SESSION_SCHEMA_VERSION || stored.consent !== true || !stored.value || typeof stored.value !== 'object') return null;
+    const parsed = stored.value as Partial<SessionSnapshot>;
+    if (!isTab(parsed.tab) || !isSearchView(parsed.searchView) || typeof parsed.query !== 'string') return null;
+    const hits = parseSearchHits(parsed.hits);
+    const request = isParsedFoodRequest(parsed.request) ? parsed.request : null;
+    const result = parseStoredCalculationResult(parsed.result);
+    const searchView: SearchView = parsed.searchView === 'result' && result
+      ? 'result'
+      : parsed.searchView === 'candidates' && request && hits.length
+        ? 'candidates'
+        : 'home';
+    return {
+      tab: parsed.tab,
+      searchView,
+      query: parsed.query.slice(0, MAX_SEARCH_QUERY_LENGTH),
+      manualMode: parsed.manualMode === true,
+      manualValues: normalizeManualForm(parsed.manualValues),
+      request,
+      hits,
+      result
+    };
+  } catch {
+    return null;
+  }
 }
 
 function loadSession(): SessionSnapshot | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as SessionSnapshot;
-    return {
-      ...parsed,
-      result: parsed.result ? normalizeStoredResult(parsed.result) : null,
-      hits: Array.isArray(parsed.hits) ? parsed.hits : [],
-      manualValues: { ...DEFAULT_MANUAL, ...(parsed.manualValues ?? {}) }
-    };
+    return raw ? decodeSessionSnapshot(raw) : null;
   } catch {
     return null;
   }
@@ -500,13 +563,28 @@ function loadSession(): SessionSnapshot | null {
 
 function saveSession(snapshot: SessionSnapshot): void {
   try {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(snapshot));
+    const stored: StoredSessionSnapshot = {
+      schemaVersion: SESSION_SCHEMA_VERSION,
+      consent: true,
+      value: snapshot
+    };
+    localStorage.setItem(SESSION_KEY, JSON.stringify(stored));
+    localStorage.removeItem(LEGACY_SESSION_KEY);
   } catch {
     // Local storage can be unavailable in private mode. The app remains usable.
   }
 }
 
-function syntheticHit(product: OffProduct): SearchHit {
+function clearSession(): void {
+  try {
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(LEGACY_SESSION_KEY);
+  } catch {
+    // Storage is optional.
+  }
+}
+
+function syntheticHit(product: OffProduct, apiMeta?: ApiResponseMeta): SearchHit {
   return {
     code: product.code,
     product_name: product.product_name,
@@ -526,7 +604,8 @@ function syntheticHit(product: OffProduct): SearchHit {
     categories_tags: product.categories_tags,
     nutriments: product.nutriments,
     image_front_url: product.image_front_url,
-    completeness: 1
+    completeness: 1,
+    api_meta: apiMeta
   };
 }
 
@@ -574,16 +653,6 @@ function mergeSearchHit(base: SearchHit, extra: SearchHit | null | undefined): S
     image_front_url: extra.image_front_url ?? base.image_front_url,
     nutriments: { ...(base.nutriments ?? {}), ...(extra.nutriments ?? {}) }
   };
-}
-
-function hasCarbohydrateData(hit: SearchHit): boolean {
-  const nutrients = hit.nutriments ?? {};
-  return [
-    nutrients.carbohydrates_100g,
-    nutrients.carbohydrates_100ml,
-    nutrients.carbohydrates_prepared_100g,
-    nutrients.carbohydrates_prepared_100ml
-  ].some((value) => typeof value === 'number' && Number.isFinite(value));
 }
 
 function requestSearchQuery(request: ParsedFoodRequest): string {
@@ -663,11 +732,13 @@ function AttemptDiagnostics({ attempts }: { attempts: ApiAttemptDiagnostic[] }) 
 function ApiIssueBanner({
   issue,
   onDismiss,
-  onRetry
+  onRetry,
+  bannerRef
 }: {
   issue: UiIssue;
   onDismiss: () => void;
   onRetry: () => void;
+  bannerRef?: RefObject<HTMLElement | null>;
 }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -677,7 +748,7 @@ function ApiIssueBanner({
   };
 
   return (
-    <section className="api-issue-banner" role="alert">
+    <section className={`api-issue-banner ${issue.kind}`} role="alert" aria-live="assertive" tabIndex={-1} ref={bannerRef}>
       <div className="api-issue-heading">
         <div className="api-issue-icon"><AlertTriangle size={21} /></div>
         <div>
@@ -722,11 +793,11 @@ function ApiTraceBanner({ notice, onDismiss }: { notice: ApiTraceNotice; onDismi
       ? 'Gespeicherte Daten verwendet – API-Versuch fehlgeschlagen'
       : fallbackWorked
         ? 'Fallback erfolgreich – erster API-Weg ist fehlgeschlagen'
-        : 'API-Anfrage erfolgreich und lokal gespeichert';
+        : 'API-Anfrage erfolgreich';
   const origin = backendLabel(meta.originBackend ?? meta.backend);
 
   return (
-    <section className={`api-trace-banner ${state}`} role="status">
+    <section className={`api-trace-banner ${state}`} role="status" aria-live="polite">
       <div className="api-trace-heading">
         <div className="api-trace-icon">
           {state === 'warning' ? <AlertTriangle size={19} /> : cacheOnly ? <Database size={19} /> : <CheckCircle2 size={19} />}
@@ -744,6 +815,74 @@ function ApiTraceBanner({ notice, onDismiss }: { notice: ApiTraceNotice; onDismi
         </details>
       )}
     </section>
+  );
+}
+
+function RuntimeStatusRegion({
+  settingsReady,
+  online,
+  gatewayError,
+  pending,
+  capabilityWarnings,
+  pwaNotice,
+  onApplyPwaUpdate,
+  onConfigure,
+  onDismissPwa
+}: {
+  settingsReady: boolean;
+  online: boolean;
+  gatewayError: string | null;
+  pending: boolean;
+  capabilityWarnings: string[];
+  pwaNotice: PwaStatusNotice | null;
+  onApplyPwaUpdate: () => void;
+  onConfigure: () => void;
+  onDismissPwa: () => void;
+}) {
+  return (
+    <div className="runtime-status-region" aria-live="polite" aria-atomic="true">
+      {!settingsReady && (
+        <div className="runtime-status loading" role="status">
+          <LoaderCircle className="spin" size={18} /> Einstellungen und lokale Daten werden geladen …
+        </div>
+      )}
+      {settingsReady && !online && (
+        <div className="runtime-status offline" role="status">
+          <Database size={18} /> Offline: Gespeicherte Ergebnisse, Cache-Daten und manuelle Berechnung bleiben verfügbar.
+        </div>
+      )}
+      {settingsReady && gatewayError && (
+        <div className="runtime-status configuration" role="status">
+          <AlertTriangle size={18} />
+          <span>{gatewayError} Netzwerk-Suche ist deaktiviert; lokale Funktionen bleiben nutzbar.</span>
+          <button type="button" className="secondary-button compact" onClick={onConfigure}>Gateway konfigurieren</button>
+        </div>
+      )}
+      {pending && (
+        <div className="runtime-status loading" role="status">
+          <LoaderCircle className="spin" size={18} /> Anfrage läuft. Eine neue Aktion startet sofort einen neuen Versuch.
+        </div>
+      )}
+      {settingsReady && capabilityWarnings.length > 0 && (
+        <div className="runtime-status capability" role="status">
+          <Info size={18} />
+          <span>{capabilityWarnings.join(' ')}</span>
+        </div>
+      )}
+      {pwaNotice && (
+        <div className="runtime-status pwa" role="status">
+          <CheckCircle2 size={18} /> <span>{pwaNotice.message}</span>
+          {pwaNotice.updateAvailable && (
+            <button type="button" className="secondary-button compact" onClick={onApplyPwaUpdate}>Jetzt aktualisieren</button>
+          )}
+          {pwaNotice.updateAvailable ? (
+            <button type="button" className="secondary-button compact" onClick={onDismissPwa}>Später</button>
+          ) : (
+            <button type="button" className="icon-button compact-icon" onClick={onDismissPwa} aria-label="PWA-Status schließen"><X size={16} /></button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -790,7 +929,7 @@ function HomeScreen({
   onManualSubmit,
   listening,
   onVoice,
-  searchBlockedRemainingMs
+  settingsReady
 }: {
   query: string;
   setQuery: (value: string) => void;
@@ -803,9 +942,17 @@ function HomeScreen({
   onManualSubmit: () => void;
   listening: boolean;
   onVoice: () => void;
-  searchBlockedRemainingMs: number;
+  settingsReady: boolean;
 }) {
-  const searchBlocked = searchBlockedRemainingMs > 0;
+  const selectModeFromKeyboard = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const nextManual = event.key === 'ArrowRight' || event.key === 'End';
+    setManualMode(nextManual);
+    window.requestAnimationFrame(() => {
+      document.getElementById(nextManual ? 'manual-mode-tab' : 'search-mode-tab')?.focus();
+    });
+  };
   return (
     <div className="screen-content home-screen">
       <section className="hero-copy">
@@ -815,16 +962,16 @@ function HomeScreen({
       </section>
 
       <div className="mode-switch" role="tablist" aria-label="Eingabemodus">
-        <button type="button" role="tab" aria-selected={!manualMode} className={!manualMode ? 'active' : ''} onClick={() => setManualMode(false)}>
+        <button type="button" id="search-mode-tab" role="tab" aria-controls="search-mode-panel" aria-selected={!manualMode} tabIndex={!manualMode ? 0 : -1} className={!manualMode ? 'active' : ''} onKeyDown={selectModeFromKeyboard} onClick={() => setManualMode(false)}>
           <Search size={17} /> Suche
         </button>
-        <button type="button" role="tab" aria-selected={manualMode} className={manualMode ? 'active' : ''} onClick={() => setManualMode(true)}>
+        <button type="button" id="manual-mode-tab" role="tab" aria-controls="manual-mode-panel" aria-selected={manualMode} tabIndex={manualMode ? 0 : -1} className={manualMode ? 'active' : ''} onKeyDown={selectModeFromKeyboard} onClick={() => setManualMode(true)}>
           <Calculator size={17} /> Manuell
         </button>
       </div>
 
       {!manualMode ? (
-        <section className="search-panel card">
+        <section className="search-panel card" id="search-mode-panel" role="tabpanel" aria-labelledby="search-mode-tab">
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -855,22 +1002,17 @@ function HomeScreen({
                 type="button"
                 className={`voice-button ${listening ? 'listening' : ''}`}
                 onClick={onVoice}
-                disabled={searchBlocked}
               >
                 <Mic size={21} />
                 {listening ? 'Ich höre zu …' : 'Sprechen'}
               </button>
-              <button type="submit" className="primary-button" disabled={!query.trim() || searchBlocked}>
+              <button type="submit" className="primary-button" disabled={!query.trim() || !settingsReady}>
                 {loading ? <LoaderCircle className="spin" size={20} /> : <Search size={20} />}
-                {searchBlocked
-                  ? `Warte ${formatCountdown(searchBlockedRemainingMs)}`
-                  : loading
-                    ? 'Suche neu starten'
-                    : 'Suchen'}
+                {!settingsReady ? 'Einstellungen laden …' : loading ? 'Suche neu starten' : 'Suchen'}
               </button>
             </div>
             <p className="request-policy-note">
-              Cache zuerst. Bei Retry-After/Rate-Limit pausiert die App neue Netzwerksuchen kurz und zeigt den verbleibenden Zeitraum an.
+              Cache zuerst. Serverhinweise wie Retry-After werden angezeigt, blockieren aber keine erneute Nutzeraktion.
             </p>
           </form>
 
@@ -887,7 +1029,6 @@ function HomeScreen({
           onChange={setManualValues}
           onSubmit={onManualSubmit}
           loading={loading}
-          searchBlockedRemainingMs={searchBlockedRemainingMs}
         />
       )}
 
@@ -904,21 +1045,34 @@ function ManualForm({
   values,
   onChange,
   onSubmit,
-  loading,
-  searchBlockedRemainingMs
+  loading
 }: {
   values: ManualFormValues;
   onChange: (values: ManualFormValues) => void;
   onSubmit: () => void;
   loading: boolean;
-  searchBlockedRemainingMs: number;
 }) {
   const patch = (next: Partial<ManualFormValues>) => onChange({ ...values, ...next });
-  const searchBlocked = searchBlockedRemainingMs > 0;
+  const validAmount = isPlausibleFoodAmount(values.amount, values.unit);
+  const validUnitWeight = values.unitWeightG === null || (
+    Number.isFinite(values.unitWeightG)
+    && values.unitWeightG > 0
+    && isPlausibleUnitWeightForUnit(values.unitWeightG, values.unit)
+    && isPlausibleTotalMass(values.amount * values.unitWeightG)
+  );
+  const maxCarbs = maximumCarbohydratesPer100(values.nutritionBasis);
+  const validCarbs = isValidCarbohydratesPer100(values.carbsPer100, values.nutritionBasis);
+  const validBasisUnit = values.nutritionBasis !== '100ml' || values.unit === 'ml';
+  const validBarcode = !values.barcode || (
+    isOffBarcodeInput(values.barcode) && normalizeOffBarcode(values.barcode) !== null
+  );
 
   return (
     <form
       className="manual-form card"
+      id="manual-mode-panel"
+      role="tabpanel"
+      aria-labelledby="manual-mode-tab"
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit();
@@ -938,42 +1092,161 @@ function ManualForm({
       <label className="compound-field">
         <span>Menge & Einheit *</span>
         <div className="quantity-unit-control">
-          <input type="number" min="0.01" step="0.01" value={values.amount} onChange={(event) => patch({ amount: Number(event.target.value) })} required aria-label="Menge" />
-          <select value={values.unit} onChange={(event) => patch({ unit: event.target.value as FoodUnit })} aria-label="Einheit">
+          <LocalizedDecimalInput value={values.amount} onChange={(amount) => patch({ amount: amount ?? 0 })} min={0.01} required ariaLabel="Menge" />
+          <select value={values.unit} onChange={(event) => {
+            const unit = event.target.value as FoodUnit;
+            const nutritionBasis = values.nutritionBasis === '100ml' && unit !== 'ml' ? '100g' : values.nutritionBasis;
+            patch({
+              unit,
+              nutritionBasis,
+              carbsPer100: isValidCarbohydratesPer100(values.carbsPer100, nutritionBasis) ? values.carbsPer100 : null
+            });
+          }} aria-label="Einheit">
             {UNIT_OPTIONS.map((unit) => <option key={unit.value} value={unit.value}>{unit.label}</option>)}
           </select>
         </div>
       </label>
+
+      <div className="field-grid two-columns manual-nutrition-fields">
+        <label>
+          <span>Bezugsbasis vom Etikett *</span>
+          <select value={values.nutritionBasis} onChange={(event) => {
+            const nutritionBasis = event.target.value as '100g' | '100ml';
+            patch({
+              nutritionBasis,
+              ...(nutritionBasis === '100ml' ? { unit: 'ml' as const, unitWeightG: null } : {})
+            });
+          }} aria-label="Bezugsbasis der Nährwerte">
+            <option value="100g">pro 100 g</option>
+            <option value="100ml">pro 100 ml</option>
+          </select>
+        </label>
+        <label htmlFor="manual-carbs-input">
+          <span>KH pro {values.nutritionBasis === '100g' ? '100 g' : '100 ml'} *</span>
+          <LocalizedDecimalInput
+            value={values.carbsPer100}
+            onChange={(carbsPer100) => patch({ carbsPer100 })}
+            min={0}
+            max={maxCarbs}
+            required
+            ariaLabel={`Kohlenhydrate pro ${values.nutritionBasis === '100g' ? '100 Gramm' : '100 Milliliter'}`}
+            describedBy="manual-carbs-help"
+            id="manual-carbs-input"
+          />
+          <small id="manual-carbs-help" className={validCarbs ? 'field-help' : 'field-error'}>{validCarbs ? '0 ist zulässig.' : `Erforderlich: Wert zwischen 0 und ${maxCarbs}.`}</small>
+        </label>
+      </div>
+      {values.nutritionBasis === '100ml' && (
+        <p className="field-help">Nährwerte pro 100 ml werden gegen das Gesamtvolumen berechnet. Mehrere Gläser oder Portionen bitte als gesamte Milliliter eingeben.</p>
+      )}
 
       <details className="advanced-fields">
         <summary>Optionale genaue Angaben <ChevronDown size={17} /></summary>
         <div className="field-grid two-columns">
           <label>
             <span>Barcode</span>
-            <input inputMode="numeric" value={values.barcode} onChange={(event) => patch({ barcode: event.target.value.replace(/\D/g, '') })} placeholder="8–14 Ziffern" aria-label="Barcode" />
-          </label>
-          <label>
-            <span>KH pro 100 g</span>
-            <input type="number" min="0" max="100" step="0.1" value={values.carbsPer100g ?? ''} onChange={(event) => patch({ carbsPer100g: event.target.value ? Number(event.target.value) : null })} placeholder="vom Etikett" aria-label="Kohlenhydrate pro 100 Gramm" />
+            <input inputMode="numeric" value={values.barcode} onChange={(event) => patch({ barcode: event.target.value.replace(/\D/g, '').slice(0, 14) })} placeholder="7–14 Ziffern" minLength={7} maxLength={14} pattern="[0-9]{7,14}" aria-label="Barcode" />
           </label>
           {!['g', 'kg', 'ml'].includes(values.unit) && (
-            <label>
+            <label htmlFor="manual-unit-weight-input">
               <span>Gewicht für 1 {unitLabels[values.unit]} (g)</span>
-              <input type="number" min="0" step="0.01" value={values.unitWeightG ?? ''} onChange={(event) => patch({ unitWeightG: event.target.value ? Number(event.target.value) : null })} placeholder="z. B. 21,5" aria-label="Gewicht einer Einheit in Gramm" />
+              <LocalizedDecimalInput id="manual-unit-weight-input" value={values.unitWeightG} onChange={(unitWeightG) => patch({ unitWeightG })} min={0.01} ariaLabel="Gewicht einer Einheit in Gramm" placeholder="z. B. 21,5" />
             </label>
           )}
         </div>
       </details>
 
-      <button type="submit" className="primary-button full-width" disabled={!values.productName.trim() || searchBlocked}>
+      <button type="submit" className="primary-button full-width" disabled={!values.productName.trim() || !validAmount || !validUnitWeight || !validCarbs || !validBarcode || !validBasisUnit}>
         {loading ? <LoaderCircle className="spin" size={20} /> : <Calculator size={20} />}
-        {searchBlocked
-          ? `Warte ${formatCountdown(searchBlockedRemainingMs)}`
-          : loading
-            ? 'Berechnung neu starten'
-            : 'Berechnen'}
+        {loading ? 'Berechnung neu starten' : 'Berechnen'}
       </button>
     </form>
+  );
+}
+
+function decimalInputText(value: number | null): string {
+  return value === null ? '' : String(value).replace('.', ',');
+}
+
+function LocalizedDecimalInput({
+  id,
+  value,
+  onChange,
+  min,
+  max,
+  required = false,
+  ariaLabel,
+  describedBy,
+  placeholder
+}: {
+  id?: string;
+  value: number | null;
+  onChange: (value: number | null) => void;
+  min: number;
+  max?: number;
+  required?: boolean;
+  ariaLabel: string;
+  describedBy?: string;
+  placeholder?: string;
+}) {
+  const [draft, setDraft] = useState(() => ({ committed: value, text: decimalInputText(value) }));
+  if (draft.committed !== value) {
+    setDraft({ committed: value, text: decimalInputText(value) });
+  }
+  const parsed = parseLocalizedDecimal(draft.text);
+  const invalid = parsed === null
+    ? required || draft.text.trim().length > 0
+    : parsed < min || (max !== undefined && parsed > max);
+  return (
+    <input
+      id={id}
+      type="text"
+      inputMode="decimal"
+      autoComplete="off"
+      value={draft.text}
+      placeholder={placeholder}
+      pattern="[0-9]+([,.][0-9]+)?"
+      required={required}
+      aria-label={ariaLabel}
+      aria-describedby={describedBy}
+      aria-invalid={invalid}
+      onChange={(event) => {
+        const text = event.target.value;
+        const next = parseLocalizedDecimal(text);
+        setDraft({ committed: next, text });
+        onChange(next);
+      }}
+      onBlur={() => {
+        const next = parseLocalizedDecimal(draft.text);
+        setDraft({ committed: next, text: decimalInputText(next) });
+      }}
+    />
+  );
+}
+
+function ProductImage({
+  src,
+  alt,
+  className,
+  fallbackSize = 28
+}: {
+  src: string | null | undefined;
+  alt: string;
+  className?: string;
+  fallbackSize?: number;
+}) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  if (!src || failedSrc === src) return <Package size={fallbackSize} aria-hidden="true" />;
+  return <img className={className} src={src} alt={alt} loading="lazy" onError={() => setFailedSrc(src)} />;
+}
+
+function CandidateNutrition({ hit, request }: { hit: SearchHit; request: ParsedFoodRequest }) {
+  const nutrition = displayCarbohydrateValue(hit, request.product.name, request.amount.unit);
+  const basis = nutrition.basis === '100ml' ? '100 ml' : '100 g';
+  return (
+    <small>
+      {formatNumber(nutrition.value, 1)} g KH / {basis}{nutrition.prepared ? ' · zubereitet' : ''}
+    </small>
   );
 }
 
@@ -983,7 +1256,8 @@ function CandidateList({
   onBack,
   onSelect,
   onGeneric,
-  loading
+  loading,
+  allowImages
 }: {
   request: ParsedFoodRequest;
   hits: SearchHit[];
@@ -991,11 +1265,12 @@ function CandidateList({
   onSelect: (hit: SearchHit) => void;
   onGeneric: () => void;
   loading: boolean;
+  allowImages: boolean;
 }) {
   return (
     <div className="screen-content">
       <div className="subheader">
-        <button type="button" className="icon-button" onClick={onBack}><ArrowLeft size={21} /></button>
+        <button type="button" className="icon-button" onClick={onBack} aria-label="Zurück zur Suche"><ArrowLeft size={21} /></button>
         <div>
           <h2>Produkt auswählen</h2>
           <p>{request.amount.value} {unitLabels[request.amount.unit]} · {request.product.name}</p>
@@ -1015,14 +1290,14 @@ function CandidateList({
 
       <div className="candidate-list">
         {hits.map((hit, index) => (
-          <button type="button" className="candidate-card card" key={hit.code ?? `${normalizeText(displayProductName(hit))}-${normalizeText(displayBrand(hit.brands) ?? '')}-${hit.quantity ?? ''}`} onClick={() => onSelect(hit)} disabled={loading}>
+          <button type="button" id={`candidate-option-${index}`} className="candidate-card card" key={hit.code ?? `${normalizeText(displayProductName(hit))}-${normalizeText(displayBrand(hit.brands) ?? '')}-${hit.quantity ?? ''}`} onClick={() => onSelect(hit)} disabled={loading}>
             <div className="candidate-image">
-              {hit.image_front_url ? <img src={hit.image_front_url} alt="" loading="lazy" /> : <Package size={28} />}
+              <ProductImage src={allowImages ? hit.image_front_url : null} alt="" />
             </div>
             <div className="candidate-copy">
               <strong>{displayProductName(hit)}</strong>
               <span>{displayBrand(hit.brands) ?? 'Marke unbekannt'} · {hit.quantity ?? 'Menge unbekannt'}</span>
-              <small>{formatNumber(hit.nutriments?.carbohydrates_100g ?? null, 1)} g KH / 100 g</small>
+              <CandidateNutrition hit={hit} request={request} />
             </div>
             <span className="rank-badge">#{index + 1}</span>
           </button>
@@ -1041,21 +1316,29 @@ function ResultScreen({
   onWeightResolved,
   onTotalResolved,
   onPortionChange,
-  onChooseProduct
+  onChooseProduct,
+  allowImages,
+  favoritesEnabled,
+  calibrationPersistenceEnabled
 }: {
   result: CalculationResult;
   decimals: number;
   onBack: () => void;
   onNewSearch: () => void;
-  onToggleFavorite: () => void;
-  onWeightResolved: (measurement: WeightMeasurement) => void;
-  onTotalResolved: (value: number, reuseScope?: WeightMeasurement['reuseScope']) => void;
-  onPortionChange: (amount: number, portionId: string) => void;
+  onToggleFavorite: () => void | Promise<void>;
+  onWeightResolved: (measurement: WeightMeasurement) => void | Promise<void>;
+  onTotalResolved: (value: number, reuseScope?: WeightMeasurement['reuseScope']) => void | Promise<void>;
+  onPortionChange: (amount: number, portionId: string) => void | Promise<void>;
   onChooseProduct: () => void;
+  allowImages: boolean;
+  favoritesEnabled: boolean;
+  calibrationPersistenceEnabled: boolean;
 }) {
-  const hasUnitEditor = supportsUnitWeight(result.unit);
-  const canPersistUnitCalibration = isCalibratableUnit(result.unit);
-  const supportsGroupWeighing = result.countability === 'countable' && isCountedFoodUnit(result.unit);
+  const hasUnitEditor = result.basis === '100g' && supportsUnitWeight(result.unit);
+  const canPersistUnitCalibration = calibrationPersistenceEnabled
+    && result.basis === '100g'
+    && isCalibratableUnit(result.unit);
+  const supportsGroupWeighing = hasUnitEditor && result.countability === 'countable' && isCountedFoodUnit(result.unit);
   const currentTotal = result.basis === '100g' ? result.totalMassG : result.totalVolumeMl;
   const defaultMeasuredCount = Number.isInteger(result.amount) && result.amount > 1 && result.amount <= 100
     ? String(result.amount)
@@ -1069,9 +1352,10 @@ function ResultScreen({
   const [measuredCountValue, setMeasuredCountValue] = useState(defaultMeasuredCount);
   const [measuredTotalValue, setMeasuredTotalValue] = useState('');
   const [reuseGeneric, setReuseGeneric] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   useEffect(() => {
-    const nextHasUnitEditor = supportsUnitWeight(result.unit);
+    const nextHasUnitEditor = result.basis === '100g' && supportsUnitWeight(result.unit);
     setAmountValue(String(result.amount));
     setWeightMode(result.status === 'needs_unit_calibration' && nextHasUnitEditor ? 'single' : 'total');
     setTotalValue(inputNumber(result.basis === '100g' ? result.totalMassG : result.totalVolumeMl));
@@ -1079,6 +1363,7 @@ function ResultScreen({
     setMeasuredCountValue(Number.isInteger(result.amount) && result.amount > 1 && result.amount <= 100 ? String(result.amount) : '10');
     setMeasuredTotalValue('');
     setReuseGeneric(false);
+    setEditError(null);
   }, [result.amount, result.unit, result.unitWeightG, result.totalMassG, result.totalVolumeMl, result.status, result.basis]);
 
   const parsedAmount = Number(amountValue.replace(',', '.'));
@@ -1117,29 +1402,43 @@ function ResultScreen({
   const totalSliderMin = result.basis === '100g' ? 0.1 : 1;
   const totalSliderStep = result.basis === '100g' ? 0.1 : 1;
 
-  const submitAmount = () => {
-    if (selectedPortion && Number.isFinite(parsedAmount) && parsedAmount > 0 && parsedAmount !== result.amount) {
-      onPortionChange(parsedAmount, selectedPortion.id);
+  const runEdit = async (action: () => void | Promise<void>) => {
+    setEditError(null);
+    try {
+      await action();
+    } catch (caught) {
+      setEditError(caught instanceof Error ? caught.message : 'Die Änderung konnte nicht übernommen werden.');
     }
+  };
+
+  const submitAmount = () => {
+    if (!selectedPortion || parsedAmount === result.amount) return;
+    if (!isPlausibleFoodAmount(parsedAmount, selectedPortion.unit)) {
+      setEditError('Die Menge muss größer als 0 und innerhalb der sicheren Berechnungsgrenze liegen.');
+      return;
+    }
+    void runEdit(() => onPortionChange(parsedAmount, selectedPortion.id));
   };
 
   return (
     <div className="screen-content result-screen">
       <div className="subheader result-subheader">
-        <button type="button" className="icon-button" onClick={onBack}><ArrowLeft size={21} /></button>
+        <button type="button" className="icon-button" onClick={onBack} aria-label="Zurück"><ArrowLeft size={21} /></button>
         <div>
           <h2>Ergebnis</h2>
           <p>{result.request.rawInput}</p>
         </div>
-        <button type="button" className={`icon-button favorite-button ${result.favorite ? 'active' : ''}`} onClick={onToggleFavorite} aria-label="Favorit umschalten">
-          <Star size={21} fill={result.favorite ? 'currentColor' : 'none'} />
-        </button>
+        {favoritesEnabled && (
+          <button type="button" className={`icon-button favorite-button ${result.favorite ? 'active' : ''}`} onClick={() => { void runEdit(onToggleFavorite); }} aria-label="Favorit umschalten">
+            <Star size={21} fill={result.favorite ? 'currentColor' : 'none'} />
+          </button>
+        )}
       </div>
 
       <section className="result-hero card">
         <div className="product-visual">
-          {result.product.imageUrl ? (
-            <img src={result.product.imageUrl} alt={result.product.name} />
+          {result.product.imageUrl && allowImages ? (
+            <ProductImage src={result.product.imageUrl} alt={result.product.name} fallbackSize={52} />
           ) : (
             <div className="product-placeholder"><Package size={52} /></div>
           )}
@@ -1171,7 +1470,7 @@ function ResultScreen({
               value={selectedPortion?.id ?? ''}
               onChange={(event) => {
                 const amount = Number.isFinite(parsedAmount) && parsedAmount > 0 ? parsedAmount : result.amount;
-                onPortionChange(amount, event.target.value);
+                void runEdit(() => onPortionChange(amount, event.target.value));
               }}
               aria-label="Berechnungseinheit"
             >
@@ -1181,6 +1480,7 @@ function ResultScreen({
             </select>
           </div>
         </label>
+        {editError && <p className="field-error" role="alert">{editError}</p>}
 
         {result.status === 'calculated' ? (
           <>
@@ -1217,21 +1517,25 @@ function ResultScreen({
                 <span>Direkteingabe und Schieberegler sind jederzeit möglich.</span>
               </div>
             </div>
+            {hasUnitEditor && !calibrationPersistenceEnabled && (
+              <p className="weight-editor-note">Das eingegebene Gewicht gilt nur für diese Berechnung. Dauerhafte Wiederverwendung ist in den Einstellungen separat aktivierbar.</p>
+            )}
 
             {hasUnitEditor && (
-              <div className={`weight-mode-switch ${supportsGroupWeighing ? 'three-options' : 'two-options'}`} role="tablist" aria-label="Messmethode">
-                <button type="button" role="tab" aria-selected={weightMode === 'total'} className={weightMode === 'total' ? 'active' : ''} onClick={() => setWeightMode('total')}>
+              <fieldset className={`weight-mode-switch ${supportsGroupWeighing ? 'three-options' : 'two-options'}`}>
+                <legend className="visually-hidden">Messmethode</legend>
+                <button type="button" aria-pressed={weightMode === 'total'} className={weightMode === 'total' ? 'active' : ''} onClick={() => setWeightMode('total')}>
                   Gesamt
                 </button>
-                <button type="button" role="tab" aria-selected={weightMode === 'single'} className={weightMode === 'single' ? 'active' : ''} onClick={() => setWeightMode('single')}>
+                <button type="button" aria-pressed={weightMode === 'single'} className={weightMode === 'single' ? 'active' : ''} onClick={() => setWeightMode('single')}>
                   Eine Einheit
                 </button>
                 {supportsGroupWeighing && (
-                  <button type="button" role="tab" aria-selected={weightMode === 'group'} className={weightMode === 'group' ? 'active' : ''} onClick={() => setWeightMode('group')}>
+                  <button type="button" aria-pressed={weightMode === 'group'} className={weightMode === 'group' ? 'active' : ''} onClick={() => setWeightMode('group')}>
                     Mehrere wiegen
                   </button>
                 )}
-              </div>
+              </fieldset>
             )}
 
             {weightMode === 'total' || !hasUnitEditor ? (
@@ -1271,8 +1575,10 @@ function ResultScreen({
                 )}
                 <button type="button"
                   className="primary-button full-width"
-                  disabled={!Number.isFinite(parsedTotal) || parsedTotal <= 0}
-                  onClick={() => onTotalResolved(parsedTotal, reuseGeneric ? 'generic' : 'product')}
+                  disabled={result.basis === '100g'
+                    ? !isPlausibleTotalMass(parsedTotal)
+                    : !isPlausibleTotalVolume(parsedTotal)}
+                  onClick={() => { void runEdit(() => onTotalResolved(parsedTotal, reuseGeneric ? 'generic' : 'product')); }}
                 >
                   <Calculator size={19} /> Gesamtmenge übernehmen
                 </button>
@@ -1306,13 +1612,14 @@ function ResultScreen({
                 </div>
                 <button type="button"
                   className="primary-button full-width"
-                  disabled={!Number.isFinite(parsedWeight) || parsedWeight <= 0}
-                  onClick={() => onWeightResolved({
+                  disabled={!isPlausibleUnitWeightForUnit(parsedWeight, result.unit)
+                    || !isPlausibleTotalMass(parsedWeight * result.amount)}
+                  onClick={() => { void runEdit(() => onWeightResolved({
                     unitWeightG: parsedWeight,
                     measuredPieces: 1,
                     measuredTotalWeightG: parsedWeight,
                     reuseScope: reuseGeneric ? 'generic' : 'product'
-                  })}
+                  })); }}
                 >
                   <Calculator size={19} /> Einzelgewicht übernehmen
                 </button>
@@ -1345,12 +1652,12 @@ function ResultScreen({
                   disabled={derivedGroupWeight === null}
                   onClick={() => {
                     if (derivedGroupWeight !== null) {
-                      onWeightResolved({
+                      void runEdit(() => onWeightResolved({
                         unitWeightG: derivedGroupWeight,
                         measuredPieces: parsedMeasuredCount,
                         measuredTotalWeightG: parsedMeasuredTotal,
                         reuseScope: reuseGeneric ? 'generic' : 'product'
-                      });
+                      }));
                     }
                   }}
                 >
@@ -1374,6 +1681,16 @@ function ResultScreen({
 
       <section className="detail-card card">
         <DetailRow icon={<Database />} label="Quelle" value={result.sourceLabel} />
+        {result.dataFetchedAt && (
+          <DetailRow
+            icon={<Clock3 />}
+            label="Datenstand"
+            value={new Date(result.dataFetchedAt).toLocaleString('de-DE')}
+          />
+        )}
+        {result.dataCacheAgeMs !== null && (
+          <DetailRow icon={<Clock3 />} label="Cache-Alter bei Berechnung" value={formatCacheAge(result.dataCacheAgeMs)} />
+        )}
         <DetailRow icon={<Calculator />} label={`Kohlenhydrate / ${result.basis}`} value={`${formatNumber(result.carbohydratesPer100, 1)} g`} />
         {result.product.barcode && <DetailRow icon={<Barcode />} label="Barcode" value={result.product.barcode} />}
         {result.product.packageDescription && <DetailRow icon={<Package />} label="Packung" value={result.product.packageDescription} />}
@@ -1398,6 +1715,11 @@ function ResultScreen({
         </section>
       )}
 
+      <aside className="health-data-note card" role="note">
+        <ShieldCheck size={18} />
+        <p><strong>Etikett und Zubereitung prüfen.</strong> Dieses Ergebnis nicht ungeprüft für Therapie- oder Insulindosierungen verwenden. {resultDataAttribution(result)}</p>
+      </aside>
+
       {result.candidates.length > 1 && (
         <details className="technical-card card">
           <summary><Gauge size={18} /> Verwendete Produkte / DTO <ChevronDown size={18} /></summary>
@@ -1405,7 +1727,7 @@ function ResultScreen({
             {result.candidates.map((candidate) => (
               <div key={candidate.code ?? displayProductName(candidate)}>
                 <span>{displayProductName(candidate)}</span>
-                <strong>{formatNumber(candidate.nutriments?.carbohydrates_100g ?? candidate.nutriments?.carbohydrates_prepared_100g ?? null, 1)} g / 100 g</strong>
+                <strong><CandidateNutrition hit={candidate} request={result.request} /></strong>
               </div>
             ))}
           </div>
@@ -1435,13 +1757,15 @@ function HistoryScreen({
   entries,
   onOpen,
   onDelete,
-  emptyText
+  emptyText,
+  allowImages
 }: {
   title: string;
   entries: CalculationResult[];
   onOpen: (result: CalculationResult) => void;
   onDelete: (id: string) => void;
   emptyText: string;
+  allowImages: boolean;
 }) {
   return (
     <div className="screen-content">
@@ -1457,7 +1781,7 @@ function HistoryScreen({
             <article className="history-card card" key={entry.id}>
               <button type="button" className="history-open" onClick={() => onOpen(entry)}>
                 <div className="history-image">
-                  {entry.product.imageUrl ? <img src={entry.product.imageUrl} alt="" loading="lazy" /> : <Package size={24} />}
+                  <ProductImage src={allowImages ? entry.product.imageUrl : null} alt="" fallbackSize={24} />
                 </div>
                 <div>
                   <strong>{entry.product.name}</strong>
@@ -1465,7 +1789,9 @@ function HistoryScreen({
                 </div>
                 <b>{entry.carbohydratesG !== null ? `${formatNumber(entry.carbohydratesG, 1)} g` : 'offen'}</b>
               </button>
-              <button type="button" className="delete-button" onClick={() => onDelete(entry.id)} aria-label="Eintrag löschen"><Trash2 size={17} /></button>
+              <button type="button" className="delete-button" onClick={() => {
+                if (window.confirm(`„${entry.product.name}“ aus dem Verlauf löschen?`)) onDelete(entry.id);
+              }} aria-label={`${entry.product.name} löschen`}><Trash2 size={17} /></button>
             </article>
           ))}
         </div>
@@ -1498,7 +1824,7 @@ function SettingsScreen({
   onSendDiagnosticsMail: () => void;
 }) {
   const patch = (next: Partial<AppSettings>) => onChange({ ...settings, ...next });
-  const gatewayValidation = requiredGatewayEndpoint(settings.dataGatewayUrl);
+  const gatewayValidation = validateHttpEndpoint(settings.dataGatewayUrl);
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     await copyText(diagnosticsBundleText(issue, apiTrace, apiUsage));
@@ -1509,35 +1835,30 @@ function SettingsScreen({
     <div className="screen-content settings-screen">
       <section className="list-heading">
         <h2>Einstellungen</h2>
-        <p>Alle API-Aufrufe laufen ausschließlich über den konfigurierten Serverless-Gateway; Berechnung und Cache bleiben lokal.</p>
+        <p>Alle Netzwerk-API-Aufrufe laufen ausschließlich über den konfigurierten Daten-Gateway; Berechnung und optionale Offline-Daten bleiben lokal.</p>
       </section>
 
       <section className="settings-card card">
         <div className="setting-title"><Sparkles size={20} /><div><strong>Optionaler KI-Parser</strong><span>Nur Sprach-/Textstrukturierung; keine Nährwertschätzung</span></div></div>
         <label className="toggle-row"><span>OpenAI-Parsing verwenden</span><input type="checkbox" checked={settings.aiEnabled} onChange={(event) => patch({ aiEnabled: event.target.checked })} /></label>
-        {settings.aiEnabled && (
-          <label>
-            <span>Eigener Parser-Endpunkt</span>
-            <input value={settings.aiParseUrl} onChange={(event) => patch({ aiParseUrl: event.target.value })} placeholder="https://…/api/parse-food-request" />
-          </label>
-        )}
-        <p className="setting-note">Ein OpenAI-Schlüssel gehört niemals in die statische App. Ohne Endpunkt bleibt der lokale Parser aktiv.</p>
+        <p className="setting-note">Nur nach deiner Aktivierung wird der Suchtext über denselben Daten-Gateway an OpenAI übertragen; es findet keine Nährwertschätzung statt. Antworten werden mit <code>store:false</code> angefragt, mögliche Abuse-Monitoring-Logs können dennoch bis zu 30 Tage bestehen. <a href="https://platform.openai.com/docs/guides/your-data" target="_blank" rel="noreferrer">Datenschutzhinweise von OpenAI</a>. Bei fehlender Capability bleibt der lokale Parser aktiv.</p>
       </section>
 
       <section className="settings-card card">
-        <div className="setting-title"><Gauge size={20} /><div><strong>Suche & Darstellung</strong><span>Search-a-licious-first, lokale Berechnung</span></div></div>
+        <div className="setting-title"><Gauge size={20} /><div><strong>Suche & Darstellung</strong><span>Eigener Suchindex primär, lokale Berechnung</span></div></div>
         <label className="toggle-row"><span>Deutschen Markt bevorzugen</span><input type="checkbox" checked={settings.preferGermanMarket} onChange={(event) => patch({ preferGermanMarket: event.target.checked })} /></label>
-        <label>
-          <span>Produktdaten-API</span>
-          <select value={settings.productApiMode} onChange={(event) => patch({ productApiMode: event.target.value as ProductApiMode })}>
-            <option value="hybrid">Hybrid (v3.6 primär, v2 nur bei fehlenden Feldern)</option>
-            <option value="v3">Nur OFF API v3.6</option>
-            <option value="v2">Nur OFF API v2</option>
-          </select>
-        </label>
-        <p className="setting-note">
-          Hybrid reduziert Last und bleibt kompatibel: v2 wird nur nachgezogen, wenn v3 für die Berechnung relevante Produktfelder nicht liefert.
-        </p>
+        <details className="advanced-fields">
+          <summary>Technische Produkt-API-Strategie <ChevronDown size={17} /></summary>
+          <label>
+            <span>Produktdaten-Adapter im Gateway</span>
+            <select value={settings.productApiMode} onChange={(event) => patch({ productApiMode: event.target.value as ProductApiMode })}>
+              <option value="hybrid">Hybrid (empfohlen)</option>
+              <option value="v3">Nur OFF API v3.6</option>
+              <option value="v2">Nur OFF API v2 (Kompatibilität)</option>
+            </select>
+          </label>
+          <p className="setting-note">Der Gateway führt die Adapterstrategie aus. Hybrid nutzt v3.6 primär und ergänzt v2 nur bei fehlenden, berechnungsrelevanten Feldern.</p>
+        </details>
         <label>
           <span>Suchtreffer</span>
           <select value={settings.searchPageSize} onChange={(event) => patch({ searchPageSize: Number(event.target.value) as 10 | 15 | 20 })}>
@@ -1551,17 +1872,21 @@ function SettingsScreen({
           </select>
         </label>
         <label className="toggle-row"><span>Verlauf speichern</span><input type="checkbox" checked={settings.saveHistory} onChange={(event) => patch({ saveHistory: event.target.checked })} /></label>
+        <label className="toggle-row"><span>Aktuelle Suche wiederherstellen</span><input type="checkbox" checked={settings.saveSearchSession} onChange={(event) => patch({ saveSearchSession: event.target.checked })} /></label>
+        <label className="toggle-row"><span>Eigene Stückgewichte speichern</span><input type="checkbox" checked={settings.saveCalibrations} onChange={(event) => patch({ saveCalibrations: event.target.checked })} /></label>
+        <label className="toggle-row"><span>API-Daten für Offline-Nutzung speichern</span><input type="checkbox" checked={settings.cacheApiData} onChange={(event) => patch({ cacheApiData: event.target.checked })} /></label>
+        <p className="setting-note">Alle lokalen Datenspeicher sind beim ersten Start aus. Verlauf, aktuelle Sitzung, eigene Stückgewichte und API-Cache brauchen jeweils ein separates Opt-in. Deaktivieren löscht den zugehörigen Bestand; der API-Schalter entfernt zusätzlich den OFF-Bildcache.</p>
       </section>
 
       <section className="settings-card card">
-        <div className="setting-title"><ShieldCheck size={20} /><div><strong>API-Diagnose & Zwischenspeicher</strong><span>Gateway-only, cache-first, deduplizierte GET-Anfragen</span></div></div>
+        <div className="setting-title"><ShieldCheck size={20} /><div><strong>API-Diagnose & Zwischenspeicher</strong><span>Daten-Gateway, cache-first, deduplizierte GET-Anfragen</span></div></div>
         <label>
-          <span>Vercel-Daten-Gateway (erforderlich)</span>
+          <span>Daten-Gateway für Netzsuche (optional)</span>
           <input
             inputMode="url"
             value={settings.dataGatewayUrl}
             onChange={(event) => patch({ dataGatewayUrl: event.target.value })}
-            placeholder="https://dein-gateway.vercel.app"
+            placeholder="/ oder https://gateway.example"
             maxLength={300}
             aria-invalid={Boolean(gatewayValidation.error)}
             aria-describedby="gateway-help"
@@ -1569,18 +1894,21 @@ function SettingsScreen({
         </label>
         {gatewayValidation.error && <p className="setting-note setting-warning" role="alert">{gatewayValidation.error} Der ungültige Wert wird nicht verwendet.</p>}
         <p className="setting-note" id="gateway-help">
-          Ohne gültigen Gateway wird keine Netzwerk-Suche gestartet. Der Gateway muss die Endpunkte /api/search und /api/product/:code bereitstellen und die OFF-Header serverseitig setzen (z. B. Vercel, Cloud Run oder eigene Serverless-Umgebung).
+          Ohne gültigen Gateway wird keine Netzwerk-Suche gestartet. Manuelle Berechnung, Verlauf und vorhandene Offline-Daten bleiben verfügbar. Unterstützt werden ein Same-Origin-Gateway oder ein externer HTTPS-Gateway mit der versionierten API der App.
+        </p>
+        <p className="setting-note">
+          Suchbegriffe, Barcodes und Produktdaten-Anfragen gehen ausschließlich an den konfigurierten Gateway. Produktbilder können direkt von <code>images.openfoodfacts.org</code> geladen werden; dabei sieht das Bild-CDN technisch die IP-Adresse und angeforderte Bild-URL. Offline verfügbar sind nur bereits gespeicherte App-Assets und Daten.
         </p>
         <div className="api-budget-grid">
           <div>
-            <span>Reale Produktsuchen / Minute</span>
-            <strong>{apiUsage.search.used} / {apiUsage.search.limit}</strong>
-            <small>{apiUsage.search.retryAfterMs > 0 ? `Server-Hinweis: ${formatCountdown(apiUsage.search.retryAfterMs)}` : `${apiUsage.search.remaining} bis zum Richtwert`}</small>
+            <span>Browser → Gateway: Suchen (letzte Minute)</span>
+            <strong>{apiUsage.search.used}</strong>
+            <small>{apiUsage.search.retryAfterMs > 0 ? `Server-Hinweis: ${formatCountdown(apiUsage.search.retryAfterMs)}` : 'Tatsächlich gesendete Anfragen'}</small>
           </div>
           <div>
-            <span>Produktdetails / Minute</span>
-            <strong>{apiUsage.product.used} / {apiUsage.product.limit}</strong>
-            <small>{apiUsage.product.retryAfterMs > 0 ? `Server-Hinweis: ${formatCountdown(apiUsage.product.retryAfterMs)}` : `${apiUsage.product.remaining} bis zum Richtwert`}</small>
+            <span>Browser → Gateway: Produktdetails (letzte Minute)</span>
+            <strong>{apiUsage.product.used}</strong>
+            <small>{apiUsage.product.retryAfterMs > 0 ? `Server-Hinweis: ${formatCountdown(apiUsage.product.retryAfterMs)}` : 'Tatsächlich gesendete Anfragen'}</small>
           </div>
         </div>
         <div className="cache-stats-row">
@@ -1589,8 +1917,15 @@ function SettingsScreen({
           <span>ca. {formatBytes(cacheStats.approximateBytes)}</span>
           <span>{cacheStats.persistence === 'indexeddb' ? 'IndexedDB' : cacheStats.persistence === 'localstorage' ? 'localStorage-Fallback' : 'Arbeitsspeicher'}</span>
         </div>
+        {cacheStats.persistenceIssue !== 'none' && (
+          <p className="setting-note setting-warning" role="status">
+            {cacheStats.persistenceIssue === 'quota-exceeded'
+              ? 'Der Browser-Speicher ist voll; neue API-Daten bleiben kontrolliert im kleineren Fallback.'
+              : 'IndexedDB ist derzeit nicht verfügbar; API-Daten verwenden den kontrollierten Fallback.'}
+          </p>
+        )}
         <p className="setting-note">
-          Gleiche und typografisch gleichwertige Suchbegriffe werden über einen backend-unabhängigen Schlüssel wiederverwendet. Treffer bleiben 24 Stunden frisch und bis zu 30 Tage als Ausfallreserve; Produktdetails 30 beziehungsweise 180 Tage. Retry-After wird als temporäre Suchpause übernommen.
+          Cache-Schlüssel trennen Gateway, Contract-Version, Seitengröße und Suchbegriff. Treffer bleiben 24 Stunden frisch und bis zu 30 Tage als Ausfallreserve; Produktdetails 30 beziehungsweise 180 Tage. Retry-After ist nur ein Serverhinweis und sperrt keine Bedienaktion.
         </p>
         <button type="button" className="secondary-button" onClick={onClearApiCache}>API-Zwischenspeicher leeren</button>
         <details className="api-diagnostics" open={Boolean(issue || apiTrace)}>
@@ -1636,66 +1971,168 @@ function SettingsScreen({
 
       <section className="about-card card">
         <Info size={20} />
-        <div><strong>KH Checker v{APP_VERSION}</strong><p>Pages-first-PWA mit direkter OFF-Suche, Search-a-licious als Primärweg, genau einem Legacy-Fallback, sofortigem Retry und deterministischer Portionsberechnung.</p></div>
+        <div><strong>KH Checker v{APP_VERSION}</strong><p>Progressive Web App mit Gateway-only-Netzwerkzugriff, lokaler Offline-Reserve, sofortigem Retry und deterministischer Portionsberechnung.</p></div>
       </section>
     </div>
   );
 }
 
-const initialSession = loadSession();
-
 export default function App() {
-  const [tab, setTab] = useState<Tab>(initialSession?.tab ?? 'search');
-  const [searchView, setSearchView] = useState<SearchView>(initialSession?.searchView ?? 'home');
-  const [query, setQuery] = useState(initialSession?.query ?? '');
-  const [manualMode, setManualMode] = useState(initialSession?.manualMode ?? false);
-  const [manualValues, setManualValues] = useState<ManualFormValues>(initialSession?.manualValues ?? DEFAULT_MANUAL);
+  const [tab, setTab] = useState<Tab>('search');
+  const [query, setQuery] = useState('');
+  const [manualMode, setManualMode] = useState(false);
+  const [manualValues, setManualValues] = useState<ManualFormValues>(DEFAULT_MANUAL);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [settingsReady, setSettingsReady] = useState(false);
-  const [request, setRequest] = useState<ParsedFoodRequest | null>(initialSession?.request ?? null);
-  const [hits, setHits] = useState<SearchHit[]>(initialSession?.hits ?? []);
-  const [result, setResult] = useState<CalculationResult | null>(initialSession?.result ?? null);
+  const [workflow, dispatchWorkflow] = useReducer(
+    searchWorkflowReducer,
+    restoreSearchWorkflowState({ view: 'home' })
+  );
+  const searchView = workflow.screen.view;
+  const request = workflowRequest(workflow);
+  const hits = useMemo(() => [...workflowHits(workflow)], [workflow]);
+  const result = workflowResult(workflow);
+  const loading = workflow.activity.status === 'pending';
+  const issue = currentWorkflowIssue(workflow);
   const [historyEntries, setHistoryEntries] = useState<CalculationResult[]>([]);
-  const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
-  const [issue, setIssue] = useState<UiIssue | null>(null);
   const [apiTrace, setApiTrace] = useState<ApiTraceNotice | null>(null);
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
+  const [pwaNotice, setPwaNotice] = useState<PwaStatusNotice | null>(null);
+  const [capabilityWarnings] = useState<string[]>(() => {
+    const warnings: string[] = [];
+    const missingNetwork = missingNetworkCapabilities();
+    if (missingNetwork.length) {
+      warnings.push(`Netzwerksuche ist in diesem Browser nicht sicher verfügbar (${missingNetwork.join(', ')} fehlt). Die manuelle Berechnung bleibt vollständig nutzbar.`);
+    }
+    if (!('serviceWorker' in navigator)) {
+      warnings.push('Dieser Browser unterstützt keine Offline-Installation; die Kernfunktionen bleiben im geöffneten Tab nutzbar.');
+    }
+    try {
+      if (typeof indexedDB === 'undefined') {
+        warnings.push('Dauerhafter Offline-Speicher fehlt; lokale Daten werden nur eingeschränkt gespeichert.');
+      }
+    } catch {
+      warnings.push('Dauerhafter Offline-Speicher ist blockiert; die App verwendet einen kontrollierten Fallback.');
+    }
+    return warnings;
+  });
   const [apiUsage, setApiUsage] = useState<ApiUsageSnapshot>(() => getApiUsageSnapshot());
   const [cacheStats, setCacheStats] = useState<ApiCacheStats>({
     entries: 0,
     freshEntries: 0,
     staleEntries: 0,
     approximateBytes: 0,
-    persistence: 'memory'
+    persistence: 'memory',
+    persistenceIssue: 'none'
   });
-  const [searchBlockedUntil, setSearchBlockedUntil] = useState(0);
-  const [searchClock, setSearchClock] = useState(() => Date.now());
   const retryActionRef = useRef<(() => void) | null>(null);
   const activeAbort = useRef<AbortController | null>(null);
+  const settingsRef = useRef(settings);
+  const applyingExternalSettingsRef = useRef(false);
+  const issueFocusRef = useRef<HTMLElement | null>(null);
+  const historyInitializedRef = useRef(false);
+  const applyingHistoryRef = useRef(false);
+  const screenFocusRef = useRef<HTMLDivElement | null>(null);
+  const pendingHistoryRestoreRef = useRef<{ scrollY: number; focusId: string | null } | null>(null);
+  const screenFocusInitializedRef = useRef(false);
+  const lastHistoryRouteRef = useRef('');
+  const historyScreensRef = useRef(new Map<string, SearchScreen>());
   const snapshotRef = useRef<SessionSnapshot>({
     tab, searchView, query, manualMode, manualValues, request, hits, result
   });
 
   snapshotRef.current = { tab, searchView, query, manualMode, manualValues, request, hits, result };
+  settingsRef.current = settings;
+
+  function setSearchView(view: SearchView): void {
+    if (view === 'home') dispatchWorkflow({ type: 'show-home', request });
+    else if (view === 'candidates' && request && hits.length) {
+      dispatchWorkflow({ type: 'show-candidates', request, hits: hits as [SearchHit, ...SearchHit[]] });
+    }
+  }
+
+  function setRequest(next: ParsedFoodRequest | null): void {
+    if (next) dispatchWorkflow({ type: 'begin-request', request: next });
+    else dispatchWorkflow({ type: 'show-home' });
+  }
+
+  function showCandidateList(nextRequest: ParsedFoodRequest, nextHits: SearchHit[]): void {
+    if (!nextHits.length) return;
+    dispatchWorkflow({
+      type: 'show-candidates',
+      request: nextRequest,
+      hits: nextHits as [SearchHit, ...SearchHit[]]
+    });
+  }
+
+  function setResult(next: CalculationResult | null): void {
+    if (next) {
+      if (workflow.screen.view === 'result') dispatchWorkflow({ type: 'update-result', result: next });
+      else dispatchWorkflow({ type: 'show-result', result: next, hits });
+    } else {
+      dispatchWorkflow({ type: 'show-home' });
+    }
+  }
+
+  function setLoading(next: boolean, operation: 'search' | 'product' | 'manual' | 'voice' | 'restore' = 'search'): void {
+    dispatchWorkflow(next ? { type: 'start', operation } : { type: 'finish' });
+  }
+
+  function setIssue(next: UiIssue | null): void {
+    dispatchWorkflow(next ? { type: 'issue', issue: next } : { type: 'clear-issue' });
+  }
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [storedSettings, storedHistory] = await Promise.allSettled([
-        loadSettings(),
-        getHistory()
-      ]);
-      await pruneApiCache().catch(() => undefined);
+      const storedSettings = await loadSettings().catch(() => null);
+      const safeSettings = sanitizeSettings(storedSettings);
+      const storedHistory = safeSettings.saveHistory
+        ? await getHistory().catch(() => [])
+        : [];
+      if (!safeSettings.saveHistory) await clearHistory().catch(() => undefined);
+      if (!safeSettings.saveCalibrations) await clearCalibrations().catch(() => undefined);
+      if (safeSettings.cacheApiData) await pruneApiCache().catch(() => undefined);
+      else await Promise.all([
+        clearApiCache(),
+        clearOffProductImageCache(APP_VERSION)
+      ]).catch(() => undefined);
       if (cancelled) return;
-      if (storedSettings.status === 'fulfilled') setSettings(sanitizeSettings(storedSettings.value));
-      if (storedHistory.status === 'fulfilled') setHistoryEntries(storedHistory.value.map(normalizeStoredResult));
+      setSettings(safeSettings);
+      if (safeSettings.saveSearchSession) {
+        const session = loadSession();
+        if (session) {
+          setTab(session.tab);
+          setQuery(session.query);
+          setManualMode(session.manualMode);
+          setManualValues(session.manualValues);
+          const restored = restoreSearchWorkflowState({
+            view: session.searchView,
+            request: session.request,
+            hits: session.hits,
+            result: session.result
+          });
+          if (restored.screen.view === 'result') {
+            dispatchWorkflow({ type: 'show-result', result: restored.screen.result, hits: restored.screen.hits });
+          } else if (restored.screen.view === 'candidates') {
+            dispatchWorkflow({ type: 'show-candidates', request: restored.screen.request, hits: restored.screen.hits });
+          } else {
+            dispatchWorkflow({ type: 'show-home', request: restored.screen.request });
+          }
+        }
+      } else {
+        clearSession();
+      }
+      setHistoryEntries(storedHistory.map(normalizeStoredResult));
       setApiUsage(getApiUsageSnapshot());
       setCacheStats(await getApiCacheStats().catch(() => ({
         entries: 0,
         freshEntries: 0,
         staleEntries: 0,
         approximateBytes: 0,
-        persistence: 'memory' as const
+        persistence: 'memory' as const,
+        persistenceIssue: 'unavailable' as const
       })));
       setSettingsReady(true);
     })();
@@ -1704,61 +2141,272 @@ export default function App() {
 
   useEffect(() => {
     if (!settingsReady) return;
+    if (applyingExternalSettingsRef.current) {
+      applyingExternalSettingsRef.current = false;
+      return;
+    }
     saveSettings(settings).catch(() => undefined);
   }, [settings, settingsReady]);
 
   useEffect(() => {
-    if (searchBlockedUntil <= Date.now()) {
-      setSearchClock(Date.now());
+    if (!settingsReady || settings.saveHistory) return;
+    void clearHistory().then(() => setHistoryEntries([])).catch(() => undefined);
+  }, [settings.saveHistory, settingsReady]);
+
+  useEffect(() => {
+    if (!settingsReady || settings.saveCalibrations) return;
+    void clearCalibrations().catch(() => undefined);
+  }, [settings.saveCalibrations, settingsReady]);
+
+  useEffect(() => {
+    if (!settingsReady || settings.cacheApiData) return;
+    cancelPendingApiRequests();
+    clearApiGovernor();
+    void Promise.all([clearApiCache(), clearOffProductImageCache(APP_VERSION)]).then(async () => {
+      setApiUsage(getApiUsageSnapshot());
+      setCacheStats(await getApiCacheStats());
+    }).catch(() => undefined);
+  }, [settings.cacheApiData, settingsReady]);
+
+  useEffect(() => {
+    if (!settingsReady) return;
+    if (!settings.saveSearchSession) {
+      clearSession();
       return;
     }
-    const intervalId = window.setInterval(() => {
-      const now = Date.now();
-      setSearchClock(now);
-      if (now >= searchBlockedUntil) {
-        window.clearInterval(intervalId);
-      }
-    }, 1_000);
-    return () => window.clearInterval(intervalId);
-  }, [searchBlockedUntil]);
-
-  useEffect(() => {
     saveSession({ tab, searchView, query, manualMode, manualValues, request, hits, result });
-  }, [tab, searchView, query, manualMode, manualValues, request, hits, result]);
+  }, [tab, searchView, query, manualMode, manualValues, request, hits, result, settings.saveSearchSession, settingsReady]);
 
   useEffect(() => {
-    const persist = () => saveSession(snapshotRef.current);
+    if (!settingsReady) return;
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'kh-checker-settings-v3') {
+        void loadSettings().then((stored) => {
+          const synchronized = sanitizeSettings(stored);
+          if (!synchronized.cacheApiData) {
+            cancelPendingApiRequests();
+            clearApiGovernor();
+          }
+          if (!synchronized.saveHistory) setHistoryEntries([]);
+          if (sameSettings(settingsRef.current, synchronized)) return;
+          applyingExternalSettingsRef.current = true;
+          setSettings(synchronized);
+        }).catch(() => undefined);
+        return;
+      }
+      if (event.key === 'kh-checker-history-deletions-v3' || event.key === 'kh-checker-history-v3') {
+        if (event.key === 'kh-checker-history-deletions-v3') {
+          synchronizeExternalRepositoryMutation('history');
+        }
+        if (settings.saveHistory) {
+          void getHistory()
+            .then((entries) => setHistoryEntries(entries.map(normalizeStoredResult)))
+            .catch(() => undefined);
+        }
+        else setHistoryEntries([]);
+      }
+      if (event.key === 'kh-checker-calibration-deletions-v3') {
+        synchronizeExternalRepositoryMutation('calibrations');
+      }
+      if (event.key === 'kh-checker-api-cache-deletions-v3') {
+        cancelPendingApiRequests();
+        synchronizeExternalRepositoryMutation('api-cache');
+        void getApiCacheStats().then(setCacheStats).catch(() => undefined);
+      } else if (event.key === 'kh-checker-v2.2-api-cache-fallback') {
+        void getApiCacheStats().then(setCacheStats).catch(() => undefined);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [settings.saveHistory, settingsReady]);
+
+  useEffect(() => {
+    const persist = () => {
+      if (settings.saveSearchSession) saveSession(snapshotRef.current);
+    };
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') persist();
     };
     const onPageHide = () => persist();
-    const onOnline = () => { setApiUsage(getApiUsageSnapshot()); };
+    const onOnline = () => {
+      setOnline(true);
+      setApiUsage(getApiUsageSnapshot());
+    };
+    const onOffline = () => setOnline(false);
+    const onPwaStatus = (event: Event) => {
+      const detail = (event as CustomEvent<Partial<PwaStatusNotice>>).detail;
+      setPwaNotice(detail?.message ? {
+        message: detail.message,
+        updateAvailable: detail.updateAvailable === true,
+        applyUpdate: detail.applyUpdate
+      } : null);
+    };
+    const onPwaUpdateAvailable = (event: Event) => {
+      const detail = (event as CustomEvent<{ apply?: () => void | Promise<void> }>).detail;
+      setPwaNotice({
+        message: 'Eine neue App-Version ist verfügbar. Aktualisiere erst, wenn deine aktuelle Eingabe abgeschlossen ist.',
+        updateAvailable: true,
+        applyUpdate: detail?.apply
+      });
+    };
 
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pagehide', onPageHide);
     window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('kh:pwa-status', onPwaStatus);
+    window.addEventListener('kh:pwa-update-available', onPwaUpdateAvailable);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pagehide', onPageHide);
       window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('kh:pwa-status', onPwaStatus);
+      window.removeEventListener('kh:pwa-update-available', onPwaUpdateAvailable);
       activeAbort.current?.abort();
       activeAbort.current = null;
     };
+  }, [settings.saveSearchSession]);
+
+  useEffect(() => {
+    const onPopState = (event: PopStateEvent) => {
+      const state = event.state as AppHistoryState | null;
+      if (!state?.khChecker || !isTab(state.tab)) return;
+      applyingHistoryRef.current = true;
+      pendingHistoryRestoreRef.current = {
+        scrollY: typeof state.scrollY === 'number' && Number.isFinite(state.scrollY) ? Math.max(0, state.scrollY) : 0,
+        focusId: typeof state.focusId === 'string' ? state.focusId : null
+      };
+      setTab(state.tab);
+      const screen = historyScreensRef.current.get(state.entryId);
+      if (screen?.view === 'result') {
+        dispatchWorkflow({ type: 'show-result', result: screen.result, hits: screen.hits });
+      } else if (screen?.view === 'candidates') {
+        dispatchWorkflow({ type: 'show-candidates', request: screen.request, hits: screen.hits });
+      } else {
+        dispatchWorkflow({ type: 'show-home', request: screen?.view === 'home' ? screen.request : null });
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
+  useEffect(() => {
+    let frame: number | null = null;
+    const persistViewport = () => {
+      const state = window.history.state as AppHistoryState | null;
+      if (!state?.khChecker) return;
+      const active = document.activeElement;
+      window.history.replaceState({
+        ...state,
+        scrollY: Math.max(0, window.scrollY),
+        focusId: active instanceof HTMLElement && active.id ? active.id : state.focusId ?? null
+      }, '', window.location.href);
+    };
+    const onScroll = () => {
+      if (frame !== null) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        persistViewport();
+      });
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    document.addEventListener('focusin', persistViewport);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      document.removeEventListener('focusin', persistViewport);
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  useEffect(() => {
+    const currentState = window.history.state as AppHistoryState | null;
+    if (!applyingHistoryRef.current && currentState?.khChecker) {
+      const activeElement = document.activeElement;
+      window.history.replaceState({
+        ...currentState,
+        scrollY: Math.max(0, window.scrollY),
+        focusId: activeElement instanceof HTMLElement && activeElement.id ? activeElement.id : null
+      }, '', window.location.href);
+    }
+    const entryId = createId('navigation');
+    historyScreensRef.current.set(entryId, workflow.screen);
+    while (historyScreensRef.current.size > 32) {
+      const oldest = historyScreensRef.current.keys().next().value;
+      if (typeof oldest !== 'string') break;
+      historyScreensRef.current.delete(oldest);
+    }
+    const state = createNavigationHistoryState(tab, workflow.screen.view, entryId);
+    const hash = `#/${tab}${tab === 'search' ? `/${workflow.screen.view}` : ''}`;
+    if (!historyInitializedRef.current) {
+      window.history.replaceState(state, '', hash);
+      historyInitializedRef.current = true;
+      lastHistoryRouteRef.current = hash;
+      return;
+    }
+    if (applyingHistoryRef.current) {
+      applyingHistoryRef.current = false;
+      lastHistoryRouteRef.current = hash;
+      return;
+    }
+    if (lastHistoryRouteRef.current === hash) {
+      window.history.replaceState(state, '', hash);
+      return;
+    }
+    window.history.pushState(state, '', hash);
+    lastHistoryRouteRef.current = hash;
+  }, [tab, workflow.screen]);
+
+  useEffect(() => {
+    const routeKey = `${tab}:${searchView}`;
+    if (!screenFocusInitializedRef.current) {
+      screenFocusInitializedRef.current = true;
+      try { window.history.scrollRestoration = 'manual'; } catch { /* unsupported */ }
+      return;
+    }
+    const restore = pendingHistoryRestoreRef.current;
+    pendingHistoryRestoreRef.current = null;
+    window.requestAnimationFrame(() => {
+      screenFocusRef.current?.setAttribute('data-active-route', routeKey);
+      const focusTarget = restore?.focusId ? document.getElementById(restore.focusId) : null;
+      const target = focusTarget instanceof HTMLElement ? focusTarget : screenFocusRef.current;
+      try { target?.focus({ preventScroll: true }); } catch { target?.focus(); }
+      window.scrollTo(0, restore?.scrollY ?? 0);
+    });
+  }, [tab, searchView]);
+
+  useEffect(() => {
+    if (!issue) return;
+    issueFocusRef.current?.focus();
+  }, [issue]);
+
   const favorites = useMemo(() => historyEntries.filter((entry) => entry.favorite), [historyEntries]);
+  const missingNetwork = missingNetworkCapabilities();
+  const configuredGateway = validateHttpEndpoint(settings.dataGatewayUrl);
+  const gatewayError = settingsReady
+    ? missingNetwork.length
+      ? `Browser-Funktionen für die Netzwerksuche fehlen: ${missingNetwork.join(', ')}.`
+      : configuredGateway.error ?? (!configuredGateway.value ? 'Kein Daten-Gateway konfiguriert.' : null)
+    : null;
 
   async function refreshHistory() {
-    setHistoryEntries((await getHistory()).map(normalizeStoredResult));
+    try {
+      setHistoryEntries((await getHistory()).map(normalizeStoredResult));
+    } catch {
+      // A persistence failure must never invalidate an otherwise valid result.
+    }
   }
 
   async function commitResult(next: CalculationResult) {
     const normalized = normalizeStoredResult(next);
-    setResult(normalized);
-    setSearchView('result');
+    dispatchWorkflow({ type: 'show-result', result: normalized, hits: normalized.candidates });
     if (settings.saveHistory) {
-      await saveResult(normalized);
-      await refreshHistory();
+      try {
+        await saveResult(normalized);
+        await refreshHistory();
+      } catch {
+        // Keep the successful calculation visible; storage is optional.
+      }
     }
   }
 
@@ -1766,18 +2414,22 @@ export default function App() {
     const stable = result
       ? { ...normalizeStoredResult(next), id: result.id, createdAt: result.createdAt, favorite: result.favorite }
       : normalizeStoredResult(next);
-    setResult(stable);
+    dispatchWorkflow({ type: 'update-result', result: stable });
     if (settings.saveHistory) {
-      await saveResult(stable);
-      await refreshHistory();
+      try {
+        await saveResult(stable);
+        await refreshHistory();
+      } catch {
+        // Keep the in-memory edit available.
+      }
     }
   }
 
   async function parseInput(input: string, controller: AbortController): Promise<ParsedFoodRequest> {
     const safeSettings = sanitizeSettings(settings);
-    if (safeSettings.aiEnabled && safeSettings.aiParseUrl.trim()) {
+    if (safeSettings.aiEnabled) {
       try {
-        const parsed = await parseFoodRequestWithAi(input, safeSettings.aiParseUrl, controller.signal);
+        const parsed = await parseFoodRequestWithAi(input, configuredGatewayUrl(), controller.signal);
         ensureControllerActive(controller);
         return parsed;
       } catch {
@@ -1796,12 +2448,18 @@ export default function App() {
   }
 
   function configuredGatewayUrl(): string {
-    const validation = requiredGatewayEndpoint(settings.dataGatewayUrl);
+    const missing = missingNetworkCapabilities();
+    if (missing.length) {
+      throw new DataSourceError(
+        `Netzwerksuche ist in diesem Browser nicht verfügbar (${missing.join(', ')} fehlt). Die manuelle Berechnung bleibt nutzbar.`,
+        'configuration'
+      );
+    }
+    const validation = validateHttpEndpoint(settings.dataGatewayUrl);
     if (validation.error || !validation.value) {
       throw new DataSourceError(
-        validation.error || 'Kein Daten-Gateway konfiguriert.',
-        'http',
-        { status: 503 }
+        validation.error || 'Kein Daten-Gateway konfiguriert. Die manuelle und lokale Nutzung bleibt verfügbar.',
+        'configuration'
       );
     }
     return validation.value;
@@ -1813,6 +2471,12 @@ export default function App() {
     return 'hybrid';
   }
 
+  function findSavedCalibration(
+    input: Parameters<typeof findCalibration>[0]
+  ): ReturnType<typeof findCalibration> {
+    return settings.saveCalibrations ? findCalibration(input) : Promise.resolve(null);
+  }
+
   function observeApiMeta(responseMeta: ApiResponseMeta | undefined, label: string): void {
     refreshApiUsage();
     if (!responseMeta) return;
@@ -1822,7 +2486,7 @@ export default function App() {
 
   function observeRecoveredError(caught: unknown, label: string): void {
     if (!(caught instanceof DataSourceError) || caught.kind === 'aborted') return;
-    const lastAttempt = caught.attempts.at(-1);
+    const lastAttempt = caught.attempts[caught.attempts.length - 1];
     const recoveredMeta: ApiResponseMeta = {
       cacheStatus: 'network',
       fetchedAt: new Date().toISOString(),
@@ -1860,27 +2524,14 @@ export default function App() {
     const occurredAt = new Date().toISOString();
 
     if (caught instanceof DataSourceError) {
-      if (caught.kind === 'rate-limit' || caught.status === 429 || caught.status === 503) {
-        const now = Date.now();
-        const computedRetryAt = caught.retryAt
-          ?? latestRetryAtFromAttempts(caught.attempts, now)
-          ?? now + RATE_LIMIT_DEFAULT_BLOCK_MS;
-        if (computedRetryAt > now) {
-          setSearchBlockedUntil((previous) => Math.max(previous, computedRetryAt));
-        }
-      }
       const attempts = caught.attempts;
       const failedAttempts = attempts.filter((attempt) => !['success', 'cache-hit'].includes(attempt.outcome));
-      const failedAttempt = [...failedAttempts].reverse().find((attempt) => attempt.backend !== 'gateway')
-        ?? failedAttempts.at(-1);
+      const failedAttempt = failedAttempts[failedAttempts.length - 1];
       const technical = failedAttempt
         ? attemptTechnicalText(failedAttempt)
         : `${caught.name}: ${caught.message}`;
-      const failedBackends = new Set(failedAttempts.map((attempt) => attempt.backend));
-      const bothPublicSearchBackendsFailed = failedBackends.has('open-food-facts-legacy')
-        && failedBackends.has('search-a-licious')
-        && !failedBackends.has('gateway');
       const title: Record<DataSourceError['kind'], string> = {
+        configuration: 'Daten-Gateway nicht konfiguriert',
         aborted: 'Anfrage abgebrochen',
         timeout: 'API-Zeitüberschreitung',
         network: 'Netzwerk- oder CORS-Fehler',
@@ -1889,6 +2540,7 @@ export default function App() {
         'rate-limit': `API-Hinweis${caught.status ? ` HTTP ${caught.status}` : ''}`
       };
       const message: Record<DataSourceError['kind'], string> = {
+        configuration: 'Für eine neue Produktsuche ist ein Daten-Gateway erforderlich. Manuelle Berechnung und lokal gespeicherte Ergebnisse funktionieren weiterhin.',
         aborted: '',
         timeout: 'Die Datenquelle hat innerhalb des sicheren Zeitlimits nicht geantwortet. Die Suche bleibt entsperrt und kann sofort neu gestartet werden.',
         network: 'Der Browser konnte den API-Endpunkt nicht erreichen oder dessen Antwort wegen CORS nicht lesen. Unten steht der originale technische Fehler.',
@@ -1896,13 +2548,18 @@ export default function App() {
         http: caught.status === 404
           ? 'Der Endpunkt meldet, dass kein Datensatz vorhanden ist.'
           : 'Der Server hat die Anfrage mit einem HTTP-Fehler abgelehnt. Der Status und die Antwort stehen unten.',
-        'rate-limit': 'Der Server meldet ein Limit oder eine Überlastung. Die App übernimmt Retry-After und pausiert neue Netzwerksuchen für die empfohlene Wartezeit.'
+        'rate-limit': 'Der Server meldet ein Limit oder eine Überlastung. Retry-After wird als Hinweis angezeigt; jede Nutzeraktion kann sofort erneut versuchen.'
       };
       setIssue({
-        title: bothPublicSearchBackendsFailed ? 'Öffentliche Produktsuche vorübergehend nicht erreichbar' : title[caught.kind],
-        message: bothPublicSearchBackendsFailed
-          ? 'Search-a-licious und die OFF-Legacy-Suche waren bei diesem Versuch beide nicht erreichbar. Bereits gespeicherte Treffer bleiben verfügbar; neue Netzwerksuchen werden kurz gemäß Retry-After pausiert.'
-          : message[caught.kind],
+        kind: caught.kind === 'configuration'
+          ? 'configuration'
+          : !online || caught.kind === 'network' && typeof navigator !== 'undefined' && !navigator.onLine
+            ? 'offline'
+            : caught.status === 404
+              ? 'empty'
+              : 'error',
+        title: title[caught.kind],
+        message: message[caught.kind],
         technical,
         attempts,
         occurredAt,
@@ -1915,6 +2572,7 @@ export default function App() {
 
     const message = regularErrorMessage(caught, fallback);
     setIssue({
+      kind: /keine|nicht gefunden/i.test(message) ? 'empty' : 'error',
       title: 'Anfrage nicht abgeschlossen',
       message,
       technical: caught instanceof Error ? `${caught.name}: ${caught.message}` : String(caught),
@@ -1933,9 +2591,7 @@ export default function App() {
   ): Promise<{ candidate: SearchHit; product?: OffProduct; result: CalculationResult }> {
     let candidate = hit;
     let product: OffProduct | undefined;
-    const productApiMode = configuredProductApiMode();
-    let compatibilityFallbackAttempted = false;
-    const calibration = await findCalibration({
+    const calibration = await findSavedCalibration({
       productName: displayProductName(candidate),
       brand: displayBrand(candidate.brands),
       barcode: candidate.code ?? null,
@@ -1954,13 +2610,13 @@ export default function App() {
         const response = await getProductByBarcode(candidate.code, controller.signal, {
           gatewayUrl: configuredGatewayUrl(),
           productApiMode: configuredProductApiMode(),
-          seedProduct: productSeedFromSearchHit(candidate)
+          seedProduct: productSeedFromSearchHit(candidate),
+          cacheEnabled: settings.cacheApiData
         });
         ensureControllerActive(controller);
-        compatibilityFallbackAttempted = productCompatibilityFallbackAttempted(response.api_meta);
         observeApiMeta(response.api_meta, 'Produktdetails');
         product = response.product;
-        if (product) candidate = mergeSearchHit(candidate, syntheticHit(product));
+        if (product) candidate = mergeSearchHit(candidate, syntheticHit(product, response.api_meta));
         next = buildExactResult(parsed, candidate, product, calibration, manualUnitWeight);
       } catch (caught) {
         ensureControllerActive(controller);
@@ -1970,39 +2626,16 @@ export default function App() {
       }
     }
 
-    // OFF v3 can omit nutriments. Use exactly one compact v2 fallback for the
-    // already selected barcode; never fetch the large unfiltered document.
-    if (productApiMode === 'hybrid' && !hasCarbohydrateData(candidate) && candidate.code && !compatibilityFallbackAttempted) {
-      try {
-        const fallbackHit = await getSearchDocumentByBarcode(candidate.code, controller.signal, {
-          gatewayUrl: configuredGatewayUrl(),
-          productApiMode: configuredProductApiMode()
-        });
-        ensureControllerActive(controller);
-        observeApiMeta(fallbackHit.api_meta, 'Produkt-Fallback');
-        candidate = mergeSearchHit(candidate, fallbackHit);
-        next = buildExactResult(parsed, candidate, product, calibration, manualUnitWeight);
-      } catch (caught) {
-        ensureControllerActive(controller);
-        if (caught instanceof DataSourceError && caught.kind === 'aborted') throw caught;
-        observeRecoveredError(caught, 'Produkt-Fallback fehlgeschlagen');
-      }
-    }
-
     ensureControllerActive(controller);
     return { candidate, product, result: next };
   }
 
   async function executeSearch(input: string, forcedRequest?: ParsedFoodRequest, manualUnitWeight?: number | null) {
-    if (Date.now() < searchBlockedUntil) {
+    if (!settingsReady) {
       handleOperationError(
-        new DataSourceError('Suche ist wegen aktivem Retry-After kurz pausiert.', 'rate-limit', {
-          status: 429,
-          retryAt: searchBlockedUntil,
-          attempts: []
-        }),
-        'Die Suche ist vorübergehend pausiert.',
-        'Nach Wartezeit erneut suchen',
+        new DataSourceError('Einstellungen werden noch geladen.', 'configuration'),
+        'Bitte warte kurz.',
+        'Erneut versuchen',
         () => { void executeSearch(input, forcedRequest, manualUnitWeight); }
       );
       return;
@@ -2010,7 +2643,7 @@ export default function App() {
     activeAbort.current?.abort();
     const controller = new AbortController();
     activeAbort.current = controller;
-    setLoading(true);
+    setLoading(true, forcedRequest ? 'manual' : 'search');
     setIssue(null);
     setApiTrace(null);
 
@@ -2026,28 +2659,14 @@ export default function App() {
         const productApiMode = configuredProductApiMode();
         const productResponse = await getProductByBarcode(parsed.barcode, controller.signal, {
           gatewayUrl: configuredGatewayUrl(),
-          productApiMode
+          productApiMode,
+          cacheEnabled: settings.cacheApiData
         });
         ensureControllerActive(controller);
         observeApiMeta(productResponse.api_meta, 'Barcode-Produkt');
         if (!productResponse.product) throw new Error('Zu diesem Barcode wurde kein Produkt gefunden.');
-        let hit = syntheticHit(productResponse.product);
-        if (productApiMode === 'hybrid' && !hasCarbohydrateData(hit) && !productCompatibilityFallbackAttempted(productResponse.api_meta)) {
-          try {
-            const fallbackHit = await getSearchDocumentByBarcode(parsed.barcode, controller.signal, {
-              gatewayUrl: configuredGatewayUrl(),
-              productApiMode: configuredProductApiMode()
-            });
-            ensureControllerActive(controller);
-            observeApiMeta(fallbackHit.api_meta, 'Barcode-Fallback');
-            hit = mergeSearchHit(hit, fallbackHit);
-          } catch (caught) {
-            ensureControllerActive(controller);
-            if (caught instanceof DataSourceError && caught.kind === 'aborted') throw caught;
-            observeRecoveredError(caught, 'Barcode-Fallback fehlgeschlagen');
-          }
-        }
-        const calibration = await findCalibration({
+        const hit = syntheticHit(productResponse.product, productResponse.api_meta);
+        const calibration = await findSavedCalibration({
           productName: displayProductName(hit),
           brand: displayBrand(hit.brands),
           barcode: parsed.barcode,
@@ -2063,8 +2682,7 @@ export default function App() {
         ? getBaseFoodReference(parsed.product.name)
         : null;
       if (baseReference) {
-        setHits([]);
-        const calibration = await findCalibration({
+        const calibration = await findSavedCalibration({
           productName: parsed.product.name,
           brand: parsed.product.brand,
           barcode: null,
@@ -2085,8 +2703,8 @@ export default function App() {
             || Boolean(parsed.product.brand)
             || parsed.product.name.trim().split(/\s+/).length >= 3,
           gatewayUrl: configuredGatewayUrl(),
-          searchApiMode: configuredProductApiMode() === 'v2' ? 'legacy-only' : 'auto',
-          productOnly: parsed.product.name
+          productOnly: parsed.product.name,
+          cacheEnabled: settings.cacheApiData
         }
       );
       ensureControllerActive(controller);
@@ -2097,8 +2715,9 @@ export default function App() {
         throw new Error('Keine passenden Produkte gefunden. Prüfe die Schreibweise oder ergänze Marke beziehungsweise Produkttyp.');
       }
 
-      const ranked = rankExactCandidates(parsed.product.name, searchResponse.hits, settings.preferGermanMarket);
-      const orderedHits = ranked.length ? ranked : searchResponse.hits;
+      const responseHits = searchResponse.hits.map((hit) => ({ ...hit, api_meta: searchResponse.api_meta }));
+      const ranked = rankExactCandidates(parsed.product.name, responseHits, settings.preferGermanMarket);
+      const orderedHits = ranked.length ? ranked : responseHits;
 
       if (
         parsed.resolutionMode === 'generic_category'
@@ -2110,12 +2729,15 @@ export default function App() {
       }
 
       if (parsed.resolutionMode === 'generic_category') {
-        const generic = resolveGenericCandidates(parsed.product.name, searchResponse.hits, settings.preferGermanMarket);
+        const generic = resolveGenericCandidates(
+          parsed.product.name,
+          responseHits,
+          settings.preferGermanMarket,
+          parsed.amount.unitExplicit ? parsed.amount.unit : undefined
+        );
         const genericHits = generic.hits.length ? generic.hits : orderedHits;
         const visibleHits = orderedHits.filter((candidate) => sameProductFamily(parsed.product.name, candidate));
         const candidateHits = visibleHits.length ? visibleHits : genericHits;
-        setHits(candidateHits);
-
         // Prefer a concrete, correctly matching product only when the search DTO
         // already proves the requested unit or a genuine manufacturer serving.
         // The chosen product is then hydrated once to restore any quantity and
@@ -2151,11 +2773,11 @@ export default function App() {
         }
 
         if (generic.median === null && candidateHits.length > 0) {
-          setSearchView('candidates');
+          showCandidateList(parsed, candidateHits);
           return;
         }
 
-        const calibration = await findCalibration({
+        const calibration = await findSavedCalibration({
           productName: parsed.product.name,
           brand: parsed.product.brand,
           barcode: null,
@@ -2167,12 +2789,11 @@ export default function App() {
         return;
       }
 
-      setHits(orderedHits);
       const candidates = orderedHits
         .filter((candidate) => sameProductFamily(parsed.product.name, candidate))
         .slice(0, 12);
       if (!candidates.length) {
-        setSearchView('candidates');
+        showCandidateList(parsed, orderedHits);
         return;
       }
 
@@ -2189,7 +2810,7 @@ export default function App() {
 
       const best = prelim[0];
       if (!best || candidateIdentityScore(parsed.product.name, best.candidate) < 560) {
-        setSearchView('candidates');
+        showCandidateList(parsed, orderedHits);
         return;
       }
 
@@ -2253,28 +2874,42 @@ export default function App() {
 
   async function chooseGeneric() {
     if (!request) return;
-    const genericRequest: ParsedFoodRequest = { ...request, resolutionMode: 'generic_category' };
-    const calibration = await findCalibration({
-      productName: genericRequest.product.name,
-      brand: genericRequest.product.brand,
-      barcode: null,
-      unit: genericRequest.amount.unit,
-      allowGenericScope: true
-    });
-    const reference = getBaseFoodReference(genericRequest.product.name);
-    setRequest(genericRequest);
-    if (reference) {
-      await commitResult(buildBaseFoodReferenceResult(genericRequest, reference, calibration));
-      return;
+    try {
+      const genericRequest: ParsedFoodRequest = { ...request, resolutionMode: 'generic_category' };
+      const calibration = await findSavedCalibration({
+        productName: genericRequest.product.name,
+        brand: genericRequest.product.brand,
+        barcode: null,
+        unit: genericRequest.amount.unit,
+        allowGenericScope: true
+      });
+      const reference = getBaseFoodReference(genericRequest.product.name);
+      setRequest(genericRequest);
+      if (reference) {
+        await commitResult(buildBaseFoodReferenceResult(genericRequest, reference, calibration));
+        return;
+      }
+      const generic = resolveGenericCandidates(
+        genericRequest.product.name,
+        hits,
+        settings.preferGermanMarket,
+        genericRequest.amount.unitExplicit ? genericRequest.amount.unit : undefined
+      );
+      await commitResult(buildGenericResult(genericRequest, generic, calibration));
+    } catch (caught) {
+      handleOperationError(
+        caught,
+        'Das allgemeine Basislebensmittel konnte nicht sicher berechnet werden.',
+        'Erneut versuchen',
+        () => { void chooseGeneric(); }
+      );
     }
-    const generic = resolveGenericCandidates(genericRequest.product.name, hits, settings.preferGermanMarket);
-    await commitResult(buildGenericResult(genericRequest, generic, calibration));
   }
 
   async function showProductCandidates() {
     if (!request) return;
     if (hits.length) {
-      setSearchView('candidates');
+      showCandidateList(request, hits);
       return;
     }
 
@@ -2292,8 +2927,8 @@ export default function App() {
         {
           preserveVariants: true,
           gatewayUrl: configuredGatewayUrl(),
-          searchApiMode: configuredProductApiMode() === 'v2' ? 'legacy-only' : 'auto',
-          productOnly: request.product.name
+          productOnly: request.product.name,
+          cacheEnabled: settings.cacheApiData
         }
       );
       ensureControllerActive(controller);
@@ -2302,8 +2937,7 @@ export default function App() {
       const ranked = rankExactCandidates(request.product.name, response.hits, settings.preferGermanMarket);
       const nextHits = ranked.length ? ranked : response.hits;
       if (!nextHits.length) throw new Error('Keine konkreten Produkte zu dieser Basisanfrage gefunden.');
-      setHits(nextHits);
-      setSearchView('candidates');
+      showCandidateList(request, nextHits);
       refreshApiUsage();
     } catch (caught) {
       if (!controller.signal.aborted) {
@@ -2323,28 +2957,73 @@ export default function App() {
   }
 
   async function handleManualSubmit() {
-    if (manualValues.carbsPer100g !== null) {
-      await commitResult(buildManualResult(manualValues));
+    if (!manualValues.productName.trim() || !isPlausibleFoodAmount(manualValues.amount, manualValues.unit)) {
+      setIssue({
+        kind: 'error',
+        title: 'Manuelle Angaben prüfen',
+        message: 'Produktname und eine plausible Menge größer als 0 sind erforderlich. Sehr große Chargen bitte auf mehrere Berechnungen aufteilen.',
+        technical: 'ManualValidationError: invalid or implausible product amount',
+        attempts: [],
+        occurredAt: new Date().toISOString(),
+        retryLabel: 'Erneut prüfen'
+      });
+      retryActionRef.current = () => { void handleManualSubmit(); };
       return;
     }
-
-    const forcedRequest: ParsedFoodRequest = {
-      status: 'parsed',
-      rawInput: `${manualValues.amount} ${unitLabels[manualValues.unit]} ${manualValues.brand} ${manualValues.productName}`.replace(/\s+/g, ' ').trim(),
-      product: { name: manualValues.productName, brand: manualValues.brand || null, variant: null },
-      amount: { value: manualValues.amount, unit: manualValues.unit, valueExplicit: true, unitExplicit: true },
-      resolutionMode: manualValues.barcode ? 'barcode' : manualValues.brand ? 'exact_product' : 'generic_category',
-      barcode: manualValues.barcode || null,
-      clarificationQuestion: null,
-      parser: 'local'
-    };
-    await executeSearch(forcedRequest.rawInput, forcedRequest, manualValues.unitWeightG);
+    if (manualValues.nutritionBasis === '100ml' && manualValues.unit !== 'ml') {
+      setIssue({
+        kind: 'error',
+        title: 'Volumen in Millilitern angeben',
+        message: 'Ein Etikettwert pro 100 ml kann nur mit dem Gesamtvolumen in Millilitern berechnet werden.',
+        technical: 'ManualValidationError: 100ml basis without ml amount',
+        attempts: [],
+        occurredAt: new Date().toISOString(),
+        retryLabel: 'Eingabe prüfen'
+      });
+      return;
+    }
+    if (manualValues.unitWeightG !== null && (
+      !Number.isFinite(manualValues.unitWeightG)
+      || manualValues.unitWeightG <= 0
+      || !isPlausibleUnitWeightForUnit(manualValues.unitWeightG, manualValues.unit)
+      || !isPlausibleTotalMass(manualValues.amount * manualValues.unitWeightG)
+    )) {
+      setIssue({
+        kind: 'error',
+        title: 'Stückgewicht prüfen',
+        message: 'Das Stückgewicht muss größer als 0 sein und darf weder 5 kg je Einheit noch 100 kg Gesamtgewicht überschreiten.',
+        technical: 'ManualValidationError: implausible unitWeightG',
+        attempts: [],
+        occurredAt: new Date().toISOString(),
+        retryLabel: 'Erneut prüfen'
+      });
+      return;
+    }
+    if (!isValidCarbohydratesPer100(manualValues.carbsPer100, manualValues.nutritionBasis)) {
+      const maximum = maximumCarbohydratesPer100(manualValues.nutritionBasis);
+      setIssue({
+        kind: 'error',
+        title: 'Kohlenhydrate prüfen',
+        message: `Trage den Etikettwert pro ${manualValues.nutritionBasis === '100g' ? '100 g' : '100 ml'} zwischen 0 und ${maximum} ein.`,
+        technical: 'ManualValidationError: carbsPer100 missing or implausible',
+        attempts: [],
+        occurredAt: new Date().toISOString(),
+        retryLabel: 'Eingabe prüfen'
+      });
+      return;
+    }
+    try {
+      await commitResult(buildManualResult(manualValues));
+    } catch (caught) {
+      handleOperationError(caught, 'Die manuellen Angaben sind ungültig.', 'Eingabe prüfen', () => { void handleManualSubmit(); });
+    }
   }
 
   function startVoice() {
     const Constructor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
     if (!Constructor) {
       setIssue({
+        kind: 'unsupported',
         title: 'Spracherkennung nicht verfügbar',
         message: 'Dieser Browser bietet keine kompatible Spracheingabe. Die Texteingabe bleibt vollständig nutzbar.',
         technical: 'SpeechRecognition API unavailable',
@@ -2365,6 +3044,7 @@ export default function App() {
     };
     recognition.onerror = (event) => {
       setIssue({
+        kind: 'error',
         title: 'Spracheingabe fehlgeschlagen',
         message: 'Die Spracheingabe konnte nicht verarbeitet werden. Du kannst sofort erneut starten oder Text eingeben.',
         technical: `SpeechRecognitionError: ${event.error}`,
@@ -2375,13 +3055,30 @@ export default function App() {
       retryActionRef.current = startVoice;
     };
     recognition.onend = () => setListening(false);
-    setListening(true);
-    recognition.start();
+    startSpeechRecognitionSafely(recognition, setListening, (caught) => {
+      setIssue({
+        kind: 'error',
+        title: 'Spracheingabe konnte nicht gestartet werden',
+        message: 'Der Browser hat den Start der Spracheingabe abgelehnt. Du kannst die Texteingabe weiterhin verwenden.',
+        technical: caught instanceof Error ? `${caught.name}: ${caught.message}` : String(caught),
+        attempts: [],
+        occurredAt: new Date().toISOString(),
+        retryLabel: 'Spracheingabe erneut starten'
+      });
+      retryActionRef.current = startVoice;
+    });
   }
 
   async function resolveWeight(measurement: WeightMeasurement) {
     const { unitWeightG, measuredPieces, measuredTotalWeightG, reuseScope } = measurement;
-    if (!result || !Number.isFinite(unitWeightG) || unitWeightG <= 0) return;
+    if (!result) return;
+    if (result.basis === '100ml') {
+      throw new RangeError('Für Nährwerte pro 100 ml wird das Gesamtvolumen in Millilitern benötigt; ein Gewicht reicht ohne Dichte nicht aus.');
+    }
+    if (!isPlausibleUnitWeightForUnit(unitWeightG, result.unit)
+      || !isPlausibleTotalMass(unitWeightG * result.amount)) {
+      throw new RangeError('Das Einheiten- oder daraus folgende Gesamtgewicht liegt außerhalb der sicheren Berechnungsgrenze.');
+    }
 
     const measuredCount = Number.isInteger(measuredPieces) && (measuredPieces ?? 0) >= 1
       ? Number(measuredPieces)
@@ -2391,6 +3088,9 @@ export default function App() {
       && measuredTotalWeightG > 0
       ? measuredTotalWeightG
       : unitWeightG * measuredCount;
+    if (!isPlausibleTotalMass(totalWeight)) {
+      throw new RangeError('Das gemessene Gesamtgewicht muss größer als 0 und darf höchstens 100 kg sein.');
+    }
     const calibration = createPieceCalibration({
       productName: result.mode === 'generic' ? result.request.product.name : result.product.name,
       displayName: result.product.name,
@@ -2403,21 +3103,26 @@ export default function App() {
       scope: reuseScope === 'generic' ? 'generic_food' : undefined,
       smallestEdibleUnit: isCountedFoodUnit(result.unit)
     });
-    if (calibration) await saveCalibration(calibration);
-    await updateCurrentResult(recalculateResult(result, result.amount, unitWeightG));
+    if (isCalibratableUnit(result.unit) && !calibration) {
+      throw new RangeError('Die Messung ist als Kalibrierung nicht plausibel. Bitte Anzahl und Gesamtgewicht prüfen.');
+    }
+    const next = normalizeStoredResult(recalculateResult(result, result.amount, unitWeightG));
+    if (settings.saveCalibrations && calibration) await saveCalibration(calibration);
+    await updateCurrentResult(next);
   }
 
   async function resolveTotalAmount(value: number, reuseScope: WeightMeasurement['reuseScope'] = 'product') {
-    if (!result || !Number.isFinite(value) || value <= 0) return;
+    if (!result) return;
 
     if (result.basis === '100ml') {
-      await updateCurrentResult(recalculateWithManualTotalVolume(result, value));
+      await updateCurrentResult(normalizeStoredResult(recalculateWithManualTotalVolume(result, value)));
       return;
     }
 
-    const next = recalculateWithManualTotalMass(result, value);
+    const next = normalizeStoredResult(recalculateWithManualTotalMass(result, value));
+    let calibration: ReturnType<typeof createPieceCalibration> = null;
     if (supportsUnitWeight(result.unit) && Number.isInteger(result.amount) && result.amount >= 1) {
-      const calibration = createPieceCalibration({
+      calibration = createPieceCalibration({
         productName: result.mode === 'generic' ? result.request.product.name : result.product.name,
         displayName: result.product.name,
         brand: result.product.brand,
@@ -2429,8 +3134,11 @@ export default function App() {
         scope: reuseScope === 'generic' ? 'generic_food' : undefined,
         smallestEdibleUnit: isCountedFoodUnit(result.unit)
       });
-      if (calibration) await saveCalibration(calibration);
+      if (isCalibratableUnit(result.unit) && !calibration) {
+        throw new RangeError('Die abgeleitete Kalibrierung ist nicht plausibel. Bitte Menge und Gesamtgewicht prüfen.');
+      }
     }
+    if (settings.saveCalibrations && calibration) await saveCalibration(calibration);
     await updateCurrentResult(next);
   }
 
@@ -2438,23 +3146,22 @@ export default function App() {
     if (!result) return;
     const next = { ...result, favorite: !result.favorite };
     setResult(next);
-    await saveResult(next);
-    await refreshHistory();
+    if (settings.saveHistory) {
+      await saveResult(next);
+      await refreshHistory();
+    }
   }
 
   async function changePortion(amount: number, portionId: string) {
-    if (!result || amount <= 0) return;
-    await updateCurrentResult(recalculateWithPortion(result, amount, portionId));
+    if (!result) return;
+    await updateCurrentResult(normalizeStoredResult(recalculateWithPortion(result, amount, portionId)));
   }
 
   function resetSearch() {
     activeAbort.current?.abort();
     activeAbort.current = null;
     setLoading(false);
-    setSearchView('home');
-    setRequest(null);
-    setHits([]);
-    setResult(null);
+    dispatchWorkflow({ type: 'reset' });
     setIssue(null);
     setApiTrace(null);
     retryActionRef.current = null;
@@ -2465,10 +3172,7 @@ export default function App() {
   function openStored(entry: CalculationResult) {
     const normalized = normalizeStoredResult(entry);
     setTab('search');
-    setResult(normalized);
-    setRequest(normalized.request);
-    setHits(normalized.candidates);
-    setSearchView('result');
+    dispatchWorkflow({ type: 'show-result', result: normalized, hits: normalized.candidates });
   }
 
   async function removeStored(id: string) {
@@ -2476,11 +3180,56 @@ export default function App() {
     await refreshHistory();
   }
 
+  const activeScreenLabel = tab === 'search'
+    ? searchView === 'home' ? 'Suche' : searchView === 'candidates' ? 'Produktauswahl' : 'Ergebnis'
+    : tab === 'history' ? 'Verlauf' : tab === 'favorites' ? 'Favoriten' : 'Einstellungen';
+
   return (
     <div className="app-shell">
       <main className="app-main">
         {tab === 'search' && <SearchHeader onHistory={() => setTab('history')} />}
 
+        <RuntimeStatusRegion
+          settingsReady={settingsReady}
+          online={online}
+          gatewayError={gatewayError}
+          pending={loading}
+          capabilityWarnings={capabilityWarnings}
+          pwaNotice={pwaNotice}
+          onApplyPwaUpdate={() => {
+            const apply = pwaNotice?.applyUpdate;
+            setPwaNotice(null);
+            void Promise.resolve(apply?.()).catch(() => {
+              setPwaNotice({ message: 'Die Aktualisierung konnte nicht gestartet werden. Bitte versuche es später erneut.' });
+            });
+          }}
+          onConfigure={() => setTab('settings')}
+          onDismissPwa={() => setPwaNotice(null)}
+        />
+
+        {issue && (
+          <ApiIssueBanner
+            issue={issue}
+            bannerRef={issueFocusRef}
+            onDismiss={() => {
+              setIssue(null);
+              retryActionRef.current = null;
+            }}
+            onRetry={() => {
+              const retry = retryActionRef.current;
+              setIssue(null);
+              retry?.();
+            }}
+          />
+        )}
+        {!issue && apiTrace && <ApiTraceBanner notice={apiTrace} onDismiss={() => setApiTrace(null)} />}
+
+        <section
+          ref={screenFocusRef}
+          className="screen-focus-root"
+          aria-label={`${activeScreenLabel}-Ansicht`}
+          tabIndex={-1}
+        >
         {tab === 'search' && searchView === 'home' && (
           <HomeScreen
             query={query}
@@ -2494,7 +3243,7 @@ export default function App() {
             onManualSubmit={handleManualSubmit}
             listening={listening}
             onVoice={startVoice}
-            searchBlockedRemainingMs={Math.max(0, searchBlockedUntil - searchClock)}
+            settingsReady={settingsReady}
           />
         )}
 
@@ -2506,11 +3255,13 @@ export default function App() {
             onSelect={(hit) => selectCandidate(hit)}
             onGeneric={chooseGeneric}
             loading={loading}
+            allowImages={settings.cacheApiData}
           />
         )}
 
         {tab === 'search' && searchView === 'result' && result && (
           <ResultScreen
+            key={result.id}
             result={result}
             decimals={settings.decimalPlaces}
             onBack={() => setSearchView(request?.resolutionMode === 'exact_product' && hits.length > 1 ? 'candidates' : 'home')}
@@ -2520,14 +3271,17 @@ export default function App() {
             onTotalResolved={resolveTotalAmount}
             onPortionChange={changePortion}
             onChooseProduct={showProductCandidates}
+            allowImages={settings.cacheApiData}
+            favoritesEnabled={settings.saveHistory}
+            calibrationPersistenceEnabled={settings.saveCalibrations}
           />
         )}
 
         {tab === 'history' && (
-          <HistoryScreen title="Verlauf" entries={historyEntries} onOpen={openStored} onDelete={removeStored} emptyText="Deine Berechnungen erscheinen hier automatisch." />
+          <HistoryScreen title="Verlauf" entries={historyEntries} onOpen={openStored} onDelete={removeStored} emptyText={settings.saveHistory ? 'Deine gespeicherten Berechnungen erscheinen hier.' : 'Die Verlaufsspeicherung ist deaktiviert. Du kannst sie in den Einstellungen ausdrücklich aktivieren.'} allowImages={settings.cacheApiData} />
         )}
         {tab === 'favorites' && (
-          <HistoryScreen title="Favoriten" entries={favorites} onOpen={openStored} onDelete={removeStored} emptyText="Markiere ein Ergebnis mit dem Stern." />
+          <HistoryScreen title="Favoriten" entries={favorites} onOpen={openStored} onDelete={removeStored} emptyText={settings.saveHistory ? 'Markiere ein gespeichertes Ergebnis mit dem Stern.' : 'Favoriten benötigen die ausdrücklich aktivierte Verlaufsspeicherung.'} allowImages={settings.cacheApiData} />
         )}
         {tab === 'settings' && (
           <SettingsScreen
@@ -2537,23 +3291,23 @@ export default function App() {
             issue={issue}
             apiTrace={apiTrace}
             onChange={setSettings}
-            onClearHistory={async () => { await clearHistory(); await refreshHistory(); }}
-            onClearCalibrations={async () => { await clearCalibrations(); }}
+            onClearHistory={async () => {
+              if (!window.confirm('Den gesamten lokalen Verlauf unwiderruflich löschen?')) return;
+              await clearHistory().catch(() => undefined);
+              await refreshHistory();
+            }}
+            onClearCalibrations={async () => {
+              if (!window.confirm('Alle gespeicherten Stückgewichte löschen?')) return;
+              await clearCalibrations().catch(() => undefined);
+            }}
             onClearApiCache={async () => {
+              if (!window.confirm('Gespeicherte API-Daten und Produktbilder löschen? Die Offline-App selbst bleibt erhalten.')) return;
               activeAbort.current?.abort();
               activeAbort.current = null;
               cancelPendingApiRequests();
               setLoading(false);
               await clearApiCache();
-              if ('caches' in window) {
-                const names = await caches.keys();
-                const ownedCaches = names.filter((name) =>
-                  name.startsWith('kh-v2')
-                  || name.includes('kh-checker')
-                  || name.startsWith('workbox-precache')
-                );
-                await Promise.all(ownedCaches.map((name) => caches.delete(name)));
-              }
+              await clearOffProductImageCache(APP_VERSION);
               clearApiGovernor();
               setApiUsage(getApiUsageSnapshot());
               setCacheStats(await getApiCacheStats());
@@ -2566,6 +3320,7 @@ export default function App() {
             }}
           />
         )}
+        </section>
       </main>
 
       <nav className="bottom-nav" aria-label="Hauptnavigation">
@@ -2575,7 +3330,7 @@ export default function App() {
           { id: 'favorites' as const, label: 'Favoriten', icon: Heart },
           { id: 'settings' as const, label: 'Einstellungen', icon: Settings }
         ].map(({ id, label, icon: Icon }) => (
-          <button type="button" key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
+          <button type="button" id={`nav-${id}`} key={id} className={tab === id ? 'active' : ''} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
             <Icon size={21} fill={id === 'favorites' && tab === id ? 'currentColor' : 'none'} />
             <span>{label}</span>
           </button>

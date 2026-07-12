@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { canonicalFileBytes } from './canonical-text.mjs';
 const root = path.resolve(import.meta.dirname, '..');
 const manifest = JSON.parse(await readFile(path.join(root, 'contracts/generated/generation-manifest.json'), 'utf8'));
 const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
@@ -11,7 +12,7 @@ const mismatches = [];
 for (const [relative, expected] of Object.entries(manifest.files ?? {})) {
   try {
     const bytes = await readFile(path.join(root, relative));
-    const actual = createHash('sha256').update(bytes).digest('hex');
+    const actual = createHash('sha256').update(canonicalFileBytes(relative, bytes)).digest('hex');
     if (actual !== expected) mismatches.push(`${relative}: ${actual} != ${expected}`);
   } catch (error) {
     mismatches.push(`${relative}: missing (${error.message})`);

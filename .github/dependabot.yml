@@ -1,38 +1,27 @@
 version: 2
 updates:
-  - package-ecosystem: npm
-    directory: "/"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "05:00"
-      timezone: Europe/Berlin
-    open-pull-requests-limit: 5
-    versioning-strategy: increase-if-necessary
-    groups:
-      vite-toolchain:
-        patterns:
-          - vite
-          - "@vitejs/*"
-          - vite-plugin-pwa
-          - typescript
-          - vitest
-      react:
-        patterns:
-          - react
-          - react-dom
-          - "@types/react*"
-      quality:
-        patterns:
-          - "@playwright/*"
-          - "@axe-core/*"
-          - "@biomejs/*"
-
   - package-ecosystem: github-actions
-    directory: "/"
+    directory: /
     schedule:
       interval: weekly
-      day: monday
-      time: "05:15"
-      timezone: Europe/Berlin
+    groups:
+      github-actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      npm-production:
+        dependency-type: production
+      npm-development:
+        dependency-type: development
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
     open-pull-requests-limit: 5

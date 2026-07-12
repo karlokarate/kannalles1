@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { canonicalFileBytes } from './canonical-text.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const tracked = [
@@ -37,7 +38,7 @@ async function snapshot() {
   const result = new Map();
   for (const file of files) {
     const bytes = await readFile(path.join(root, file));
-    result.set(file, createHash('sha256').update(bytes).digest('hex'));
+    result.set(file, createHash('sha256').update(canonicalFileBytes(file, bytes)).digest('hex'));
   }
   return result;
 }

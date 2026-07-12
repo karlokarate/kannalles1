@@ -4,6 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import YAML from 'yaml';
 import { getGatewayOpenApiDocument } from '../contracts/source/search-api.contract.mjs';
+import { normalizeTextEol } from './canonical-text.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const outDir = path.join(root, 'contracts', 'generated');
@@ -30,7 +31,7 @@ if (checkOnly) {
   ]).catch((error) => {
     throw new Error(`OpenAPI-Ausgabe fehlt. Zuerst npm run api:generate ausführen: ${error.message}`);
   });
-  if (currentJson !== json || currentYaml !== yaml) {
+  if (normalizeTextEol(currentJson) !== json || normalizeTextEol(currentYaml) !== yaml) {
     throw new Error('OpenAPI-Drift erkannt: contracts/generated stimmt nicht mit contracts/source/search-api.contract.mjs überein.');
   }
   console.log(JSON.stringify({ openapiCurrent: true, json: path.relative(root, jsonPath), yaml: path.relative(root, yamlPath) }));

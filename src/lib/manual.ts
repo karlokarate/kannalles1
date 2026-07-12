@@ -1,14 +1,45 @@
 import type { CalculationResult, ManualFormValues, ParsedFoodRequest, PortionOption } from '../types';
 import { createId, unitLabels } from './format';
+import { isOffBarcodeInput, normalizeOffBarcode } from './barcode';
+import { isValidCarbohydratesPer100, maximumCarbohydratesPer100 } from './nutrition';
+import {
+  isPlausibleFoodAmount,
+  isPlausibleTotalMass,
+  isPlausibleUnitWeightForUnit
+} from './domainLimits';
 
 export function buildManualResult(values: ManualFormValues): CalculationResult {
+  if (!values.productName.trim()) throw new Error('Ein Produktname ist erforderlich.');
+  if (!isPlausibleFoodAmount(values.amount, values.unit)) {
+    throw new Error('Die Menge ist ungültig oder für eine einzelne Berechnung zu groß.');
+  }
+  if (values.nutritionBasis === '100ml' && values.unit !== 'ml') {
+    throw new Error('Nährwerte pro 100 ml benötigen eine Gesamtmenge in Millilitern.');
+  }
+  if (!isValidCarbohydratesPer100(values.carbsPer100, values.nutritionBasis)) {
+    throw new Error(
+      `Die Kohlenhydratangabe muss zwischen 0 und ${maximumCarbohydratesPer100(values.nutritionBasis)} liegen.`
+    );
+  }
+  if (values.unitWeightG !== null && (
+    !Number.isFinite(values.unitWeightG)
+    || values.unitWeightG <= 0
+    || !isPlausibleUnitWeightForUnit(values.unitWeightG, values.unit)
+    || !isPlausibleTotalMass(values.amount * values.unitWeightG)
+  )) {
+    throw new Error('Das Stückgewicht ist ungültig oder ergibt mehr als 100 kg Gesamtgewicht.');
+  }
+  const barcode = values.barcode.trim() && isOffBarcodeInput(values.barcode)
+    ? normalizeOffBarcode(values.barcode)
+    : null;
+  if (values.barcode.trim() && !barcode) throw new Error('Der Barcode muss 7 bis 14 Ziffern enthalten.');
   const request: ParsedFoodRequest = {
     status: 'parsed',
     rawInput: `${values.amount} ${unitLabels[values.unit]} ${values.productName}`,
     product: { name: values.productName, brand: values.brand || null, variant: null },
     amount: { value: values.amount, unit: values.unit, valueExplicit: true, unitExplicit: true },
-    resolutionMode: values.barcode ? 'barcode' : 'exact_product',
-    barcode: values.barcode || null,
+    resolutionMode: barcode ? 'barcode' : 'exact_product',
+    barcode,
     clarificationQuestion: null,
     parser: 'local'
   };
@@ -20,8 +51,10 @@ export function buildManualResult(values: ManualFormValues): CalculationResult {
   else if (values.unit === 'ml') totalVolumeMl = values.amount;
   else if (values.unitWeightG !== null) totalMassG = values.amount * values.unitWeightG;
 
-  const carbs = values.carbsPer100g !== null && totalMassG !== null
-    ? totalMassG * values.carbsPer100g / 100
+  const basis = values.nutritionBasis;
+  const referenceAmount = basis === '100g' ? totalMassG : totalVolumeMl;
+  const carbs = referenceAmount !== null
+    ? referenceAmount * values.carbsPer100 / 100
     : null;
 
   const option: PortionOption = values.unit === 'g'
@@ -37,7 +70,7 @@ export function buildManualResult(values: ManualFormValues): CalculationResult {
     createdAt: new Date().toISOString(),
     request,
     product: {
-      barcode: values.barcode || null,
+      barcode,
       name: values.productName,
       brand: values.brand || null,
       imageUrl: null,
@@ -50,16 +83,23 @@ export function buildManualResult(values: ManualFormValues): CalculationResult {
     mode: 'manual',
     status: carbs !== null ? 'calculated' : 'needs_unit_calibration',
     carbohydratesG: carbs,
-    carbohydratesPer100: values.carbsPer100g,
-    basis: '100g',
+    carbohydratesPer100: values.carbsPer100,
+    basis,
     totalMassG,
     totalVolumeMl,
     unitWeightG: values.unitWeightG,
     amount: values.amount,
     unit: values.unit,
+    countability: ['piece', 'bar', 'slice'].includes(values.unit)
+      ? 'countable'
+      : ['g', 'kg', 'ml'].includes(values.unit)
+        ? 'non_countable'
+        : 'unknown',
     confidence: carbs !== null ? 'high' : 'missing',
     sourceLabel: 'Eigene Angabe',
     methodLabel: 'Manuelle Werte · deterministische Berechnung',
+    dataFetchedAt: null,
+    dataCacheAgeMs: null,
     sampleSize: null,
     middleRange: null,
     candidates: [],

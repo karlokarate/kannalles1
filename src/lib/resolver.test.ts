@@ -3,6 +3,7 @@ import type { OffProduct, ParsedFoodRequest, SearchHit } from '../types';
 import {
   buildExactResult,
   buildGenericResult,
+  displayCarbohydrateValue,
   rankExactCandidates,
   recalculateWithManualTotalMass,
   recalculateWithManualTotalVolume,
@@ -51,6 +52,189 @@ describe('generic resolution', () => {
     const result = buildGenericResult(request('100 g Salzstangen', 'Salzstangen', 100, 'g'), resolved, null);
     expect(result.status).toBe('calculated');
     expect(result.carbohydratesG).toBe(73);
+  });
+
+  it('uses the explicit millilitre basis when OFF exposes both mass and volume values', () => {
+    const hits: SearchHit[] = [
+      {
+        code: 'drink-both', product_name_de: 'Testgetränk', completeness: 0.9,
+        nutrition_data_per: '100ml',
+        nutriments: { carbohydrates_100g: 10, carbohydrates_100ml: 12 }
+      }
+    ];
+    const resolved = resolveGenericCandidates('Testgetränk', hits, false, 'ml');
+    const result = buildGenericResult(request('250 ml Testgetränk', 'Testgetränk', 250, 'ml'), resolved, null);
+    expect(result.basis).toBe('100ml');
+    expect(result.totalVolumeMl).toBe(250);
+    expect(result.carbohydratesG).toBe(30);
+  });
+
+  it('reports and displays only the products that actually formed a mixed-basis median', () => {
+    const hits: SearchHit[] = [
+      ...[10, 12, 14].map((carbohydrates, index) => ({
+        code: `40000000003${index}`, product_name_de: 'Basisprodukt', brands: `Mass ${index}`,
+        completeness: 0.9, nutriments: { carbohydrates_100g: carbohydrates }
+      })),
+      ...[4, 6].map((carbohydrates, index) => ({
+        code: `40000000004${index}`, product_name_de: 'Basisprodukt', brands: `Volume ${index}`,
+        completeness: 0.9, nutrition_data_per: '100ml',
+        nutriments: { carbohydrates_100ml: carbohydrates }
+      }))
+    ];
+    const resolved = resolveGenericCandidates('Basisprodukt', hits, false);
+    const result = buildGenericResult(
+      request('100 g Basisprodukt', 'Basisprodukt', 100, 'g'), resolved, null
+    );
+    expect(resolved.basis).toBe('100g');
+    expect(resolved.sampleSize).toBe(3);
+    expect(resolved.hits).toHaveLength(3);
+    expect(result.sampleSize).toBe(3);
+    expect(result.candidates).toHaveLength(3);
+    expect(result.notes).toContain('Median aus 3 gefilterten Basisprodukten.');
+  });
+});
+
+describe('nutrition basis and upstream value validation', () => {
+  it('calculates an exact liquid from the 100 ml field when both bases exist', () => {
+    const hit: SearchHit = {
+      code: 'liquid', product_name_de: 'Testgetränk', nutrition_data_per: '100ml',
+      nutriments: { carbohydrates_100g: 10, carbohydrates_100ml: 12 }
+    };
+    const result = buildExactResult(
+      request('250 ml Testgetränk', 'Testgetränk', 250, 'ml', 'exact_product'),
+      hit,
+      undefined,
+      null
+    );
+    expect(result.status).toBe('calculated');
+    expect(result.basis).toBe('100ml');
+    expect(result.totalMassG).toBeNull();
+    expect(result.totalVolumeMl).toBe(250);
+    expect(result.carbohydratesG).toBe(30);
+  });
+
+  it('applies the same basis selection to explicitly prepared values', () => {
+    const hit: SearchHit = {
+      code: 'prepared-liquid', product_name_de: 'Zubereitetes Testgetränk',
+      nutrition_data_prepared_per: '100ml',
+      nutriments: {
+        carbohydrates_100g: 9,
+        carbohydrates_100ml: 10,
+        carbohydrates_prepared_100g: 10,
+        carbohydrates_prepared_100ml: 12
+      }
+    };
+    const result = buildExactResult(
+      request('250 ml zubereitetes Testgetränk', 'zubereitetes Testgetränk', 250, 'ml', 'exact_product'),
+      hit,
+      undefined,
+      null
+    );
+    expect(result.basis).toBe('100ml');
+    expect(result.carbohydratesPer100).toBe(12);
+    expect(result.carbohydratesG).toBe(30);
+  });
+
+  it.each([-1, Number.NaN, '', '   ', 101])('rejects an invalid 100 g carbohydrate value %p', (value) => {
+    const hit: SearchHit = {
+      code: 'invalid', product_name_de: 'Ungültig',
+      nutriments: { carbohydrates_100g: value as number }
+    };
+    const exact = buildExactResult(request('100 g Ungültig', 'Ungültig', 100, 'g', 'exact_product'), hit, undefined, null);
+    const generic = resolveGenericCandidates('Ungültig', [{ ...hit, completeness: 0.9 }], false, 'g');
+    expect(exact.carbohydratesPer100).toBeNull();
+    expect(exact.carbohydratesG).toBeNull();
+    expect(generic.median).toBeNull();
+  });
+
+  it('allows a credible dense 100 ml value while rejecting a clearly absurd one', () => {
+    const dense: SearchHit = {
+      code: 'dense', product_name_de: 'Sirup',
+      nutriments: { carbohydrates_100ml: 140 }
+    };
+    const absurd: SearchHit = {
+      ...dense,
+      code: 'absurd',
+      nutriments: { carbohydrates_100ml: 201 }
+    };
+    const denseResult = buildExactResult(request('100 ml Sirup', 'Sirup', 100, 'ml', 'exact_product'), dense, undefined, null);
+    const absurdResult = buildExactResult(request('100 ml Sirup', 'Sirup', 100, 'ml', 'exact_product'), absurd, undefined, null);
+    expect(denseResult.carbohydratesG).toBe(140);
+    expect(absurdResult.carbohydratesPer100).toBeNull();
+  });
+
+  it('projects candidate nutrition with the same safe 100 ml/prepared basis as calculation', () => {
+    const sold: SearchHit = {
+      code: '4000000000101', product_name_de: 'Getränk', nutrition_data_per: '100ml',
+      nutriments: { carbohydrates_100ml: 8 }
+    };
+    expect(displayCarbohydrateValue(sold, 'Getränk', 'ml')).toEqual({
+      value: 8, basis: '100ml', prepared: false
+    });
+
+    const prepared: SearchHit = {
+      ...sold,
+      nutrition_data_prepared_per: '100ml',
+      nutriments: { carbohydrates_100ml: 10, carbohydrates_prepared_100ml: 7 }
+    };
+    expect(displayCarbohydrateValue(prepared, 'zubereitetes Getränk', 'ml')).toEqual({
+      value: 7, basis: '100ml', prepared: true
+    });
+  });
+
+  it('converts a serving-only 30 g value only from consistent dimensional evidence', () => {
+    const hit: SearchHit = {
+      code: '4000000000201', product_name_de: 'Portionsriegel',
+      serving_size: '1 Riegel (30 g)', serving_quantity: 30,
+      nutriments: { carbohydrates_serving: 18 }
+    };
+    const result = buildExactResult(
+      request('1 Portion Portionsriegel', 'Portionsriegel', 1, 'portion', 'exact_product'),
+      hit,
+      undefined,
+      null
+    );
+    expect(result.basis).toBe('100g');
+    expect(result.carbohydratesPer100).toBe(60);
+    expect(result.totalMassG).toBe(30);
+    expect(result.carbohydratesG).toBe(18);
+  });
+
+  it('converts a serving-only 250 ml value and keeps prepared values separate', () => {
+    const hit: SearchHit = {
+      code: '4000000000202', product_name_de: 'Zubereitetes Getränk',
+      serving_size: '250 ml', serving_quantity: 250,
+      nutriments: { carbohydrates_serving: 30, carbohydrates_prepared_serving: 25 }
+    };
+    const result = buildExactResult(
+      request('1 Portion zubereitetes Getränk', 'zubereitetes Getränk', 1, 'portion', 'exact_product'),
+      hit,
+      undefined,
+      null
+    );
+    expect(result.basis).toBe('100ml');
+    expect(result.carbohydratesPer100).toBe(10);
+    expect(result.totalVolumeMl).toBe(250);
+    expect(result.carbohydratesG).toBe(25);
+  });
+
+  it('never guesses the dimension of a serving-only value', () => {
+    const ambiguous: SearchHit = {
+      code: '4000000000203', product_name_de: 'Uneindeutige Portion',
+      serving_size: '1 Portion', serving_quantity: 30,
+      nutriments: { carbohydrates_serving: 18 }
+    };
+    const contradictory: SearchHit = {
+      ...ambiguous,
+      code: '4000000000204', serving_size: '30 g', serving_quantity: 250
+    };
+    for (const hit of [ambiguous, contradictory]) {
+      const result = buildExactResult(
+        request('1 Portion Test', 'Test', 1, 'portion', 'exact_product'), hit, undefined, null
+      );
+      expect(result.carbohydratesPer100).toBeNull();
+      expect(result.carbohydratesG).toBeNull();
+    }
   });
 });
 
@@ -202,6 +386,66 @@ describe('counted-unit and manufacturer-portion resolution', () => {
     if (!grams) throw new Error('Gramm-Option fehlt im Testergebnis.');
     const edited = recalculateWithPortion(result, 25, grams.id);
     expect(edited.carbohydratesG).toBeCloseTo(14.375, 4);
+  });
+
+  it('never exposes negative or absurd structured weights as product portions', () => {
+    const hit: SearchHit = {
+      code: 'bad-weights', product_name_de: 'Testprodukt',
+      product_quantity: -50, product_quantity_unit: 'g',
+      serving_quantity: -5, nutriments: { carbohydrates_100g: 20 }
+    };
+    const result = buildExactResult(request('1 Packung Testprodukt', 'Testprodukt', 1, 'package', 'exact_product'), hit, undefined, null);
+    expect(result.product.packageWeightG).toBeNull();
+    expect(result.product.servingWeightG).toBeNull();
+    expect(result.portionOptions.some((option) => option.weightG !== null && option.weightG < 0)).toBe(false);
+
+    const absurd: SearchHit = {
+      ...hit,
+      code: 'absurd-weights',
+      quantity: '2 x 6000 g',
+      product_quantity: 200_000,
+      serving_quantity: 20_000
+    };
+    const absurdResult = buildExactResult(request('1 Stück Testprodukt', 'Testprodukt', 1, 'piece', 'exact_product'), absurd, undefined, null);
+    expect(absurdResult.product.packageWeightG).toBe(12000);
+    expect(absurdResult.product.servingWeightG).toBeNull();
+    expect(absurdResult.portionOptions.some((option) =>
+      ['explicit-multipack', 'explicit-unit', 'count-and-net-weight'].includes(option.source)
+      && (option.weightG ?? 0) > 5_000
+    )).toBe(false);
+  });
+
+  it('supports dimensioned kg, ml and litre package quantities without mass-volume guessing', () => {
+    const kilogram = buildExactResult(
+      request('1 Packung Trockenprodukt', 'Trockenprodukt', 1, 'package', 'exact_product'),
+      {
+        code: '4000000000210', product_name_de: 'Trockenprodukt', quantity: '1 kg',
+        product_quantity: 1, product_quantity_unit: 'kg', nutriments: { carbohydrates_100g: 75 }
+      },
+      undefined,
+      null
+    );
+    expect(kilogram.totalMassG).toBe(1_000);
+    expect(kilogram.carbohydratesG).toBe(750);
+
+    for (const [quantity, numeric, unit, expectedMl] of [
+      ['750 ml', 750, 'ml', 750],
+      ['1,5 l', 1.5, 'l', 1_500]
+    ] as const) {
+      const liquid = buildExactResult(
+        request(`1 Packung Saft ${quantity}`, 'Saft', 1, 'package', 'exact_product'),
+        {
+          code: `4000000000${expectedMl}`, product_name_de: 'Saft', quantity,
+          product_quantity: numeric, product_quantity_unit: unit,
+          nutrition_data_per: '100ml', nutriments: { carbohydrates_100ml: 10 }
+        },
+        undefined,
+        null
+      );
+      expect(liquid.totalMassG).toBeNull();
+      expect(liquid.totalVolumeMl).toBe(expectedMl);
+      expect(liquid.carbohydratesG).toBe(expectedMl / 10);
+    }
   });
 });
 
@@ -371,5 +615,61 @@ describe('deterministic missing-unit handling', () => {
     const result = buildGenericResult(request('12 Salzstangen', 'Salzstangen', 12, 'piece'), resolved, null);
     expect(result.status).toBe('needs_unit_calibration');
     expect(result.unitWeightG).toBeNull();
+  });
+
+  it('normalizes OFF brand arrays without crashing the product summary', () => {
+    const hit: SearchHit = {
+      code: '4000000000042', product_name_de: 'Testprodukt', nutriments: { carbohydrates_100g: 20 }
+    };
+    const product: OffProduct = { ...hit, brands: ['Marke A', 'Marke B'] };
+    const result = buildExactResult(
+      request('100 g Testprodukt', 'Testprodukt', 100, 'g', 'exact_product'),
+      hit,
+      product,
+      null
+    );
+    expect(result.product.brand).toBe('Marke A, Marke B');
+  });
+
+  it('captures immutable fetched-at and cache-age provenance in calculated results', () => {
+    const fetchedAt = '2026-07-12T10:00:00.000Z';
+    const hit: SearchHit = {
+      code: '4000000000043',
+      product_name_de: 'Provenienzprodukt',
+      nutriments: { carbohydrates_100g: 20 },
+      api_meta: {
+        cacheStatus: 'fresh-cache', fetchedAt, sourceUrl: 'index://snapshot', cacheAgeMs: 5_000
+      }
+    };
+    const result = buildExactResult(
+      request('100 g Provenienzprodukt', 'Provenienzprodukt', 100, 'g', 'exact_product'),
+      hit,
+      undefined,
+      null
+    );
+    expect(result.dataFetchedAt).toBe(fetchedAt);
+    expect(result.dataCacheAgeMs).toBe(5_000);
+  });
+
+  it('rejects adversarial portion edits before producing an invalid result', () => {
+    const hit: SearchHit = {
+      code: '4000000000044', product_name_de: 'Testprodukt', nutriments: { carbohydrates_100g: 20 }
+    };
+    const result = buildExactResult(
+      request('100 g Testprodukt', 'Testprodukt', 100, 'g', 'exact_product'),
+      hit,
+      undefined,
+      null
+    );
+    const grams = result.portionOptions.find((option) => option.unit === 'g');
+    if (!grams) throw new Error('Gramm-Option fehlt.');
+    expect(() => recalculateWithPortion(result, 100_001, grams.id)).toThrow(/ungültig|zu groß/);
+    expect(() => buildExactResult(
+      request('100 Stück Testprodukt', 'Testprodukt', 100, 'piece', 'exact_product'),
+      hit,
+      undefined,
+      null,
+      5_001
+    )).toThrow(/Einheitengewicht|Gesamtgewicht/);
   });
 });

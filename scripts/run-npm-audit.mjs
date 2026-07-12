@@ -1,7 +1,11 @@
 import { spawn } from 'node:child_process';
 
-const command = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const child = spawn(command, ['audit', '--audit-level=high', '--json'], {
+const npmCli = process.env.npm_execpath;
+const command = npmCli ? process.execPath : process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const args = npmCli
+  ? [npmCli, 'audit', '--audit-level=high', '--json']
+  : ['audit', '--audit-level=high', '--json'];
+const child = spawn(command, args, {
   stdio: ['ignore', 'pipe', 'pipe'],
   env: {
     ...process.env,

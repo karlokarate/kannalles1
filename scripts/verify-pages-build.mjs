@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validatePublicGatewayUrl } from './public-config.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pagesDir = process.argv[2] ? path.resolve(process.argv[2]) : path.join(rootDir, 'dist');
@@ -8,7 +9,8 @@ const pagesLabel = path.relative(rootDir, pagesDir) || '.';
 const packageJson = JSON.parse(await fs.readFile(path.join(rootDir, 'package.json'), 'utf8'));
 const appVersion = String(packageJson.version);
 const contractFile = `contracts/kh-checker-api-config-user-needs-v${appVersion}.json`;
-const expectedGateway = String(process.env.VITE_DATA_GATEWAY_URL || '').trim();
+const rawExpectedGateway = String(process.env.VITE_DATA_GATEWAY_URL || '').trim();
+const expectedGateway = validatePublicGatewayUrl(rawExpectedGateway);
 
 function fail(message) {
   throw new Error(`GitHub-Pages-Prüfung fehlgeschlagen: ${message}`);
@@ -43,6 +45,7 @@ async function listFiles(directory, prefix = '') {
 
 const requiredFiles = [
   'index.html',
+  'app.css',
   'manifest.webmanifest',
   'sw.js',
   'API-DIAGNOSE.html',
@@ -92,20 +95,33 @@ if (!/apple-touch-icon/i.test(indexHtml)) fail('index.html bindet kein Apple-Tou
 
 if (!indexHtml.includes('Content-Security-Policy')) fail('index.html enthält keine statische Content-Security-Policy.');
 if (!indexHtml.includes('name="referrer" content="no-referrer"')) fail('index.html enthält keine no-referrer-Metaregel.');
+if (!indexHtml.includes('id="compatibility-fallback"')) fail('index.html enthält keinen statischen Altbrowser-Fallback.');
+if (!indexHtml.includes('id="vite-legacy-polyfill"') || !indexHtml.includes('id="vite-legacy-entry"')) {
+  fail('index.html bindet den kontrollierten Legacy-/Polyfill-Pfad nicht ein.');
+}
 
 const serviceWorker = await fs.readFile(path.join(pagesDir, 'sw.js'), 'utf8');
-for (const precached of ['index.html', 'API-DIAGNOSE.html', 'README-ERST-LESEN.html', 'api-diagnose.js', 'package-info.css', 'icons/apple-touch-icon.png', contractFile]) {
+for (const precached of ['index.html', 'app.css', 'API-DIAGNOSE.html', 'README-ERST-LESEN.html', 'api-diagnose.js', 'package-info.css', 'icons/apple-touch-icon.png', contractFile]) {
   if (!serviceWorker.includes(precached)) fail(`Service Worker precacht ${precached} nicht.`);
 }
 
 const jsFiles = (await listFiles(pagesDir)).filter((file) => file.endsWith('.js') && file.startsWith('assets/'));
 if (!jsFiles.length) fail('Kein gebautes JavaScript-Asset gefunden.');
+if (!jsFiles.some((file) => /(?:^|-)legacy(?:-|\.)/.test(path.basename(file)))) {
+  fail('Kein syntax-abgesenkter Legacy-Bundlepfad gefunden.');
+}
 const appJavaScript = (await Promise.all(jsFiles.map((file) => fs.readFile(path.join(pagesDir, file), 'utf8')))).join('\n');
-if (expectedGateway && !appJavaScript.includes(expectedGateway)) fail('Der statische Build enthält nicht die konfigurierte Gateway-URL.');
-if (!appJavaScript.includes('/api/search')) fail('Der statische Build enthält keinen Gateway-Suchpfad /api/search.');
-if (!appJavaScript.includes('/api/product/')) fail('Der statische Build enthält keinen Gateway-Produktpfad /api/product/.');
-if (appJavaScript.includes('/api/health')) fail('Der statische Build darf keinen automatischen Same-Origin-Gateway-Probe-Endpunkt enthalten.');
+if (rawExpectedGateway && !appJavaScript.includes(rawExpectedGateway)) fail('Der statische Build enthält nicht die konfigurierte Gateway-URL.');
+if (!appJavaScript.includes('/api/v1/search')) fail('Der statische Build enthält keinen versionierten Gateway-Suchpfad /api/v1/search.');
+if (!appJavaScript.includes('/api/v1/product/')) fail('Der statische Build enthält keinen versionierten Gateway-Produktpfad /api/v1/product/.');
 if (appJavaScript.includes('boost_phrase')) fail('Der statische App-Build soll keinen zusätzlichen Search-a-licious-Phrase-Boost senden.');
+for (const forbidden of [
+  'https://search.openfoodfacts.org',
+  'https://world.openfoodfacts.org/cgi/search.pl',
+  'https://world.openfoodfacts.org/api/'
+]) {
+  if (appJavaScript.includes(forbidden)) fail(`Direkter Browser-Upstream ist verboten: ${forbidden}`);
+}
 if (!appJavaScript.includes(appVersion)) fail(`Der App-Build enthält die package.json-Version ${appVersion} nicht.`);
 for (const forbidden of ['OPENAI_API_KEY', 'OFF_USER_AGENT', 'process.env.OFF_USER_AGENT']) {
   if (appJavaScript.includes(forbidden)) fail(`Server-/Secret-Konfiguration ist im statischen App-Build enthalten: ${forbidden}`);
@@ -113,18 +129,32 @@ for (const forbidden of ['OPENAI_API_KEY', 'OFF_USER_AGENT', 'process.env.OFF_US
 
 const diagnosticJavaScript = await fs.readFile(path.join(pagesDir, 'api-diagnose.js'), 'utf8');
 if (expectedGateway && !diagnosticJavaScript.includes(expectedGateway)) fail('Das Diagnosewerkzeug enthält nicht die konfigurierte Gateway-URL.');
-if (!diagnosticJavaScript.includes('/api/search')) fail('Das Diagnosewerkzeug prüft den Gateway-Suchpfad nicht.');
-if (!diagnosticJavaScript.includes('/api/product/')) fail('Das Diagnosewerkzeug prüft den Gateway-Produktpfad nicht.');
+if (!diagnosticJavaScript.includes('/api/v1/search')) fail('Das Diagnosewerkzeug prüft den versionierten Gateway-Suchpfad nicht.');
+if (!diagnosticJavaScript.includes('/api/v1/product/')) fail('Das Diagnosewerkzeug prüft den versionierten Gateway-Produktpfad nicht.');
+if (!diagnosticJavaScript.includes('/api/v1/health')) fail('Das Diagnosewerkzeug prüft den versionierten Gateway-Health-Vertrag nicht.');
+if (!diagnosticJavaScript.includes('^\\d{7,14}$')) fail('Das Diagnosewerkzeug akzeptiert den vertraglichen 7-stelligen UPC-E-Grenzfall nicht.');
 if (diagnosticJavaScript.includes('boost_phrase')) fail('Das Diagnosewerkzeug muss denselben kompakten Suchpfad ohne Phrase-Boost testen.');
 if (!diagnosticJavaScript.includes(`const APP_VERSION = '${appVersion}'`)) fail('Das Diagnosewerkzeug enthält nicht die aktuelle Paketversion.');
+for (const forbidden of [
+  'https://search.openfoodfacts.org',
+  'https://world.openfoodfacts.org/cgi/search.pl',
+  'https://world.openfoodfacts.org/api/'
+]) {
+  if (diagnosticJavaScript.includes(forbidden)) fail(`Das Diagnosewerkzeug umgeht den Gateway: ${forbidden}`);
+}
 
 const contract = JSON.parse(await fs.readFile(path.join(pagesDir, contractFile), 'utf8'));
 if (contract?.application?.version !== appVersion) fail('Der maschinenlesbare Runtime-Vertrag enthält nicht die aktuelle App-Version.');
 const generator = contract?.qualityAndTooling?.generatorPipeline;
 if (generator?.authoritativeInput !== 'contracts/source/search-api.contract.mjs') fail('Der Runtime-Vertrag nennt nicht die kanonische Generatorquelle.');
 if (generator?.clientGenerator !== 'Orval fetch') fail('Der Runtime-Vertrag nennt nicht den Orval-Fetch-Generator.');
+if (contract?.architecture?.portableGatewayRuntime !== 'node-express-container'
+  || contract?.architecture?.optionalAdapters?.length !== 0) {
+  fail('Der Runtime-Vertrag enthält einen nicht gepflegten Plattformadapter.');
+}
 const openapi = JSON.parse(await fs.readFile(path.join(pagesDir, 'api-docs/search-api.openapi.json'), 'utf8'));
 if (openapi?.openapi !== '3.1.0' || openapi?.info?.version !== appVersion) fail('Die eingebettete OpenAPI-Datei passt nicht zur App-Version.');
 if (openapi?.['x-kh-generator']?.maximumDirectSearchBackendsPerAction !== 2) fail('Die OpenAPI-KH-Regel für maximal zwei Suchbackends fehlt.');
+if (openapi?.['x-kh-generator']?.browserUpstreamPolicy !== 'gateway-only') fail('Die OpenAPI-KH-Regel für Gateway-only fehlt.');
 
 console.log(`GitHub-Pages-Build v${appVersion} geprüft: ${htmlFiles.length} HTML-Dateien, ${referenceCount} lokale/externe Referenzen, ${manifest.icons.length} Manifest-Icons, precachte Begleitseiten und Gateway-only API-Pfade sind vorhanden.`);

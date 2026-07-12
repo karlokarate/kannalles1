@@ -21,6 +21,7 @@ export type SearchOutcomeStatus =
 
 export type ApiBackend =
   | 'gateway'
+  | 'search-index'
   | 'search-a-licious'
   | 'open-food-facts-legacy'
   | 'open-food-facts-v3'
@@ -65,6 +66,8 @@ export interface ApiResponseMeta {
   durationMs?: number;
   cacheAgeMs?: number;
   cacheKey?: string;
+  cacheLayer?: 'none' | 'browser-memory' | 'browser-indexeddb' | 'browser-localstorage' | 'gateway-memory' | 'gateway-redis';
+  gatewayCacheStatus?: 'network' | 'fresh-cache' | 'stale-cache';
   attempts?: ApiAttemptDiagnostic[];
   /** Why cached data or a secondary backend was used. */
   fallbackReason?: 'offline' | 'rate-limit' | 'network' | 'timeout' | 'http' | 'parse' | 'empty-result';
@@ -142,7 +145,7 @@ export interface SearchResponse {
   warnings?: unknown[] | null;
   errors?: unknown[];
   api_meta?: ApiResponseMeta;
-  source?: 'gateway' | 'search-a-licious' | 'open-food-facts-legacy' | 'none';
+  source?: 'gateway' | 'search-index' | 'search-a-licious' | 'open-food-facts-legacy' | 'none';
   gateway_attempts?: ApiAttemptDiagnostic[];
   query_used?: string;
 }
@@ -158,7 +161,7 @@ export interface SearchOutcomeDiagnostics {
   cacheStatus: 'none' | 'fresh-cache' | 'stale-cache' | 'network';
   attempts: ApiAttemptDiagnostic[];
   retryAllowedImmediately: true;
-  errorKind?: 'http' | 'rate-limit' | 'network' | 'timeout' | 'parse' | 'aborted';
+  errorKind?: 'configuration' | 'http' | 'rate-limit' | 'network' | 'timeout' | 'parse' | 'aborted';
   statusCode?: number;
   message?: string;
   retryAt?: string;
@@ -185,7 +188,7 @@ export interface OffProduct {
   product_name_de?: string;
   generic_name?: string;
   generic_name_de?: string;
-  brands?: string;
+  brands?: string | string[];
   quantity?: string;
   product_quantity?: number | string;
   product_quantity_unit?: string;
@@ -275,6 +278,10 @@ export interface CalculationResult {
   confidence: Confidence;
   sourceLabel: string;
   methodLabel: string;
+  /** Immutable upstream data timestamp captured when this result was created. */
+  dataFetchedAt: string | null;
+  /** Browser/gateway cache age in milliseconds at calculation time. */
+  dataCacheAgeMs: number | null;
   sampleSize: number | null;
   middleRange: { from: number; to: number } | null;
   candidates: SearchHit[];
@@ -291,17 +298,24 @@ export interface ManualFormValues {
   unit: FoodUnit;
   barcode: string;
   unitWeightG: number | null;
-  carbsPer100g: number | null;
+  /** Nutrition reference printed on the label. */
+  nutritionBasis: '100g' | '100ml';
+  carbsPer100: number | null;
 }
 
 export interface AppSettings {
   aiEnabled: boolean;
-  aiParseUrl: string;
   decimalPlaces: 0 | 1 | 2;
   searchPageSize: 10 | 15 | 20;
   preferGermanMarket: boolean;
   saveHistory: boolean;
-  /** Optional compatibility gateway; the default PWA path calls OFF directly. */
+  /** Persist the current query/result screen across reloads on this device. */
+  saveSearchSession: boolean;
+  /** Persist user-entered unit calibrations for later calculations. */
+  saveCalibrations: boolean;
+  /** Persist API responses for offline use. Network access still requires the gateway. */
+  cacheApiData: boolean;
+  /** Required for network search; manual and previously cached flows remain local. */
   dataGatewayUrl: string;
   /** Product detail strategy: hybrid (v3->v2), v3-only, or v2-only. */
   productApiMode: ProductApiMode;

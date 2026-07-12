@@ -19,14 +19,17 @@
     "contracts/calibration-persistence.contract.json": "Speicherung und Wiederverwendung",
     "contracts/ui-behavior.contract.json": "Verbindliches UI-Verhalten",
     "schemas/search-outcome.schema.json": "Schema für Suchergebnisse",
+    "schemas/search-workflow-state.schema.json": "Schema der typisierten Search/Result-State-Machine",
     "schemas/calculation-result.schema.json": "Schema für Ergebnis und Einheitenauswahl",
     "schemas/piece-calibration.schema.json": "Schema für gespeicherte Kalibrierungen",
     "implementation/current-code-gap-map.json": "Abgleich mit dem hochgeladenen Stand",
     "implementation/migration-plan.json": "Datenbank- und Code-Migration",
-    "reference/target-types.ts": "Referenztypen",
-    "reference/core-algorithms.ts": "Referenzalgorithmen",
-    "tests/acceptance-cases.json": "Maschinenlesbare Abnahmetests",
-    "tests/core-contract.test.ts": "Ausführbare Vitest-Referenztests",
+    "reference/target-types.ts": "Historischer Migrationskontext; nicht ausführbar/normativ",
+    "reference/core-algorithms.ts": "Historischer Migrationskontext; Tests müssen Produktionscode importieren",
+    "tests/acceptance-cases.json": "Maschinenlesbare Abnahmefixtures; ausführbar erst durch die Case-ID-Bindungen im Integrity-Test",
+    "tests/acceptance-integrity.test.ts": "Jede Acceptance-Case-ID ist an einen real ausgeführten Produktionspfad gebunden",
+    "tests/core-contract.test.ts": "Zusätzliche ausführbare Vitest-Vertragstests gegen Produktionsmodule",
+    "tests/normative-contract-consistency.test.ts": "Schützt Gateway-only-, Cache-Identity- und ehrliche Kalibrierungs-UI-Verträge vor Regression",
     "release/production-gates.json": "Freigabekriterien"
   }
 }

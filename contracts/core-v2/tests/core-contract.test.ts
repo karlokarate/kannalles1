@@ -1,52 +1,38 @@
 import { describe, expect, it } from 'vitest';
 import {
   calibrationLookupKeys,
-  chooseDefaultUnitOption,
+  createPieceCalibration,
   deriveGroupCalibration,
   selectCalibration
-} from '../reference/core-algorithms';
-import type { PieceCalibrationV2, UnitOptionV2 } from '../reference/target-types';
+} from '../../../src/lib/calibration';
+import {
+  createSearchWorkflowState,
+  currentWorkflowIssue,
+  searchWorkflowReducer
+} from '../../../src/lib/searchState';
+import type { PieceCalibration } from '../../../src/types';
 
 describe('KH Checker core contracts', () => {
   it('derives a deterministic unit weight and carbohydrate amount from group weighing', () => {
     const result = deriveGroupCalibration(10, 24, 12, 72);
+    expect(result).not.toBeNull();
     expect(result.unitWeightG).toBeCloseTo(2.4, 10);
     expect(result.carbsPerUnitG).toBeCloseTo(1.728, 10);
     expect(result.requestedTotalWeightG).toBeCloseTo(28.8, 10);
     expect(result.requestedTotalCarbsG).toBeCloseTo(20.736, 10);
   });
 
-  it('prefers a proven smallest edible unit before the package', () => {
-    const options: UnitOptionV2[] = [
-      {
-        id: 'package', unit: 'package', label: 'Packung',
-        unitWeightG: 43, source: 'package', confidence: 'high',
-        recommended: false, smallestEdibleUnit: false, priority: 90
-      },
-      {
-        id: 'bar', unit: 'bar', label: 'Riegel',
-        unitWeightG: 21.5, source: 'explicit-multipack', confidence: 'high',
-        recommended: true, smallestEdibleUnit: true, priority: 40
-      }
-    ];
-    expect(chooseDefaultUnitOption(options, 'portion', false, 'countable')?.id).toBe('bar');
-  });
-
-  it('does not silently replace an explicit piece request', () => {
-    const options: UnitOptionV2[] = [
-      {
-        id: 'portion', unit: 'portion', label: 'Portion',
-        unitWeightG: 30, source: 'manufacturer-serving', confidence: 'medium',
-        recommended: false, smallestEdibleUnit: false, priority: 80
-      }
-    ];
-    expect(chooseDefaultUnitOption(options, 'piece', true, 'countable')).toBeNull();
+  it('never persists a package as a piece calibration', () => {
+    expect(createPieceCalibration({
+      productName: 'Kinder Bueno', unit: 'package', measuredCount: 1,
+      measuredTotalWeightG: 43
+    })).toBeNull();
   });
 
   it('builds calibration lookup keys from most to least specific', () => {
     expect(calibrationLookupKeys({
-      canonicalName: 'salzstangen',
-      brandCanonical: 'snack-day',
+      productName: 'Salzstangen',
+      brand: 'Snack Day',
       barcode: '12345678',
       unit: 'piece',
       allowGenericScope: true
@@ -80,7 +66,7 @@ describe('KH Checker core contracts', () => {
       active: true
     };
 
-    const records: PieceCalibrationV2[] = [
+    const records: PieceCalibration[] = [
       { ...base, calibrationId: 'generic', scope: 'generic_food', scopeKey: 'generic:salzstangen|piece' },
       {
         ...base,
@@ -92,5 +78,15 @@ describe('KH Checker core contracts', () => {
       }
     ];
     expect(selectCalibration(records)?.calibrationId).toBe('barcode');
+  });
+
+  it('represents offline/configuration issues in the production state machine', () => {
+    const issue = {
+      kind: 'offline' as const,
+      title: 'Offline', message: 'Keine Netzwerkdaten verfügbar.', technical: 'offline',
+      attempts: [], occurredAt: '2026-07-12T00:00:00.000Z', retryLabel: 'Erneut prüfen'
+    };
+    const state = searchWorkflowReducer(createSearchWorkflowState(), { type: 'issue', issue });
+    expect(currentWorkflowIssue(state)).toEqual(issue);
   });
 });
