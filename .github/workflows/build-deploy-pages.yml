@@ -40,8 +40,8 @@ jobs:
           )
           for patch_file in "${patches[@]}"; do
             test -f "$patch_file"
-            git apply --check "$patch_file"
-            git apply "$patch_file"
+            git apply --recount --check "$patch_file"
+            git apply --recount "$patch_file"
           done
           ! grep -q 'setSearchBlockedUntil' src/App.tsx
           ! grep -q 'Warte ${formatCountdown' src/App.tsx
