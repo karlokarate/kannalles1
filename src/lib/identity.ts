@@ -10,6 +10,11 @@ interface GenericIdentityProfile {
 
 const GENERIC_IDENTITY_PROFILES: GenericIdentityProfile[] = [
   {
+    queryPattern: /\b(erdnuss\w*|peanuts?)\b/,
+    identityPattern: /\b(erdnuss\w*|peanuts?)\b/,
+    exclusions: /\b(erdnussbutter|peanut butter|creme|aufstrich|sauce|flips|schokolade|chocolate|riegel|bars?|kuchen|cake|kekse?|cookies?|mix|trail mix|wasabi|ummantelt|coated)\b/
+  },
+  {
     queryPattern: /\b(salzstange\w*|salzstick\w*|pretzel sticks?)\b/,
     identityPattern: /\b(salzstange\w*|salzstick\w*|pretzel sticks?)\b/,
     exclusions: /\b(cracker|vollkorn|wholegrain|sesam|sesame|paprika|dinkel|spelt|glutenfrei|gluten-free|mini|supersize|mix|protein)\b/
@@ -36,7 +41,7 @@ const GENERIC_IDENTITY_PROFILES: GenericIdentityProfile[] = [
   }
 ];
 
-const GENERIC_FOOD_TERMS = /\b(salzstange\w*|salzstick\w*|nudel\w*|pasta|spaghetti|reis|brot|toastbrot|toast|mehrkornbrot|broetchen|brotchen|brötchen|cookies?|kekse?|cookie|cracker|apfel|aepfel|äpfel|banane|kartoffel\w*|couscous|bulgur|quinoa|linse\w*|bohne\w*|kichererbse\w*|milch|joghurt|kaese|käse|haferflocken|muesli|musli)\b/;
+const GENERIC_FOOD_TERMS = /\b(erdnuss\w*|peanuts?|salzstange\w*|salzstick\w*|nudel\w*|pasta|spaghetti|reis|brot|toastbrot|toast|mehrkornbrot|broetchen|brotchen|brötchen|cookies?|kekse?|cookie|cracker|apfel|aepfel|äpfel|banane|kartoffel\w*|couscous|bulgur|quinoa|linse\w*|bohne\w*|kichererbse\w*|milch|joghurt|kaese|käse|haferflocken|muesli|musli)\b/;
 
 const VARIANT_PATTERNS: Array<{ id: string; pattern: RegExp }> = [
   { id: 'mini', pattern: /\b(mini|minis|miniatur)\b/ },
