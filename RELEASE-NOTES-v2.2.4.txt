@@ -23,7 +23,7 @@ Release mit harter Sicherheitsgrenze
 ------------------------------------
 - nur ein vollständig bestandener, aus aktuellem Source neu gebauter Kandidat darf veröffentlicht werden
 - Traversal, Symlinks, Verschlüsselung, Zip-Bomb-Muster, Checksummenlücken, Secrets, JAR/AAR/APK, Server- und Datenbankartefakte blockieren hart
-- finales Pages-Verzeichnis wird nach Auswahl nochmals per PWA-, Unterpfad- und HTTP-Smoke geprüft
+- Pages deployt direkt das vom Produktionsbuild erzeugte `dist/`; umfassende Tests und Releasevalidierung sind bewusst kein Bestandteil dieses schnellen Deploy-Workflows
 
 Qualität
 --------
@@ -37,7 +37,7 @@ Qualität
 - Node, Redis, Search-a-licious API/Updater und Elasticsearch sind per Tag und OCI-Digest fixiert; unnötige Such-/Admin-UIs laufen nicht im Produktionsdefault
 - getrennte Redis-Dienste: Koordination mit `noeviction`/fail-closed, Antwortcache mit `allkeys-lru`/fail-soft und ein eigener persistenter Search-a-licious-Eventstream
 - Search-a-licious-Updater nur im expliziten `search-updates`-Profil und erst nach Anbindung eines Product-Opener-Producers
-- Pages-main ist zwingend `full-app`: HTTPS-Gateway, verteilte Koordination, eigener Index und reale Such-Canary; PR/lokal bleibt explizit `manual-only`
+- Pages-main deployt auch ohne Gateway als manuell/offline nutzbare PWA; die optionale Repository-Variable `DATA_GATEWAY_URL` aktiviert beim Build die vollständige Gateway-Suche
 - Production verlangt einen separaten `GATEWAY_CLIENT_SALT`; pseudonyme IP-Budgets begrenzen standardmäßig 6 Suchen/10 Produktaufrufe je Minute und teilen sich bewusst hinter NAT/VPN
 - Paid-AI kombiniert Minutenlimits (global 30/Nutzer 6) mit rollierenden 24-h-Kostenbudgets (global 300/Nutzer 30), fail-closed in der Koordinations-Redis
 

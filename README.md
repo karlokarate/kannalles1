@@ -78,7 +78,7 @@ Vercel ist weder Laufzeit- noch Deploymentabhängigkeit. Die frühere Plattformk
 
 ## Statisches PWA-Deployment
 
-`VITE_DATA_GATEWAY_URL=https://gateway.example.org` bindet das Gateway beim Build ein. Ein leerer Wert ist zulässig und erzeugt das explizite Profil `manual-only`: manuell/offline nutzbar, aber ohne globale Netzwerksuche. Ein vollständiges Release verwendet `RELEASE_DEPLOYMENT_PROFILE=full-app`, verlangt eine öffentliche HTTPS-Gateway-URL und besteht vor dem Deploy Health, verteilte Koordination, eigenen Index sowie eine echte `search_api=search-index`-Canary. Das Release-Gate verbietet direkte OFF-/Search-a-licious-API-URLs im Browserbundle.
+`VITE_DATA_GATEWAY_URL=https://gateway.example.org` bindet das Gateway beim Build ein. Ein leerer Wert ist zulässig und erzeugt eine installierbare, manuell/offline nutzbare PWA ohne globale Netzwerksuche. Ein vollständiges Release kann weiterhin separat mit `RELEASE_DEPLOYMENT_PROFILE=full-app` und den dafür vorgesehenen Live-Gates abgenommen werden. Direkte OFF-/Search-a-licious-API-URLs bleiben im Browserbundle verboten.
 
 ```sh
 npm run build
@@ -86,7 +86,15 @@ npm run check:pages
 npm run release
 ```
 
-Der Pages-Workflow veröffentlicht nur ein aus dem aktuellen Source-Stand neu gebautes und validiertes Artefakt. Auf `main` ist `vars.DATA_GATEWAY_URL` verpflichtend; ein leerer oder nicht erreichbarer Wert kann nicht als Full-App deployt werden. Pull Requests und lokale gatewayfreie Builds werden dagegen ausdrücklich als `manual-only` geprüft und gekennzeichnet.
+Der Pages-Workflow ist bewusst ein schlanker Deploymentpfad: Lockfile installieren, Produktions-PWA bauen, `dist/` hochladen und deployen. Er wiederholt weder Unit-/Browser-/Container-/Securitytests noch den separaten Releasebau. Ohne Repository-Variable `DATA_GATEWAY_URL` wird die manuell/offline nutzbare PWA veröffentlicht; mit einer öffentlichen HTTPS-URL wird dieselbe PWA als vollständige Gateway-App gebaut. Die alte Variable `VITE_DATA_GATEWAY_URL` wird vom Workflow nicht verwendet.
+
+```sh
+# Optional, sobald ein öffentliches HTTPS-Gateway existiert:
+gh variable set DATA_GATEWAY_URL --body https://gateway.example.org
+gh workflow run build-deploy-pages.yml
+```
+
+Die veröffentlichte URL ist `https://karlokarate.github.io/kannalles1/` und wird zusätzlich in der Deployment-Zusammenfassung des Workflows ausgegeben.
 
 ## Browser- und Geräte-Support
 
