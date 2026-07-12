@@ -16,6 +16,7 @@ import {
   Home,
   Info,
   LoaderCircle,
+  Mail,
   Mic,
   Package,
   Search,
@@ -99,6 +100,7 @@ type Tab = 'search' | 'history' | 'favorites' | 'settings';
 type SearchView = 'home' | 'candidates' | 'result';
 
 const APP_VERSION = __APP_VERSION__;
+const DEVELOPER_SUPPORT_EMAIL = 'chrisfischtopher@googlemail.com';
 const MAX_SEARCH_QUERY_LENGTH = 120;
 const SESSION_KEY = 'kh-checker-v2.0-session';
 const RATE_LIMIT_DEFAULT_BLOCK_MS = 60 * 1000;
@@ -371,6 +373,56 @@ function diagnosticsText(issue: UiIssue): string {
     technical: issue.technical,
     attempts: issue.attempts
   }, null, 2);
+}
+
+function diagnosticsBundleText(
+  issue: UiIssue | null,
+  apiTrace: ApiTraceNotice | null,
+  apiUsage: ApiUsageSnapshot
+): string {
+  return JSON.stringify({
+    appVersion: APP_VERSION,
+    createdAt: new Date().toISOString(),
+    online: typeof navigator === 'undefined' ? null : navigator.onLine,
+    page: typeof window === 'undefined' ? null : window.location.href,
+    issue: issue
+      ? {
+          occurredAt: issue.occurredAt,
+          title: issue.title,
+          message: issue.message,
+          technical: issue.technical,
+          attempts: issue.attempts
+        }
+      : null,
+    apiTrace: apiTrace
+      ? {
+          label: apiTrace.label,
+          observedAt: apiTrace.observedAt,
+          meta: apiTrace.meta
+        }
+      : null,
+    apiUsage
+  }, null, 2);
+}
+
+function diagnosticsMailtoHref(
+  issue: UiIssue | null,
+  apiTrace: ApiTraceNotice | null,
+  apiUsage: ApiUsageSnapshot
+): string {
+  const subject = issue ? `KH Checker Diagnose: ${issue.title}` : 'KH Checker Diagnosebericht';
+  const body = [
+    'Hallo,',
+    '',
+    'anbei die automatisch gesammelten Diagnose- und Fehlerdaten.',
+    '',
+    '```json',
+    diagnosticsBundleText(issue, apiTrace, apiUsage),
+    '```',
+    '',
+    'Viele Gruesse'
+  ].join('\n');
+  return `mailto:${DEVELOPER_SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 async function copyText(value: string): Promise<void> {
@@ -1426,21 +1478,33 @@ function SettingsScreen({
   settings,
   apiUsage,
   cacheStats,
+  issue,
+  apiTrace,
   onChange,
   onClearHistory,
   onClearCalibrations,
-  onClearApiCache
+  onClearApiCache,
+  onSendDiagnosticsMail
 }: {
   settings: AppSettings;
   apiUsage: ApiUsageSnapshot;
   cacheStats: ApiCacheStats;
+  issue: UiIssue | null;
+  apiTrace: ApiTraceNotice | null;
   onChange: (settings: AppSettings) => void;
   onClearHistory: () => void;
   onClearCalibrations: () => void;
   onClearApiCache: () => void;
+  onSendDiagnosticsMail: () => void;
 }) {
   const patch = (next: Partial<AppSettings>) => onChange({ ...settings, ...next });
   const gatewayValidation = requiredGatewayEndpoint(settings.dataGatewayUrl);
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    await copyText(diagnosticsBundleText(issue, apiTrace, apiUsage));
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1_600);
+  };
   return (
     <div className="screen-content settings-screen">
       <section className="list-heading">
@@ -1529,6 +1593,39 @@ function SettingsScreen({
           Gleiche und typografisch gleichwertige Suchbegriffe werden über einen backend-unabhängigen Schlüssel wiederverwendet. Treffer bleiben 24 Stunden frisch und bis zu 30 Tage als Ausfallreserve; Produktdetails 30 beziehungsweise 180 Tage. Retry-After wird als temporäre Suchpause übernommen.
         </p>
         <button type="button" className="secondary-button" onClick={onClearApiCache}>API-Zwischenspeicher leeren</button>
+        <details className="api-diagnostics" open={Boolean(issue || apiTrace)}>
+          <summary>
+            Diagnose & Fehlerbericht {issue ? '(aktueller Fehler)' : apiTrace ? '(letzter API-Lauf)' : '(bereit)'} <ChevronDown size={17} />
+          </summary>
+          {issue ? (
+            <>
+              <p className="diagnostic-context">
+                {new Date(issue.occurredAt).toLocaleString('de-DE')} · Browser online: {navigator.onLine ? 'ja' : 'nein'} · App v{APP_VERSION}
+              </p>
+              <div className="api-issue-technical">
+                <span>{issue.title}</span>
+                <code>{issue.technical}</code>
+              </div>
+            </>
+          ) : (
+            <p className="setting-note">Es liegt aktuell kein aktiver Fehler vor. Ein Diagnosebericht kann trotzdem gesendet werden.</p>
+          )}
+          {apiTrace && (
+            <p className="setting-note">
+              Letzter Lauf: {apiTrace.label} · Quelle: {backendLabel(apiTrace.meta.originBackend ?? apiTrace.meta.backend)}
+            </p>
+          )}
+          {issue?.attempts?.length ? <AttemptDiagnostics attempts={issue.attempts} /> : null}
+          {!issue?.attempts?.length && apiTrace?.meta.attempts?.length ? <AttemptDiagnostics attempts={apiTrace.meta.attempts} /> : null}
+          <div className="api-issue-actions">
+            <button type="button" className="primary-button compact" onClick={onSendDiagnosticsMail}>
+              <Mail size={16} /> Diagnose per E-Mail senden
+            </button>
+            <button type="button" className="secondary-button compact" onClick={() => { void copy(); }}>
+              <Copy size={16} /> {copied ? 'Kopiert' : 'Diagnose kopieren'}
+            </button>
+          </div>
+        </details>
       </section>
 
       <section className="settings-card card danger-zone">
@@ -2379,18 +2476,6 @@ export default function App() {
     <div className="app-shell">
       <main className="app-main">
         {tab === 'search' && <SearchHeader onHistory={() => setTab('history')} />}
-        {issue && (
-          <ApiIssueBanner
-            issue={issue}
-            onDismiss={() => { setIssue(null); retryActionRef.current = null; }}
-            onRetry={() => {
-              const retry = retryActionRef.current;
-              setIssue(null);
-              retry?.();
-            }}
-          />
-        )}
-        {!issue && apiTrace && <ApiTraceBanner notice={apiTrace} onDismiss={() => setApiTrace(null)} />}
 
         {tab === 'search' && searchView === 'home' && (
           <HomeScreen
@@ -2445,6 +2530,8 @@ export default function App() {
             settings={settings}
             apiUsage={apiUsage}
             cacheStats={cacheStats}
+            issue={issue}
+            apiTrace={apiTrace}
             onChange={setSettings}
             onClearHistory={async () => { await clearHistory(); await refreshHistory(); }}
             onClearCalibrations={async () => { await clearCalibrations(); }}
@@ -2469,6 +2556,9 @@ export default function App() {
               setApiTrace(null);
               setIssue(null);
               retryActionRef.current = null;
+            }}
+            onSendDiagnosticsMail={() => {
+              window.location.href = diagnosticsMailtoHref(issue, apiTrace, apiUsage);
             }}
           />
         )}
