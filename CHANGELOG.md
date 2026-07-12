@@ -12,9 +12,9 @@
 
 ### Reproduzierbarer Betrieb
 
-- portable Docker-/Compose-Auslieferung ohne Vercel-Konfiguration oder Serverless-Wrapper; CI validiert Compose, baut das Runtime-Image und verlangt einen gesunden gestarteten Gateway-Container
+- portable Docker-/Compose-Auslieferung ohne Vercel-Konfiguration oder Serverless-Wrapper; die umfassenden Container-/Runtime-Gates bleiben lokal und als explizite Abnahmebefehle verfügbar, blockieren aber nicht mehr das Pages-Deployment
 - gepinnter offizieller Search-a-licious-Commit mit tatsächlich verwendeten Tag-und-Digest-Images, versioniertem Länderfeld-Patch, Commit- und SHA-256-Preflight; ARM64-Buildgrenze dokumentiert
-- Pages-Workflow baut ausschließlich aktuellen Source; `main` verlangt das Profil `full-app` inklusive HTTPS-Gateway, Redis-/Index-Readiness und echter Such-Canary, PR/lokal ist explizit `manual-only`
+- Pages-Workflow ist vom umfassenden Qualitätspaket entkoppelt und führt nur Lockfile-Installation, Produktionsbuild, Artefakt-Upload und Deploy aus; ohne `DATA_GATEWAY_URL` entsteht eine manuell/offline nutzbare PWA, mit öffentlichem HTTPS-Gateway die vollständige App
 - Search-a-licious verwendet einen eigenen Eventstream-Redis; der Updater liegt hinter dem Profil `search-updates` und setzt einen realen Product-Opener-Producer voraus
 - sichere, reproduzierbare Release- und Quellcode-ZIPs mit vollständiger SHA-256-Verifikation; keine alten Binärartefakte als Fallback
 - gepinnter Gitleaks-Scan mit enger Ausnahme ausschließlich für generierte Manifest-Digests

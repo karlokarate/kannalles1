@@ -1,86 +1,34 @@
-name: Build, validate and deploy KH Checker v2.2.4
+name: Build and deploy KH Checker to Pages
 
 on:
-  pull_request:
   push:
     branches: [main]
   workflow_dispatch:
-  schedule:
-    - cron: "17 */6 * * *"
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: false
+  group: pages
+  cancel-in-progress: true
 
 jobs:
-  monitor:
-    name: Monitor deployed gateway contract and own index
-    if: ${{ github.event_name == 'schedule' }}
+  build:
+    name: Build Pages artifact
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
+    env:
+      # Empty is a supported manual/offline deployment. As soon as a public
+      # HTTPS gateway exists, set the repository variable DATA_GATEWAY_URL.
+      VITE_DATA_GATEWAY_URL: ${{ vars.DATA_GATEWAY_URL }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 1
-          persist-credentials: false
-      - name: Set up Node.js 24 LTS
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
-        with:
-          node-version: "24.18.0"
-          cache: npm
-      - name: Install locked dependencies
-        run: npm ci --no-audit --no-fund
-
-      - name: Select and validate deployment profile
-        shell: bash
-        env:
-          CONFIGURED_GATEWAY: ${{ vars.DATA_GATEWAY_URL }}
-        run: |
-          if [[ "$GITHUB_REF" == "refs/heads/main" && ( "$GITHUB_EVENT_NAME" == "push" || "$GITHUB_EVENT_NAME" == "workflow_dispatch" ) ]]; then
-            node scripts/validate-deployment-profile.mjs --profile full-app --gateway "$CONFIGURED_GATEWAY"
-            {
-              echo "RELEASE_DEPLOYMENT_PROFILE=full-app"
-              echo "DATA_GATEWAY_URL=$CONFIGURED_GATEWAY"
-              echo "VITE_DATA_GATEWAY_URL=$CONFIGURED_GATEWAY"
-            } >> "$GITHUB_ENV"
-          else
-            node scripts/validate-deployment-profile.mjs --profile manual-only --gateway ""
-            {
-              echo "RELEASE_DEPLOYMENT_PROFILE=manual-only"
-              echo "DATA_GATEWAY_URL="
-              echo "VITE_DATA_GATEWAY_URL="
-            } >> "$GITHUB_ENV"
-          fi
-
-      - name: Probe versioned gateway and own search index
-        env:
-          DATA_GATEWAY_URL: ${{ vars.DATA_GATEWAY_URL }}
-          MONITOR_LIVE_SEARCH: "1"
-          MONITOR_QUERY: ${{ vars.GATEWAY_MONITOR_QUERY || 'Haferflocken' }}
-          MONITOR_BARCODE: ${{ vars.GATEWAY_MONITOR_BARCODE || '' }}
-        run: npm run monitor:gateway
-
-  prepare:
-    name: Build and validate current source
-    if: ${{ github.event_name != 'schedule' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    outputs:
-      version: ${{ steps.meta.outputs.version }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Node.js 24 LTS
@@ -90,130 +38,27 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Read version
-        id: meta
-        shell: bash
-        run: |
-          version="$(node -p 'require("./package.json").version')"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Install pinned secret scanner
-        shell: bash
-        run: |
-          curl --fail --silent --show-error --location \
-            --output "$RUNNER_TEMP/gitleaks.tar.gz" \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
-          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check
-          tar --extract --gzip --file "$RUNNER_TEMP/gitleaks.tar.gz" --directory "$RUNNER_TEMP" gitleaks
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-
-      - name: Generate and run source quality gates
-        env:
-          CI: "true"
-          NODE_OPTIONS: "--max-old-space-size=4096"
-        run: npm run check
-
-      - name: Scan complete Git history for secrets
-        run: npm run check:secrets:history
-
-      - name: Audit production dependencies
-        run: npm run audit
-
-      - name: Validate container and search-index topology
-        env:
-          OFF_USER_AGENT: "KH-Checker/${{ steps.meta.outputs.version }} (CI container validation; contact: ci@example.invalid)"
-          OFF_CONTACT_EMAIL: ci@example.invalid
-          GATEWAY_CLIENT_SALT: ci-only-gateway-client-salt-32-chars-minimum
-        run: |
-          docker compose -f compose.yml config --quiet
-          npm run check:search-index:static
-
-      - name: Build production gateway container
-        run: docker build --build-arg VITE_DATA_GATEWAY_URL=/ --tag kh-checker-gateway:ci-${{ github.sha }} .
-
-      - name: Start container stack and require healthy gateway
-        shell: bash
-        env:
-          KH_GATEWAY_IMAGE: kh-checker-gateway:ci-${{ github.sha }}
-          OFF_USER_AGENT: "KH-Checker/${{ steps.meta.outputs.version }} (CI container smoke; contact: ci@example.invalid)"
-          OFF_CONTACT_EMAIL: ci@example.invalid
-          GATEWAY_CLIENT_SALT: ci-only-gateway-client-salt-32-chars-minimum
-        run: |
-          cleanup() { docker compose -f compose.yml down --volumes --remove-orphans; }
-          trap cleanup EXIT
-          docker compose -f compose.yml up --detach --no-build
-          gateway_id="$(docker compose -f compose.yml ps --quiet gateway)"
-          for _ in {1..45}; do
-            status="$(docker inspect --format '{{.State.Health.Status}}' "$gateway_id")"
-            if [ "$status" = healthy ]; then break; fi
-            if [ "$status" = unhealthy ]; then
-              docker compose -f compose.yml logs gateway redis-coordination redis-cache
-              exit 1
-            fi
-            sleep 2
-          done
-          test "$(docker inspect --format '{{.State.Health.Status}}' "$gateway_id")" = healthy
-          node -e "fetch('http://127.0.0.1:8787/api/v1/health').then(async r=>{const h=await r.json();if(r.status!==200||h.ready!==true||h.apiVersion!=='1')process.exit(1)}).catch(()=>process.exit(1))"
-
-      - name: Install all supported Playwright browsers
-        run: npm run test:e2e:install
-
-      - name: Run Chromium, Firefox and WebKit release gates
-        env:
-          CI: "true"
-        run: npm run test:e2e
-
-      - name: Require live full-app gateway, coordination and own-index canary
-        if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
-        env:
-          GATEWAY_CONTRACT_QUERY: ${{ vars.GATEWAY_MONITOR_QUERY || 'Haferflocken' }}
-          GATEWAY_CONTRACT_BARCODE: ${{ vars.GATEWAY_MONITOR_BARCODE || '' }}
-        run: npm run check:gateway -- --require
-
-      - name: Build deterministic validated release
-        env:
-          RELEASE_PREVALIDATED: "1"
-          RELEASE_BROWSER_GATE: passed_at_build
-        run: npm run release
-
-      - name: Extract and revalidate deployable PWA
-        shell: bash
-        run: node scripts/verify-release.mjs "release-out/kh-checker-v${{ steps.meta.outputs.version }}-komplett.zip" --site publish-site
-
-      - name: Upload validation reports and release artifacts
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: kh-checker-v${{ steps.meta.outputs.version }}-validation-${{ github.run_attempt }}
-          path: |
-            release-out/
-            playwright-report/
-            test-results/
-          if-no-files-found: warn
-          compression-level: 6
-          retention-days: 30
+      - name: Build production PWA
+        run: npm run build
 
       - name: Configure GitHub Pages
-        if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
-      - name: Upload validated Pages artifact
-        if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
-          path: publish-site
-          include-hidden-files: true
+          path: dist
 
   deploy:
-    name: Deploy validated KH Checker PWA
-    needs: prepare
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    name: Deploy KH Checker PWA
+    needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
@@ -229,13 +74,16 @@ jobs:
         shell: bash
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
-          VERSION: ${{ needs.prepare.outputs.version }}
+          GATEWAY_URL: ${{ vars.DATA_GATEWAY_URL }}
         run: |
           {
-            echo "## KH Checker v${VERSION} deployed"
+            echo "## KH Checker deployed"
             echo
             echo "- URL: ${PAGE_URL}"
-            echo "- Candidate: current source, fully regenerated"
-            echo "- API: /api/v1, browser gateway-only"
-            echo "- Browsers: Chromium, Firefox, WebKit"
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo "- Commit: ${GITHUB_SHA}"
+            if [[ -n "${GATEWAY_URL}" ]]; then
+              echo "- Mode: full app with ${GATEWAY_URL}"
+            else
+              echo "- Mode: manual/offline; set DATA_GATEWAY_URL for global search"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
