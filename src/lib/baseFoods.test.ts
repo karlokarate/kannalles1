@@ -17,4 +17,13 @@ import { getBaseFoodReference } from './baseFoods';
     expect(getBaseFoodReference('Edamame Spaghetti')).toBeNull();
     expect(getBaseFoodReference('Instant Nudeln')).toBeNull();
   });
+
+  it('resolves plain Erdnüsse locally but never substitutes processed peanut products', () => {
+    const reference = getBaseFoodReference('Erdnuss');
+    expect(reference?.id).toBe('peanuts-roasted-unsalted');
+    expect(reference?.carbohydratesPer100g).toBeCloseTo(9.4, 1);
+    expect(getBaseFoodReference('Erdnussbutter')).toBeNull();
+    expect(getBaseFoodReference('Wasabi Erdnüsse ummantelt')).toBeNull();
+    expect(getBaseFoodReference('Erdnussflips')).toBeNull();
+  });
 });
