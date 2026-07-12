@@ -1,0 +1,185 @@
+diff --git a/src/App.tsx b/src/App.tsx
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -103,7 +103,6 @@ const APP_VERSION = __APP_VERSION__;
+ const DEVELOPER_SUPPORT_EMAIL = 'chrisfischtopher@googlemail.com';
+ const MAX_SEARCH_QUERY_LENGTH = 120;
+ const SESSION_KEY = 'kh-checker-v2.0-session';
+-const RATE_LIMIT_DEFAULT_BLOCK_MS = 60 * 1000;
+ 
+ const DEFAULT_SETTINGS: AppSettings = {
+   aiEnabled: false,
+@@ -274,15 +273,6 @@ function formatCountdown(milliseconds: number): string {
+   return rest ? `${minutes}:${String(rest).padStart(2, '0')} min` : `${minutes} min`;
+ }
+ 
+-function latestRetryAtFromAttempts(attempts: ApiAttemptDiagnostic[], now = Date.now()): number | null {
+-  let latest: number | null = null;
+-  for (const attempt of attempts) {
+-    if (!Number.isFinite(attempt.retryAfterMs) || Number(attempt.retryAfterMs) <= 0) continue;
+-    const candidate = now + Number(attempt.retryAfterMs);
+-    if (latest === null || candidate > latest) latest = candidate;
+-  }
+-  return latest;
+-}
+-
+ function isLocalAndroidViewer(): boolean {
+   return ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+     && /\/storage\/emulated\//i.test(window.location.pathname);
+@@ -793,8 +783,7 @@ function HomeScreen({
+   onManualSubmit,
+   listening,
+-  onVoice,
+-  searchBlockedRemainingMs
++  onVoice
+ }: {
+   query: string;
+   setQuery: (value: string) => void;
+@@ -808,10 +797,8 @@ function HomeScreen({
+   onManualSubmit: () => void;
+   listening: boolean;
+   onVoice: () => void;
+-  searchBlockedRemainingMs: number;
+ }) {
+-  const searchBlocked = searchBlockedRemainingMs > 0;
+   return (
+     <div className="screen-content home-screen">
+@@ -842,18 +829,13 @@ function HomeScreen({
+                 type="button"
+                 className={`voice-button ${listening ? 'listening' : ''}`}
+                 onClick={onVoice}
+-                disabled={searchBlocked}
+               >
+                 <Mic size={21} />
+                 {listening ? 'Ich höre zu …' : 'Sprechen'}
+               </button>
+-              <button type="submit" className="primary-button" disabled={!query.trim() || searchBlocked}>
++              <button type="submit" className="primary-button" disabled={!query.trim()}>
+                 {loading ? <LoaderCircle className="spin" size={20} /> : <Search size={20} />}
+-                {searchBlocked
+-                  ? `Warte ${formatCountdown(searchBlockedRemainingMs)}`
+-                  : loading
+-                    ? 'Suche neu starten'
+-                    : 'Suchen'}
++                {loading ? 'Suche neu starten' : 'Suchen'}
+               </button>
+             </div>
+             <p className="request-policy-note">
+-              Cache zuerst. Bei Retry-After/Rate-Limit pausiert die App neue Netzwerksuchen kurz und zeigt den verbleibenden Zeitraum an.
++              Cache zuerst. Retry-After und Serverlimits werden nur angezeigt; eine neue Suche kann immer sofort gestartet werden.
+             </p>
+           </form>
+@@ -1688,8 +1670,6 @@ export default function App() {
+     approximateBytes: 0,
+     persistence: 'memory'
+   });
+-  const [searchBlockedUntil, setSearchBlockedUntil] = useState(0);
+-  const [searchClock, setSearchClock] = useState(() => Date.now());
+   const retryActionRef = useRef<(() => void) | null>(null);
+   const activeAbort = useRef<AbortController | null>(null);
+@@ -1724,21 +1704,6 @@ export default function App() {
+     saveSettings(settings).catch(() => undefined);
+   }, [settings, settingsReady]);
+ 
+-  useEffect(() => {
+-    if (searchBlockedUntil <= Date.now()) {
+-      setSearchClock(Date.now());
+-      return;
+-    }
+-    const intervalId = window.setInterval(() => {
+-      const now = Date.now();
+-      setSearchClock(now);
+-      if (now >= searchBlockedUntil) {
+-        window.clearInterval(intervalId);
+-      }
+-    }, 1_000);
+-    return () => window.clearInterval(intervalId);
+-  }, [searchBlockedUntil]);
+-
+   useEffect(() => {
+     saveSession({ tab, searchView, query, manualMode, manualValues, request, hits, result });
+   }, [tab, searchView, query, manualMode, manualValues, request, hits, result]);
+@@ -1862,16 +1827,6 @@ export default function App() {
+     const occurredAt = new Date().toISOString();
+ 
+     if (caught instanceof DataSourceError) {
+-      if (caught.kind === 'rate-limit' || caught.status === 429 || caught.status === 503) {
+-        const now = Date.now();
+-        const computedRetryAt = caught.retryAt
+-          ?? latestRetryAtFromAttempts(caught.attempts, now)
+-          ?? now + RATE_LIMIT_DEFAULT_BLOCK_MS;
+-        if (computedRetryAt > now) {
+-          setSearchBlockedUntil((previous) => Math.max(previous, computedRetryAt));
+-        }
+-      }
+       const attempts = caught.attempts;
+       const failedAttempts = attempts.filter((attempt) => !['success', 'cache-hit'].includes(attempt.outcome));
+@@ -1898,13 +1853,13 @@ export default function App() {
+         http: caught.status === 404
+           ? 'Der Endpunkt meldet, dass kein Datensatz vorhanden ist.'
+           : 'Der Server hat die Anfrage mit einem HTTP-Fehler abgelehnt. Der Status und die Antwort stehen unten.',
+-        'rate-limit': 'Der Server meldet ein Limit oder eine Überlastung. Die App übernimmt Retry-After und pausiert neue Netzwerksuchen für die empfohlene Wartezeit.'
++        'rate-limit': 'Der Server meldet ein Limit. Retry-After wird ausschließlich als technischer Hinweis angezeigt; die Suche kann sofort erneut gestartet werden.'
+       };
+       setIssue({
+         title: bothPublicSearchBackendsFailed ? 'Öffentliche Produktsuche vorübergehend nicht erreichbar' : title[caught.kind],
+         message: bothPublicSearchBackendsFailed
+-          ? 'Search-a-licious und die OFF-Legacy-Suche waren bei diesem Versuch beide nicht erreichbar. Bereits gespeicherte Treffer bleiben verfügbar; neue Netzwerksuchen werden kurz gemäß Retry-After pausiert.'
++          ? 'Search-a-licious und der OFF-Legacy-Fallback waren bei diesem Versuch beide nicht erreichbar. Bereits gespeicherte Treffer bleiben verfügbar; die Suche kann ohne Countdown sofort erneut gestartet werden.'
+           : message[caught.kind],
+@@ -2573,8 +2528,7 @@ export default function App() {
+             onManualSubmit={handleManualSubmit}
+             listening={listening}
+-            onVoice={startVoice}
+-            searchBlockedRemainingMs={Math.max(0, searchBlockedUntil - searchClock)}
++            onVoice={startVoice}
+           />
+         )}
+diff --git a/src/lib/api.ts b/src/lib/api.ts
+--- a/src/lib/api.ts
++++ b/src/lib/api.ts
+@@ -37,6 +37,8 @@ const CACHE_NAMESPACE = 'kh-v2.2';
+ const LEGACY_CACHE_NAMESPACE = 'kh-v2';
+ const LEGACY_NETWORK_SEARCH_PAGE_SIZE = 20;
++const SEARCH_A_LICIOUS_TIMEOUT_MS = 2_000;
++const LEGACY_SEARCH_TIMEOUT_MS = 6_000;
+ const MAX_SEARCH_QUERY_LENGTH = 120;
+@@ -82,8 +84,6 @@ export const SEARCH_A_LICIOUS_FIELDS = [
+   'generic_name_de',
+   'brands',
+   'quantity',
+-  'countries',
+-  'categories',
+   'nutriments',
+@@ -391,10 +391,10 @@ async function networkJson<T>(
+     const responseText = await response.text();
+     const durationMs = Date.now() - startedAt;
+     const retryAfterMs = parseRetryAfter(response.headers.get('Retry-After'));
+-    recordApiResponse(policy.bucket, response.status, retryAfterMs, Date.now());
++    recordApiResponse(policy.bucket, response.status, response.status === 429 ? retryAfterMs : null, Date.now());
+ 
+-    if (response.status === 429 || response.status === 503) {
++    if (response.status === 429) {
+       const upstreamAttempts = embeddedGatewayAttempts(responseText);
+@@ -756,8 +756,7 @@ function buildSearchALiciousUrl(query: string, pageSize = LEGACY_NETWORK_SEARCH_PAGE_SIZE): string {
+   const url = new URL(SEARCH_A_LICIOUS_URL);
+   url.searchParams.set('q', query);
+-  url.searchParams.set('langs', 'de,en,main');
+-  url.searchParams.set('page', '1');
++  url.searchParams.set('langs', 'de,main');
+   url.searchParams.set('page_size', String(pageSize));
+@@ -771,7 +770,6 @@ function buildLegacySearchUrl(query: string, pageSize = LEGACY_NETWORK_SEARCH_PAGE_SIZE): string {
+   url.searchParams.set('search_terms', query);
+   url.searchParams.set('page', '1');
+   url.searchParams.set('page_size', String(pageSize));
+-  url.searchParams.set('sort_by', 'popularity');
+   url.searchParams.set('lc', 'de');
+@@ -795,9 +793,9 @@ function searchPolicy(backend: SearchBackend): FetchPolicy {
+   }
+   if (backend === 'search-a-licious') {
+-    return { bucket: 'search', backend, label: 'Search-a-licious', freshMs: SEARCH_FRESH_MS, staleMs: SEARCH_STALE_MS, timeoutMs: 9_000, allowStaleOnError: false };
++    return { bucket: 'search', backend, label: 'Search-a-licious', freshMs: SEARCH_FRESH_MS, staleMs: SEARCH_STALE_MS, timeoutMs: SEARCH_A_LICIOUS_TIMEOUT_MS, allowStaleOnError: false };
+   }
+-  return { bucket: 'search', backend, label: 'Open Food Facts Legacy-Suche', freshMs: SEARCH_FRESH_MS, staleMs: SEARCH_STALE_MS, timeoutMs: 9_000, allowStaleOnError: false };
++  return { bucket: 'search', backend, label: 'Open Food Facts Legacy-Suche', freshMs: SEARCH_FRESH_MS, staleMs: SEARCH_STALE_MS, timeoutMs: LEGACY_SEARCH_TIMEOUT_MS, allowStaleOnError: false };
+ }
