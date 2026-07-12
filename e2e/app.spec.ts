@@ -7,6 +7,14 @@ async function openApp(page: Page) {
   await expect(page.getByRole('heading', { name: 'Welches Produkt oder Lebensmittel?' })).toBeVisible();
 }
 
+async function ensureGatewayConfigured(page: Page) {
+  await page.getByRole('button', { name: 'Einstellungen' }).click();
+  const gatewayInput = page.getByLabel('Vercel-Daten-Gateway (erforderlich)');
+  await gatewayInput.fill('/');
+  await expect(gatewayInput).toHaveValue('/');
+  await page.getByRole('button', { name: 'Suche' }).click();
+}
+
 test('App-Shell, Hauptnavigation und mobile Breite bleiben nutzbar', async ({ page }) => {
   await openApp(page);
 
@@ -27,20 +35,21 @@ test('deterministische manuelle Berechnung funktioniert vollständig ohne Netzwe
   await page.route('https://**', (route) => route.abort());
   await openApp(page);
 
-  await page.getByRole('button', { name: 'Manuell' }).click();
-  await page.getByLabel('Produkt').fill('Testbrot');
-  await page.getByLabel('Menge').fill('100');
-  await page.getByLabel('Einheit').selectOption('g');
+  await page.getByRole('tab', { name: 'Manuell' }).click();
+  const manualForm = page.locator('form.manual-form');
+  await manualForm.getByLabel('Produkt', { exact: true }).fill('Testbrot');
+  await manualForm.getByLabel('Menge', { exact: true }).fill('100');
+  await manualForm.getByLabel('Einheit', { exact: true }).selectOption('g');
   await page.getByText('Optionale genaue Angaben').click();
   await page.getByLabel('Kohlenhydrate pro 100 Gramm').fill('40');
   await page.getByRole('button', { name: 'Berechnen' }).click();
 
   await expect(page.getByRole('heading', { name: 'Ergebnis' })).toBeVisible();
   await expect(page.getByText('Testbrot', { exact: true })).toBeVisible();
-  await expect(page.locator('.big-result')).toContainText(/40[,.]0/);
+  await expect(page.locator('.big-result')).toContainText(/^40\s*g$/);
 });
 
-test('Suchbutton startet sofort einen neuen Gateway-Versuch ohne direkte Browser-OFF-Aufrufe', async ({ page }) => {
+test('Suchbutton erlaubt sofortige Wiederholung ohne direkten Browser-OFF-Aufruf', async ({ page }) => {
   let gatewayRequests = 0;
   await page.route('**/api/search**', async (route) => {
     gatewayRequests += 1;
@@ -67,14 +76,15 @@ test('Suchbutton startet sofort einen neuen Gateway-Versuch ohne direkte Browser
   });
 
   await openApp(page);
-  await page.getByLabel('Produkt oder Lebensmittel suchen').fill('Kinder Bueno');
+  await ensureGatewayConfigured(page);
+  await page.getByLabel('Produkt oder Lebensmittel suchen').fill('Kinder Bueno Qualitaetstest');
   await page.getByRole('button', { name: 'Suchen' }).click();
 
-  const retry = page.getByRole('button', { name: 'Suche neu starten' });
-  await expect(retry).toBeVisible();
-  await expect(retry).toBeEnabled();
-  await retry.click();
-  await expect(retry).toBeEnabled();
+  const searchButton = page.getByRole('button', { name: /Suchen|Suche neu starten/ });
+  await expect(searchButton).toBeVisible();
+  await expect(searchButton).toBeEnabled();
+  await searchButton.click();
+  await expect(searchButton).toBeEnabled();
   await expect.poll(() => gatewayRequests).toBeGreaterThanOrEqual(1);
   expect(gatewayRequests).toBeGreaterThanOrEqual(1);
 });

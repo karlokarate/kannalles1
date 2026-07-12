@@ -648,7 +648,12 @@ app.get('/api/product/:code', async (req, res) => {
       'Cache-Control': 'public, max-age=900, stale-while-revalidate=86400',
       'X-KH-Gateway-Cache': result.cacheStatus
     });
-    res.json(ProductGatewayResponseSchema.parse({ ...result.value, gateway_attempts: result.attempts }));
+    const normalizedProductPayload = {
+      ...result.value,
+      ...(typeof result.value?.status === 'number' ? { status: String(result.value.status) } : {}),
+      gateway_attempts: result.attempts
+    };
+    res.json(ProductGatewayResponseSchema.parse(normalizedProductPayload));
   } catch (error) {
     sendGatewayError(res, error, 'Produktabruf fehlgeschlagen.');
   }

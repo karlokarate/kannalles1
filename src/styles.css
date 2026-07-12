@@ -48,7 +48,7 @@ img { max-width: 100%; display: block; }
 .eyebrow { display: inline-flex; color: var(--green); font-weight: 750; text-transform: uppercase; letter-spacing: .1em; font-size: 11px; }
 
 .mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; background: #e7eeea; border-radius: 16px; margin-bottom: 14px; }
-.mode-switch button { border: 0; background: transparent; padding: 11px 10px; border-radius: 12px; display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; cursor: pointer; color: #65726b; }
+.mode-switch button { border: 0; background: transparent; padding: 11px 10px; border-radius: 12px; display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; cursor: pointer; color: #2f3c35; }
 .mode-switch button.active { background: #fff; color: var(--ink); box-shadow: 0 4px 12px rgba(21,50,38,.08); }
 
 .search-panel, .manual-form { padding: 15px; }
@@ -63,7 +63,7 @@ img { max-width: 100%; display: block; }
 .primary-button { background: linear-gradient(135deg, var(--green), var(--green-2)); color: #fff; box-shadow: 0 10px 22px rgba(19,138,85,.2); }
 .primary-button:hover { filter: brightness(1.03); transform: translateY(-1px); }
 .primary-button:active, .secondary-button:active, .voice-button:active { transform: translateY(1px); }
-.secondary-button, .voice-button { background: #fff; border: 1px solid #b9d8c6; color: var(--green); }
+.secondary-button, .voice-button { background: #fff; border: 1px solid #b9d8c6; color: #0a5a35; }
 .voice-button.listening { background: #fff1f1; color: #b64040; border-color: #e7bcbc; animation: pulse 1.2s infinite; }
 .primary-button:disabled, .secondary-button:disabled, .voice-button:disabled, button:disabled { opacity: .52; cursor: not-allowed; transform: none; }
 .full-width { width: 100%; margin-top: 12px; }
@@ -186,7 +186,7 @@ img { max-width: 100%; display: block; }
 
 .bottom-nav { position: fixed; z-index: 30; left: 50%; bottom: 0; transform: translateX(-50%); width: min(100%, 760px); padding: 7px 10px calc(7px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(4, 1fr); background: rgba(255,255,255,.94); backdrop-filter: blur(20px); border-top: 1px solid #dce5e0; box-shadow: 0 -9px 28px rgba(21,50,38,.07); }
 .bottom-nav button { border: 0; background: transparent; color: #7a867f; min-height: 54px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; cursor: pointer; border-radius: 14px; }
-.bottom-nav button.active { color: var(--green); background: #edf7f1; font-weight: 760; }
+.bottom-nav button.active { color: #0a5a35; background: #e4f2ea; font-weight: 760; }
 
 .spin { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

@@ -43,7 +43,7 @@ export default defineConfig({
     video: 'off'
   },
   webServer: {
-    command: 'npm run preview -- --host 127.0.0.1 --port 4173',
+    command: 'VITE_DATA_GATEWAY_URL=/api npm run preview -- --host 127.0.0.1 --port 4173',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000
