@@ -293,9 +293,10 @@ function legacyHttpCacheKey(url: string): string {
   return `${LEGACY_CACHE_NAMESPACE}:${url}`;
 }
 
-function searchQueryCacheKey(query: string): string {
+function searchQueryCacheKey(query: string, searchApiMode: SearchFoodOptions['searchApiMode'] = 'auto'): string {
   const compact = normalizeText(query).replace(/[^a-z0-9]+/g, '');
-  return `${CACHE_NAMESPACE}:search-query:v1:${compact || encodeURIComponent(query.toLocaleLowerCase('de-DE'))}`;
+  const mode = searchApiMode === 'legacy-only' ? 'legacy-only' : 'auto';
+  return `${CACHE_NAMESPACE}:search-query:v2:${mode}:${compact || encodeURIComponent(query.toLocaleLowerCase('de-DE'))}`;
 }
 
 function productSnapshotCacheKey(code: string): string {
@@ -960,9 +961,10 @@ function sliceSearchResponse(response: SearchResponse, pageSize: number): Search
 async function readQueryCache(
   query: string,
   pageSize: number,
-  allowStale = false
+  allowStale = false,
+  searchApiMode: SearchFoodOptions['searchApiMode'] = 'auto'
 ): Promise<SearchResponse | null> {
-  const key = searchQueryCacheKey(query);
+  const key = searchQueryCacheKey(query, searchApiMode);
   const now = Date.now();
   const cached = await getApiCache<CachedSearchValue>(key);
   if (!cached || cached.staleUntil <= now) return null;
@@ -983,7 +985,11 @@ async function readQueryCache(
   }, pageSize);
 }
 
-async function storeQueryCache(query: string, response: SearchResponse): Promise<void> {
+async function storeQueryCache(
+  query: string,
+  response: SearchResponse,
+  searchApiMode: SearchFoodOptions['searchApiMode'] = 'auto'
+): Promise<void> {
   const now = Date.now();
   const storedAt = cacheTimestampFromMeta(response.api_meta, now);
   const hasHits = (response.hits ?? []).length > 0;
@@ -994,7 +1000,7 @@ async function storeQueryCache(query: string, response: SearchResponse): Promise
     ?? responseMeta?.backend
     ?? (response.source === 'gateway' ? 'gateway' : response.source === 'search-a-licious' ? 'search-a-licious' : 'open-food-facts-legacy');
   await putApiCache<CachedSearchValue>({
-    key: searchQueryCacheKey(query),
+    key: searchQueryCacheKey(query, searchApiMode),
     value: {
       response: stripMeta(response),
       sourceUrl: responseMeta?.sourceUrl ?? '',
@@ -1026,7 +1032,7 @@ async function findMigratableSearchCache(
       throwIfAborted(signal);
       if (!raw) continue;
       const response = normalizeSearchPayload(backend, raw, query);
-      await storeQueryCache(query, response);
+      await storeQueryCache(query, response, searchApiMode);
       throwIfAborted(signal);
       return sliceSearchResponse(response, requestedPageSize);
     }
@@ -1065,7 +1071,7 @@ export async function searchFoodCandidates(
   const gatewayUrl = await resolveGatewayUrl(options.gatewayUrl, signal);
   const searchApiMode = options.searchApiMode === 'legacy-only' ? 'legacy-only' : 'auto';
   throwIfAborted(signal);
-  const cached = await readQueryCache(corrected, safePageSize);
+  const cached = await readQueryCache(corrected, safePageSize, false, searchApiMode);
   throwIfAborted(signal);
   if (cached) return cached;
 
@@ -1073,7 +1079,7 @@ export async function searchFoodCandidates(
   throwIfAborted(signal);
   if (migrated) return migrated;
 
-  const staleQueryCache = await readQueryCache(corrected, safePageSize, true);
+  const staleQueryCache = await readQueryCache(corrected, safePageSize, true, searchApiMode);
   throwIfAborted(signal);
   if (staleQueryCache && isOffline()) return staleQueryCache;
 
@@ -1102,7 +1108,7 @@ export async function searchFoodCandidates(
       );
 
       if ((withPrior.hits ?? []).length > 0 || backend === 'gateway') {
-        await storeQueryCache(corrected, withPrior);
+        await storeQueryCache(corrected, withPrior, searchApiMode);
         throwIfAborted(signal);
         return sliceSearchResponse(withPrior, safePageSize);
       }
@@ -1126,7 +1132,7 @@ export async function searchFoodCandidates(
 
   if (reachableEmptyResponse) {
     const finalEmpty = combineResponseMeta(reachableEmptyResponse, attempts, errors.at(-1));
-    await storeQueryCache(corrected, finalEmpty);
+    await storeQueryCache(corrected, finalEmpty, searchApiMode);
     throwIfAborted(signal);
     return sliceSearchResponse(finalEmpty, safePageSize);
   }
