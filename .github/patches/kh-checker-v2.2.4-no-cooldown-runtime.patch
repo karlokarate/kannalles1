@@ -127,7 +127,27 @@ diff --git a/src/App.tsx b/src/App.tsx
 -          ? 'Search-a-licious und die OFF-Legacy-Suche waren bei diesem Versuch beide nicht erreichbar. Bereits gespeicherte Treffer bleiben verfügbar; neue Netzwerksuchen werden kurz gemäß Retry-After pausiert.'
 +          ? 'Search-a-licious und der OFF-Legacy-Fallback waren bei diesem Versuch beide nicht erreichbar. Bereits gespeicherte Treffer bleiben verfügbar; die Suche kann ohne Countdown sofort erneut gestartet werden.'
            : message[caught.kind],
-@@ -2573,8 +2528,7 @@ export default function App() {
+@@ -2041,20 +1996,6 @@ export default function App() {
+   }
+ 
+   async function executeSearch(input: string, forcedRequest?: ParsedFoodRequest, manualUnitWeight?: number | null) {
+-    if (Date.now() < searchBlockedUntil) {
+-      handleOperationError(
+-        new DataSourceError('Suche ist wegen aktivem Retry-After kurz pausiert.', 'rate-limit', {
+-          status: 429,
+-          retryAt: searchBlockedUntil,
+-          attempts: []
+-        }),
+-        'Die Suche ist vorübergehend pausiert.',
+-        'Nach Wartezeit erneut suchen',
+-        () => { void executeSearch(input, forcedRequest, manualUnitWeight); }
+-      );
+-      return;
+-    }
+     activeAbort.current?.abort();
+     const controller = new AbortController();
+     activeAbort.current = controller;
+@@ -2573,8 +2514,7 @@ export default function App() {
              onManualSubmit={handleManualSubmit}
              listening={listening}
 -            onVoice={startVoice}
