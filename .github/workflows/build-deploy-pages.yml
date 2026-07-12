@@ -44,7 +44,7 @@ jobs:
           CI: "true"
           NODE_OPTIONS: "--max-old-space-size=4096"
           KH_FALLBACK_ZIP: releases/kh-checker-v2.2.4-komplett.zip
-          VITE_DATA_GATEWAY_URL: ${{ vars.VITE_DATA_GATEWAY_URL || '' }}
+          VITE_DATA_GATEWAY_URL: ${{ vars.VITE_DATA_GATEWAY_URL || 'https://kannalles1.vercel.app' }}
           VITE_AI_PARSE_URL: ${{ vars.VITE_AI_PARSE_URL || '' }}
         run: bash scripts/one-click-prepare.sh
 
