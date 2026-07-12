@@ -1,0 +1,182 @@
+name: Bootstrap, validate and deploy KH Checker v2.2.4
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Unpack bundle, patch, generate, validate and prepare Pages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.pipeline.outputs.version }}
+      selected_kind: ${{ steps.pipeline.outputs.selected_kind }}
+      selected_zip: ${{ steps.pipeline.outputs.selected_zip }}
+      selected_sha256: ${{ steps.pipeline.outputs.selected_sha256 }}
+      app_dir: ${{ steps.bundle.outputs.app_dir }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify and unpack v2.2.4 one-click bundle
+        id: bundle
+        shell: bash
+        env:
+          BUNDLE_FILE: KH-CHECKER-v2.2.4-ONE-CLICK-BUNDLE.zip
+          BUNDLE_SHA256: add2d014eec52a2e81a4c7ccaa17e311cddd8b9797167af96b916c1f671c2c98
+        run: |
+          set -euo pipefail
+
+          test -f "$BUNDLE_FILE" || {
+            echo "::error::Missing repository-root bundle: $BUNDLE_FILE"
+            exit 1
+          }
+
+          actual_sha="$(sha256sum "$BUNDLE_FILE" | awk '{print $1}')"
+          test "$actual_sha" = "$BUNDLE_SHA256" || {
+            echo "::error::Bundle SHA-256 mismatch. Expected $BUNDLE_SHA256, got $actual_sha"
+            exit 1
+          }
+
+          unzip -tq "$BUNDLE_FILE"
+          rm -rf .kh-v224-bootstrap
+          mkdir -p .kh-v224-bootstrap
+          unzip -q "$BUNDLE_FILE" -d .kh-v224-bootstrap
+
+          bundle_root=".kh-v224-bootstrap/KH-CHECKER-v2.2.4-ONE-CLICK-BUNDLE"
+          app_dir="$bundle_root/repo-overlay"
+
+          test -f "$bundle_root/FULL-BUNDLE.SHA256SUMS.txt"
+          test -f "$app_dir/package-lock.json"
+          test -f "$app_dir/scripts/one-click-prepare.sh"
+          test -f "$app_dir/releases/kh-checker-v2.2.4-komplett.zip"
+
+          (
+            cd "$bundle_root"
+            sha256sum --check --strict FULL-BUNDLE.SHA256SUMS.txt
+          )
+
+          echo "app_dir=$app_dir" >> "$GITHUB_OUTPUT"
+          echo "Original bundle and all checksummed payload files verified."
+
+      - name: Apply v2.2.4 API, fallback and Erdnüsse hotfixes
+        shell: bash
+        env:
+          APP_DIR: ${{ steps.bundle.outputs.app_dir }}
+        run: |
+          set -euo pipefail
+          patches=(
+            "$GITHUB_WORKSPACE/.github/patches/kh-checker-v2.2.4-api-hotfix.patch"
+            "$GITHUB_WORKSPACE/.github/patches/kh-checker-v2.2.4-peanuts.patch"
+          )
+
+          for patch_file in "${patches[@]}"; do
+            test -f "$patch_file" || {
+              echo "::error::Missing required hotfix patch: $patch_file"
+              exit 1
+            }
+            (
+              cd "$APP_DIR"
+              patch --batch --forward --dry-run -p1 < "$patch_file"
+              patch --batch --forward -p1 < "$patch_file"
+            )
+          done
+
+          grep -q "SEARCH_A_LICIOUS_TIMEOUT_MS = 2_000" "$APP_DIR/src/lib/api.ts"
+          grep -q "erdnuss" "$APP_DIR/src/lib/identity.ts"
+          echo "API fallback and Erdnüsse semantic hotfixes applied."
+
+      - name: Set up Node.js 24 LTS
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24.x"
+          cache: npm
+          cache-dependency-path: ${{ steps.bundle.outputs.app_dir }}/package-lock.json
+
+      - name: Run the serial failsoft generator and release pipeline
+        id: pipeline
+        shell: bash
+        env:
+          APP_DIR: ${{ steps.bundle.outputs.app_dir }}
+          CI: "true"
+          NODE_OPTIONS: "--max-old-space-size=4096"
+          KH_FALLBACK_ZIP: releases/kh-checker-v2.2.4-komplett.zip
+          VITE_DATA_GATEWAY_URL: ${{ vars.VITE_DATA_GATEWAY_URL || '' }}
+          VITE_AI_PARSE_URL: ${{ vars.VITE_AI_PARSE_URL || '' }}
+        run: |
+          set -euo pipefail
+          cd "$APP_DIR"
+          bash scripts/one-click-prepare.sh
+
+      - name: Upload reports and regenerated release ZIPs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kh-checker-v2.2.4-results-${{ github.run_attempt }}
+          path: |
+            ${{ steps.bundle.outputs.app_dir }}/ci-reports/
+            ${{ steps.bundle.outputs.app_dir }}/release-out/kh-checker-v2.2.4-komplett.zip
+            ${{ steps.bundle.outputs.app_dir }}/release-out/ENTWICKLER-QUELLCODE-v2.2.4.zip
+            ${{ steps.bundle.outputs.app_dir }}/contracts/generated/
+            ${{ steps.bundle.outputs.app_dir }}/src/generated/
+          if-no-files-found: warn
+          compression-level: 6
+          retention-days: 30
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload validated Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: ${{ steps.bundle.outputs.app_dir }}/publish-site
+          include-hidden-files: true
+
+  deploy:
+    name: Deploy KH Checker v2.2.4 to GitHub Pages
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - name: Deployment summary
+        shell: bash
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SELECTED_KIND: ${{ needs.prepare.outputs.selected_kind }}
+          SELECTED_ZIP: ${{ needs.prepare.outputs.selected_zip }}
+          SELECTED_SHA256: ${{ needs.prepare.outputs.selected_sha256 }}
+        run: |
+          {
+            echo "## KH Checker v${VERSION} deployed"
+            echo
+            echo "- URL: ${PAGE_URL}"
+            echo "- Candidate: \`${SELECTED_KIND}\`"
+            echo "- Release ZIP: \`${SELECTED_ZIP}\`"
+            echo "- SHA-256: \`${SELECTED_SHA256}\`"
+            echo "- Runtime hotfixes: Search-a-licious 2s deadline, compact legacy fallback, Erdnüsse generic family"
+          } >> "$GITHUB_STEP_SUMMARY"
