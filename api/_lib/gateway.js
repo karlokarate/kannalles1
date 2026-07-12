@@ -46,6 +46,13 @@ const gatewayCache = globalThis.__KH_VERCEL_GATEWAY_CACHE__ ?? new Map();
 const gatewayInFlight = globalThis.__KH_VERCEL_GATEWAY_INFLIGHT__ ?? new Map();
 globalThis.__KH_VERCEL_GATEWAY_CACHE__ = gatewayCache;
 globalThis.__KH_VERCEL_GATEWAY_INFLIGHT__ = gatewayInFlight;
+const UPSTREAM_DEFAULT_COOLDOWN_MS = 60_000;
+const UPSTREAM_MAX_COOLDOWN_MS = 5 * 60_000;
+
+const searchALiciousCircuit = globalThis.__KH_SEARCH_A_LICIOUS_CIRCUIT__ ?? { openUntil: 0, reason: '' };
+const legacySearchCircuit = globalThis.__KH_LEGACY_SEARCH_CIRCUIT__ ?? { openUntil: 0, reason: '' };
+globalThis.__KH_SEARCH_A_LICIOUS_CIRCUIT__ = searchALiciousCircuit;
+globalThis.__KH_LEGACY_SEARCH_CIRCUIT__ = legacySearchCircuit;
 
 const APP_VERSION = process.env.npm_package_version || '2.2.4';
 const OFF_USER_AGENT =
@@ -113,6 +120,49 @@ class UpstreamError extends Error {
     this.attempts = attempts || [];
     this.retryAt = retryAt;
   }
+}
+
+function isTransientSearchError(error) {
+  if (!(error instanceof UpstreamError)) return false;
+  if ([429, 502, 503, 504].includes(Number(error.status))) return true;
+  return error.attempts.some((attempt) =>
+    ['rate-limit', 'http-error', 'network-error', 'timeout'].includes(attempt.outcome)
+  );
+}
+
+function openCircuit(circuit, error) {
+  if (!isTransientSearchError(error)) return;
+  const now = Date.now();
+  const retryWindow = Number.isFinite(error.retryAt)
+    ? Math.max(0, Number(error.retryAt) - now)
+    : UPSTREAM_DEFAULT_COOLDOWN_MS;
+  const cooldownMs = Math.min(
+    UPSTREAM_MAX_COOLDOWN_MS,
+    Math.max(UPSTREAM_DEFAULT_COOLDOWN_MS, retryWindow)
+  );
+  circuit.openUntil = now + cooldownMs;
+  circuit.reason = error.message || 'Temporärer Upstream-Bypass aktiv.';
+}
+
+function closeCircuit(circuit) {
+  circuit.openUntil = 0;
+  circuit.reason = '';
+}
+
+function bypassAttempt(backend, label, url, circuit) {
+  const now = Date.now();
+  const retryAfterMs = Math.max(0, circuit.openUntil - now);
+  return {
+    backend,
+    label: `${label} (temporär übersprungen)`,
+    url: url.toString(),
+    startedAt: new Date(now).toISOString(),
+    durationMs: 0,
+    outcome: 'aborted',
+    errorName: 'CircuitOpen',
+    errorMessage: circuit.reason || 'Temporärer Upstream-Bypass aktiv.',
+    ...(retryAfterMs > 0 ? { retryAfterMs } : {})
+  };
 }
 
 async function fetchUpstreamJson(url, backend, label, timeoutMs = 8500) {
@@ -364,6 +414,10 @@ async function cachedGatewayLoad({ key, freshMs, staleMs, load }) {
 
 export function sendGatewayError(res, error, publicMessage) {
   const status = error instanceof UpstreamError && Number.isInteger(error.status) ? error.status : 502;
+  if (error?.retryAt && Number.isFinite(Number(error.retryAt))) {
+    const seconds = Math.max(1, Math.ceil((Number(error.retryAt) - Date.now()) / 1000));
+    res.setHeader('Retry-After', String(seconds));
+  }
   const payload = {
     error: publicMessage,
     detail: error?.message || String(error),
@@ -382,33 +436,62 @@ export async function searchThroughGateway(query, pageSize) {
     load: async () => {
       const attempts = [];
       let reachableEmptyResponse = null;
+      let latestRetryAt = null;
 
-      try {
-        const response = await fetchUpstreamJson(buildSearchALiciousUrl(query, pageSize), 'search-a-licious', 'Search-a-licious');
-        attempts.push(response.attempt);
-        const value = {
-          ...response.data,
-          hits: Array.isArray(response.data?.hits) ? response.data.hits : [],
-          source: 'search-a-licious',
-          query_used: query
-        };
-        if (value.hits.length > 0) return { value, attempts };
-        reachableEmptyResponse = value;
-      } catch (error) {
-        if (error instanceof UpstreamError) attempts.push(...error.attempts);
+      const searchALiciousUrl = buildSearchALiciousUrl(query, pageSize);
+      if (searchALiciousCircuit.openUntil > Date.now()) {
+        attempts.push(bypassAttempt('search-a-licious', 'Search-a-licious', searchALiciousUrl, searchALiciousCircuit));
+        latestRetryAt = Math.max(latestRetryAt ?? 0, searchALiciousCircuit.openUntil);
+      } else {
+        try {
+          const response = await fetchUpstreamJson(searchALiciousUrl, 'search-a-licious', 'Search-a-licious');
+          closeCircuit(searchALiciousCircuit);
+          attempts.push(response.attempt);
+          const value = {
+            ...response.data,
+            hits: Array.isArray(response.data?.hits) ? response.data.hits : [],
+            source: 'search-a-licious',
+            query_used: query
+          };
+          if (value.hits.length > 0) return { value, attempts };
+          reachableEmptyResponse = value;
+        } catch (error) {
+          if (error instanceof UpstreamError) {
+            attempts.push(...error.attempts);
+            latestRetryAt = Math.max(latestRetryAt ?? 0, Number(error.retryAt || 0));
+            openCircuit(searchALiciousCircuit, error);
+          }
+        }
+      }
+
+      const legacyUrl = buildLegacySearchUrl(query, pageSize);
+      if (legacySearchCircuit.openUntil > Date.now()) {
+        attempts.push(bypassAttempt('open-food-facts-legacy', 'Open Food Facts Legacy-Suche', legacyUrl, legacySearchCircuit));
+        latestRetryAt = Math.max(latestRetryAt ?? 0, legacySearchCircuit.openUntil);
+        if (reachableEmptyResponse) return { value: reachableEmptyResponse, attempts };
+        throw new UpstreamError('Keine Open-Food-Facts-Suche war erreichbar.', {
+          status: 503,
+          attempts,
+          retryAt: latestRetryAt ?? undefined
+        });
       }
 
       try {
-        const response = await fetchUpstreamJson(buildLegacySearchUrl(query, pageSize), 'open-food-facts-legacy', 'Open Food Facts Legacy-Suche');
+        const response = await fetchUpstreamJson(legacyUrl, 'open-food-facts-legacy', 'Open Food Facts Legacy-Suche');
+        closeCircuit(legacySearchCircuit);
         attempts.push(response.attempt);
         return { value: normalizeLegacySearch(response.data, query), attempts };
       } catch (error) {
-        if (error instanceof UpstreamError) attempts.push(...error.attempts);
+        if (error instanceof UpstreamError) {
+          attempts.push(...error.attempts);
+          latestRetryAt = Math.max(latestRetryAt ?? 0, Number(error.retryAt || 0));
+          openCircuit(legacySearchCircuit, error);
+        }
         if (reachableEmptyResponse) return { value: reachableEmptyResponse, attempts };
         throw new UpstreamError('Keine Open-Food-Facts-Suche war erreichbar.', {
           status: error instanceof UpstreamError ? error.status : undefined,
           attempts,
-          retryAt: error instanceof UpstreamError ? error.retryAt : undefined
+          retryAt: latestRetryAt ?? (error instanceof UpstreamError ? error.retryAt : undefined)
         });
       }
     }

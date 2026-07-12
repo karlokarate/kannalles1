@@ -100,12 +100,13 @@ type SearchView = 'home' | 'candidates' | 'result';
 const APP_VERSION = __APP_VERSION__;
 const MAX_SEARCH_QUERY_LENGTH = 120;
 const SESSION_KEY = 'kh-checker-v2.0-session';
+const RATE_LIMIT_DEFAULT_BLOCK_MS = 60 * 1000;
 
 const DEFAULT_SETTINGS: AppSettings = {
   aiEnabled: false,
   aiParseUrl: import.meta.env.VITE_AI_PARSE_URL || '',
   decimalPlaces: 1,
-  searchPageSize: 15,
+  searchPageSize: 10,
   preferGermanMarket: true,
   saveHistory: true,
   dataGatewayUrl: import.meta.env.VITE_DATA_GATEWAY_URL || import.meta.env.VITE_DATA_API_BASE_URL || ''
@@ -267,6 +268,16 @@ function formatCountdown(milliseconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
   return rest ? `${minutes}:${String(rest).padStart(2, '0')} min` : `${minutes} min`;
+}
+
+function latestRetryAtFromAttempts(attempts: ApiAttemptDiagnostic[], now = Date.now()): number | null {
+  let latest: number | null = null;
+  for (const attempt of attempts) {
+    if (!Number.isFinite(attempt.retryAfterMs) || Number(attempt.retryAfterMs) <= 0) continue;
+    const candidate = now + Number(attempt.retryAfterMs);
+    if (latest === null || candidate > latest) latest = candidate;
+  }
+  return latest;
 }
 
 function isLocalAndroidViewer(): boolean {
@@ -721,7 +732,8 @@ function HomeScreen({
   setManualValues,
   onManualSubmit,
   listening,
-  onVoice
+  onVoice,
+  searchBlockedRemainingMs
 }: {
   query: string;
   setQuery: (value: string) => void;
@@ -734,7 +746,9 @@ function HomeScreen({
   onManualSubmit: () => void;
   listening: boolean;
   onVoice: () => void;
+  searchBlockedRemainingMs: number;
 }) {
+  const searchBlocked = searchBlockedRemainingMs > 0;
   return (
     <div className="screen-content home-screen">
       <section className="hero-copy">
@@ -784,17 +798,22 @@ function HomeScreen({
                 type="button"
                 className={`voice-button ${listening ? 'listening' : ''}`}
                 onClick={onVoice}
+                disabled={searchBlocked}
               >
                 <Mic size={21} />
                 {listening ? 'Ich höre zu …' : 'Sprechen'}
               </button>
-              <button type="submit" className="primary-button" disabled={!query.trim()}>
+              <button type="submit" className="primary-button" disabled={!query.trim() || searchBlocked}>
                 {loading ? <LoaderCircle className="spin" size={20} /> : <Search size={20} />}
-                {loading ? 'Suche neu starten' : 'Suchen'}
+                {searchBlocked
+                  ? `Warte ${formatCountdown(searchBlockedRemainingMs)}`
+                  : loading
+                    ? 'Suche neu starten'
+                    : 'Suchen'}
               </button>
             </div>
             <p className="request-policy-note">
-              Cache zuerst. Ein erneuter Klick wechselt sofort auf einen neuen Suchversuch; identische laufende GET-Anfragen werden sicher wiederverwendet – ohne künstliche Wartezeit.
+              Cache zuerst. Bei Retry-After/Rate-Limit pausiert die App neue Netzwerksuchen kurz und zeigt den verbleibenden Zeitraum an.
             </p>
           </form>
 
@@ -806,7 +825,13 @@ function HomeScreen({
           </fieldset>
         </section>
       ) : (
-        <ManualForm values={manualValues} onChange={setManualValues} onSubmit={onManualSubmit} loading={loading} />
+        <ManualForm
+          values={manualValues}
+          onChange={setManualValues}
+          onSubmit={onManualSubmit}
+          loading={loading}
+          searchBlockedRemainingMs={searchBlockedRemainingMs}
+        />
       )}
 
       <section className="trust-strip">
@@ -822,14 +847,17 @@ function ManualForm({
   values,
   onChange,
   onSubmit,
-  loading
+  loading,
+  searchBlockedRemainingMs
 }: {
   values: ManualFormValues;
   onChange: (values: ManualFormValues) => void;
   onSubmit: () => void;
   loading: boolean;
+  searchBlockedRemainingMs: number;
 }) {
   const patch = (next: Partial<ManualFormValues>) => onChange({ ...values, ...next });
+  const searchBlocked = searchBlockedRemainingMs > 0;
 
   return (
     <form
@@ -880,9 +908,13 @@ function ManualForm({
         </div>
       </details>
 
-      <button type="submit" className="primary-button full-width" disabled={!values.productName.trim()}>
+      <button type="submit" className="primary-button full-width" disabled={!values.productName.trim() || searchBlocked}>
         {loading ? <LoaderCircle className="spin" size={20} /> : <Calculator size={20} />}
-        {loading ? 'Berechnung neu starten' : 'Berechnen'}
+        {searchBlocked
+          ? `Warte ${formatCountdown(searchBlockedRemainingMs)}`
+          : loading
+            ? 'Berechnung neu starten'
+            : 'Berechnen'}
       </button>
     </form>
   );
@@ -1478,7 +1510,7 @@ function SettingsScreen({
           <span>{cacheStats.persistence === 'indexeddb' ? 'IndexedDB' : cacheStats.persistence === 'localstorage' ? 'localStorage-Fallback' : 'Arbeitsspeicher'}</span>
         </div>
         <p className="setting-note">
-          Gleiche und typografisch gleichwertige Suchbegriffe werden über einen backend-unabhängigen Schlüssel wiederverwendet. Treffer bleiben 24 Stunden frisch und bis zu 30 Tage als Ausfallreserve; Produktdetails 30 beziehungsweise 180 Tage. Retry-After wird angezeigt, blockiert aber keinen Button.
+          Gleiche und typografisch gleichwertige Suchbegriffe werden über einen backend-unabhängigen Schlüssel wiederverwendet. Treffer bleiben 24 Stunden frisch und bis zu 30 Tage als Ausfallreserve; Produktdetails 30 beziehungsweise 180 Tage. Retry-After wird als temporäre Suchpause übernommen.
         </p>
         <button type="button" className="secondary-button" onClick={onClearApiCache}>API-Zwischenspeicher leeren</button>
       </section>
@@ -1523,6 +1555,8 @@ export default function App() {
     approximateBytes: 0,
     persistence: 'memory'
   });
+  const [searchBlockedUntil, setSearchBlockedUntil] = useState(0);
+  const [searchClock, setSearchClock] = useState(() => Date.now());
   const retryActionRef = useRef<(() => void) | null>(null);
   const activeAbort = useRef<AbortController | null>(null);
   const snapshotRef = useRef<SessionSnapshot>({
@@ -1559,6 +1593,21 @@ export default function App() {
     if (!settingsReady) return;
     saveSettings(settings).catch(() => undefined);
   }, [settings, settingsReady]);
+
+  useEffect(() => {
+    if (searchBlockedUntil <= Date.now()) {
+      setSearchClock(Date.now());
+      return;
+    }
+    const intervalId = window.setInterval(() => {
+      const now = Date.now();
+      setSearchClock(now);
+      if (now >= searchBlockedUntil) {
+        window.clearInterval(intervalId);
+      }
+    }, 1_000);
+    return () => window.clearInterval(intervalId);
+  }, [searchBlockedUntil]);
 
   useEffect(() => {
     saveSession({ tab, searchView, query, manualMode, manualValues, request, hits, result });
@@ -1692,6 +1741,15 @@ export default function App() {
     const occurredAt = new Date().toISOString();
 
     if (caught instanceof DataSourceError) {
+      if (caught.kind === 'rate-limit' || caught.status === 429 || caught.status === 503) {
+        const now = Date.now();
+        const computedRetryAt = caught.retryAt
+          ?? latestRetryAtFromAttempts(caught.attempts, now)
+          ?? now + RATE_LIMIT_DEFAULT_BLOCK_MS;
+        if (computedRetryAt > now) {
+          setSearchBlockedUntil((previous) => Math.max(previous, computedRetryAt));
+        }
+      }
       const attempts = caught.attempts;
       const failedAttempts = attempts.filter((attempt) => !['success', 'cache-hit'].includes(attempt.outcome));
       const failedAttempt = [...failedAttempts].reverse().find((attempt) => attempt.backend !== 'gateway')
@@ -1719,12 +1777,12 @@ export default function App() {
         http: caught.status === 404
           ? 'Der Endpunkt meldet, dass kein Datensatz vorhanden ist.'
           : 'Der Server hat die Anfrage mit einem HTTP-Fehler abgelehnt. Der Status und die Antwort stehen unten.',
-        'rate-limit': 'Der Server meldet ein Limit oder eine Überlastung. Retry-After wird nur als Diagnose angezeigt; die App setzt keinen Countdown und sperrt den Suchbutton nicht.'
+        'rate-limit': 'Der Server meldet ein Limit oder eine Überlastung. Die App übernimmt Retry-After und pausiert neue Netzwerksuchen für die empfohlene Wartezeit.'
       };
       setIssue({
         title: bothPublicSearchBackendsFailed ? 'Öffentliche Produktsuche vorübergehend nicht erreichbar' : title[caught.kind],
         message: bothPublicSearchBackendsFailed
-          ? 'Search-a-licious und die OFF-Legacy-Suche waren bei diesem Versuch beide nicht erreichbar. Bereits gespeicherte Treffer bleiben verfügbar; die Suche kann ohne Countdown sofort erneut gestartet werden.'
+          ? 'Search-a-licious und die OFF-Legacy-Suche waren bei diesem Versuch beide nicht erreichbar. Bereits gespeicherte Treffer bleiben verfügbar; neue Netzwerksuchen werden kurz gemäß Retry-After pausiert.'
           : message[caught.kind],
         technical,
         attempts,
@@ -1812,6 +1870,19 @@ export default function App() {
   }
 
   async function executeSearch(input: string, forcedRequest?: ParsedFoodRequest, manualUnitWeight?: number | null) {
+    if (Date.now() < searchBlockedUntil) {
+      handleOperationError(
+        new DataSourceError('Suche ist wegen aktivem Retry-After kurz pausiert.', 'rate-limit', {
+          status: 429,
+          retryAt: searchBlockedUntil,
+          attempts: []
+        }),
+        'Die Suche ist vorübergehend pausiert.',
+        'Nach Wartezeit erneut suchen',
+        () => { void executeSearch(input, forcedRequest, manualUnitWeight); }
+      );
+      return;
+    }
     activeAbort.current?.abort();
     const controller = new AbortController();
     activeAbort.current = controller;
@@ -2302,6 +2373,7 @@ export default function App() {
             onManualSubmit={handleManualSubmit}
             listening={listening}
             onVoice={startVoice}
+            searchBlockedRemainingMs={Math.max(0, searchBlockedUntil - searchClock)}
           />
         )}
 
