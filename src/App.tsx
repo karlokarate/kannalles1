@@ -255,7 +255,7 @@ function requiredGatewayEndpoint(value: string): EndpointValidation {
   if (!validated.value) {
     return {
       value: '',
-      error: 'Für diesen Release ist ein aktiver Vercel-Gateway-Endpunkt erforderlich.'
+      error: 'Für diesen Release ist ein aktiver Daten-Gateway-Endpunkt erforderlich.'
     };
   }
   return validated;
@@ -276,7 +276,13 @@ function isLocalAndroidViewer(): boolean {
 
 function sanitizeSettings(value: AppSettings | null): AppSettings {
   const merged = { ...DEFAULT_SETTINGS, ...(value ?? {}) };
-  merged.dataGatewayUrl = typeof merged.dataGatewayUrl === 'string' ? merged.dataGatewayUrl : '';
+  const defaultGatewayUrl = DEFAULT_SETTINGS.dataGatewayUrl.trim();
+  const persistedGatewayUrl = typeof merged.dataGatewayUrl === 'string'
+    ? merged.dataGatewayUrl.trim()
+    : '';
+  // Old saved settings may still contain an empty gateway URL from releases
+  // before the required gateway build variable was introduced.
+  merged.dataGatewayUrl = persistedGatewayUrl || defaultGatewayUrl;
   const endpoint = merged.aiParseUrl.trim();
   if (isLocalAndroidViewer()) {
     let validExternalEndpoint = false;
@@ -1451,7 +1457,7 @@ function SettingsScreen({
         </label>
         {gatewayValidation.error && <p className="setting-note setting-warning" role="alert">{gatewayValidation.error} Der ungültige Wert wird nicht verwendet.</p>}
         <p className="setting-note" id="gateway-help">
-          Ohne gültigen Gateway wird keine Netzwerk-Suche gestartet. Der Gateway muss die Endpunkte /api/search und /api/product/:code bereitstellen und die OFF-Header serverseitig setzen.
+          Ohne gültigen Gateway wird keine Netzwerk-Suche gestartet. Der Gateway muss die Endpunkte /api/search und /api/product/:code bereitstellen und die OFF-Header serverseitig setzen (z. B. Vercel, Cloud Run oder eigene Serverless-Umgebung).
         </p>
         <div className="api-budget-grid">
           <div>

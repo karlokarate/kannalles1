@@ -1,6 +1,6 @@
 # KH Checker v2.2.4
 
-KH Checker ist eine installierbare, statische Progressive Web App für iPhone, iPad, Android, Windows, macOS und Linux. GitHub Pages veröffentlicht ausschließlich die fertigen Web-Dateien. Produktsuche, Cache, Produktauflösung, Kalibrierung und Kohlenhydratberechnung laufen auf dem Endgerät. Netzwerkzugriffe auf Open Food Facts laufen verpflichtend über ein serverloses Vercel-Gateway.
+KH Checker ist eine installierbare, statische Progressive Web App für iPhone, iPad, Android, Windows, macOS und Linux. GitHub Pages veröffentlicht ausschließlich die fertigen Web-Dateien. Produktsuche, Cache, Produktauflösung, Kalibrierung und Kohlenhydratberechnung laufen auf dem Endgerät. Netzwerkzugriffe auf Open Food Facts laufen verpflichtend über ein serverloses Daten-Gateway.
 
 ## Was v2.2.4 ändert
 
@@ -82,11 +82,11 @@ GitHub Pages
       └── OFF API v2 nur bei weiterhin fehlenden Daten
 ```
 
-Die Pages-PWA darf keine direkten Browseraufrufe zu Open Food Facts mehr ausführen. `VITE_DATA_GATEWAY_URL` ist daher im Build zwingend und muss auf den laufenden Vercel-Dienst zeigen. Gateway-Antworten werden im Browser und im optionalen Express-Server gegen den generierten Zod-Vertrag geprüft.
+Die Pages-PWA darf keine direkten Browseraufrufe zu Open Food Facts mehr ausführen. `VITE_DATA_GATEWAY_URL` ist daher im Build zwingend und muss auf einen laufenden Gateway-Dienst zeigen. Gateway-Antworten werden im Browser und im optionalen Express-Server gegen den generierten Zod-Vertrag geprüft.
 
-## Vercel-Gateway Setup
+## Gateway Setup (z. B. Vercel)
 
-Der Workspace enthält serverlose Endpunkte unter `api/` für Vercel:
+Der Workspace enthält serverlose Endpunkte unter `api/` (direkt kompatibel mit Vercel):
 
 - `GET /api/health`
 - `GET /api/search`
@@ -103,9 +103,11 @@ Erforderliche Vercel-Umgebungsvariablen:
 - `OFF_CONTACT_EMAIL`
 - `CORS_ORIGINS` (kommagetrennte Origins, optional)
 
-Für den Pages-Build muss zusätzlich im GitHub-Repository gesetzt sein:
+Für den Pages-Build muss zusätzlich im GitHub-Repository als Actions-Variable gesetzt sein:
 
-- `VITE_DATA_GATEWAY_URL=https://<dein-gateway>.vercel.app`
+- `VITE_DATA_GATEWAY_URL=https://<dein-gateway-domain>`
+
+Wichtig: Der GitHub-Workflow deployt nur die statische PWA nach GitHub Pages. Das Gateway selbst wird dadurch nicht gebaut oder deployed und muss separat in deiner Serverless-Umgebung bereitgestellt werden.
 
 ## One-Click-Deployment
 
