@@ -51,8 +51,15 @@ test('deterministische manuelle Berechnung funktioniert vollständig ohne Netzwe
 
 test('Suchbutton erlaubt sofortige Wiederholung ohne direkten Browser-OFF-Aufruf', async ({ page }) => {
   let gatewayRequests = 0;
-  await page.route('**/api/search**', async (route) => {
-    gatewayRequests += 1;
+  let offRequests = 0;
+
+  page.on('request', (request) => {
+    const url = request.url();
+    if (url.includes('/api/search')) gatewayRequests += 1;
+    if (url.includes('openfoodfacts.org')) offRequests += 1;
+  });
+
+  await page.route('**/api/search*', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 2_000));
     await route.fulfill({
       status: 200,
@@ -85,8 +92,8 @@ test('Suchbutton erlaubt sofortige Wiederholung ohne direkten Browser-OFF-Aufruf
   await expect(searchButton).toBeEnabled();
   await searchButton.click();
   await expect(searchButton).toBeEnabled();
-  await expect.poll(() => gatewayRequests).toBeGreaterThanOrEqual(1);
-  expect(gatewayRequests).toBeGreaterThanOrEqual(1);
+  await expect.poll(() => gatewayRequests, { timeout: 12_000 }).toBeGreaterThanOrEqual(1);
+  expect(offRequests).toBe(0);
 });
 
 test('Startansicht erfüllt den automatisierten WCAG-A/AA-Smoke', async ({ page }) => {
