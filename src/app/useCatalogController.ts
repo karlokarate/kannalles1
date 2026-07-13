@@ -114,7 +114,10 @@ export function useCatalogController() {
     if (!parsed) { dispatch({ type: 'validation', message: 'Bitte Produktname oder Barcode eingeben.' }); return; }
     const generic = parsed.barcode ? null : genericCookedProductForQuery(parsed.catalogQuery);
     if (generic) {
-      setRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit });
+      const noExplicitQuantity = !parsed.amountExplicit && !parsed.unitExplicit;
+      setRequest(noExplicitQuantity
+        ? { amount: 100, unit: 'g', unitExplicit: true }
+        : { amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit });
       setSelectedOptionId(null);
       dispatch({ type: 'resolve', query: parsed.catalogQuery, product: generic, candidates: [asGenericSearchHit(generic)] });
       return;

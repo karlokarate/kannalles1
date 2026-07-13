@@ -102,6 +102,8 @@ test('zeigt Trefferbilder, nutzt Sprache für gekochten Reis und speichert eine 
   await expect(generic).toContainText('Reis, gekocht');
   await expect(generic).toContainText('BLS 4.0 · C352032');
   await expect(generic).toHaveAttribute('data-carbs-per-100-g', '24.8');
+  await expect(generic).toHaveAttribute('data-amount', '100');
+  await expect(page.getByTestId('catalog-calculation')).toHaveAttribute('data-total-carbs-g', '24.8');
 
   await searchCatalog(page, 'Kinder Bueno');
   await expect(page.getByTestId('catalog-search-results').locator('img').first()).toBeVisible();
