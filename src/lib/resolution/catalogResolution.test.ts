@@ -96,6 +96,18 @@ describe('structured catalog unit resolution', () => {
     expect(resolution.options.some((option) => option.unit === 'g')).toBe(true);
   });
 
+  it('keeps the smallest proven unit first even when the catalog default is portion', () => {
+    const resolution = resolveCatalogUnits(
+      bueno({ defaultUnitKind: 'portion' }),
+      request('portion', false)
+    );
+    expect(resolution.options[0]).toMatchObject({
+      unit: 'bar',
+      source: 'explicit_multipack_quantity',
+      recommended: true
+    });
+  });
+
   it('preserves an explicit bar and never converts a 43 g serving into one bar', () => {
     const product = bueno({
       provenUnit: null,
@@ -142,6 +154,37 @@ describe('structured catalog unit resolution', () => {
     const calculation = calculateCatalogCarbohydrates(product, request('portion', false), resolution);
     expect(calculation.carbohydratesG).toBe(10.5);
     expect(calculation.provenance.source).toBe('user_calibration');
+  });
+
+  it('selects calibrations independently per unit', () => {
+    const piece: MatchingUnitCalibration = {
+      calibrationId: 'piece-stronger',
+      scope: 'catalog-product',
+      unit: 'piece',
+      measuredCount: 20,
+      measuredTotalWeightG: 40,
+      updatedAt: '2026-07-14T12:00:00.000Z',
+      active: true
+    };
+    const bar: MatchingUnitCalibration = {
+      calibrationId: 'bar-specific',
+      scope: 'exact-product',
+      unit: 'bar',
+      measuredCount: 8,
+      measuredTotalWeightG: 168,
+      updatedAt: '2026-07-13T12:00:00.000Z',
+      active: true
+    };
+    const resolution = resolveCatalogUnits(
+      bueno({ provenUnit: null }),
+      request('bar', true),
+      [piece, bar]
+    );
+    expect(resolution.options[0]).toMatchObject({
+      unit: 'bar',
+      source: 'user_calibration',
+      baseValue: 21
+    });
   });
 
   it('does not reuse a different calibrated unit for an explicit request', () => {

@@ -112,6 +112,13 @@ export interface CatalogEligibility {
   >;
 }
 
+const CALIBRATABLE_UNITS: readonly MatchingUnitCalibration['unit'][] = [
+  'piece',
+  'bar',
+  'slice',
+  'portion'
+];
+
 const UNIT_LABELS: Record<RequestedUnit, string> = {
   g: 'Gramm',
   kg: 'Kilogramm',
@@ -249,11 +256,12 @@ function calibrationWeight(calibration: MatchingUnitCalibration): number | null 
   return weight <= MAX_COUNTED_UNIT_WEIGHT_G ? weight : null;
 }
 
-function selectCalibration(
-  calibrations: readonly MatchingUnitCalibration[]
+function selectCalibrationForUnit(
+  calibrations: readonly MatchingUnitCalibration[],
+  unit: MatchingUnitCalibration['unit']
 ): MatchingUnitCalibration | null {
   return [...calibrations]
-    .filter((item) => calibrationWeight(item) !== null)
+    .filter((item) => item.unit === unit && calibrationWeight(item) !== null)
     .sort((a, b) => {
       const scope = SCOPE_PRIORITY[a.scope] - SCOPE_PRIORITY[b.scope];
       if (scope !== 0) return scope;
@@ -271,6 +279,30 @@ function addUnique(options: ResolvedUnitOption[], option: ResolvedUnitOption): v
     && candidate.baseValue === option.baseValue
   );
   if (!duplicate) options.push(option);
+}
+
+function addCalibrationOptions(
+  options: ResolvedUnitOption[],
+  calibrations: readonly MatchingUnitCalibration[],
+  basis: CatalogNutritionBasis
+): void {
+  if (basis !== 'mass') return;
+  for (const unit of CALIBRATABLE_UNITS) {
+    const calibration = selectCalibrationForUnit(calibrations, unit);
+    if (!calibration) continue;
+    const value = calibrationWeight(calibration);
+    if (value === null) continue;
+    addUnique(options, makeOption({
+      unit,
+      basis: 'mass',
+      baseValue: value,
+      source: 'user_calibration',
+      smallestEdibleUnit: isCountedUnit(unit),
+      note: calibration.measuredCount >= 2
+        ? `Persönlich kalibriert aus ${calibration.measuredCount} gemeinsam gewogenen Einheiten.`
+        : 'Persönlich gemessenes Einzelgewicht.'
+    }));
+  }
 }
 
 function unresolvedOption(
@@ -309,6 +341,59 @@ function orderOptions(
   );
 }
 
+function selectImplicitOption(
+  options: ResolvedUnitOption[],
+  defaultUnit: RequestedUnit
+): { option: ResolvedUnitOption | null; reason: CatalogUnitResolution['reason'] } {
+  const calibratedSmallest = options
+    .filter((option) => option.source === 'user_calibration' && option.smallestEdibleUnit)
+    .sort((a, b) => a.priority - b.priority)[0];
+  if (calibratedSmallest) {
+    return { option: calibratedSmallest, reason: 'calibration-preferred' };
+  }
+
+  const provenSmallest = options
+    .filter((option) => option.smallestEdibleUnit && option.baseValue !== null)
+    .sort((a, b) =>
+      a.priority - b.priority
+      || (a.baseValue ?? Number.POSITIVE_INFINITY) - (b.baseValue ?? Number.POSITIVE_INFINITY)
+    )[0];
+  if (provenSmallest) {
+    return { option: provenSmallest, reason: 'smallest-proven-unit' };
+  }
+
+  if (isCountedUnit(defaultUnit) || defaultUnit === 'portion') {
+    const defaultOption = options
+      .filter((option) => option.unit === defaultUnit)
+      .sort((a, b) => a.priority - b.priority)[0];
+    if (defaultOption) {
+      if (defaultOption.source === 'user_calibration') {
+        return { option: defaultOption, reason: 'calibration-preferred' };
+      }
+      if (defaultOption.source === 'manufacturer_serving') {
+        return { option: defaultOption, reason: 'manufacturer-serving' };
+      }
+      return { option: defaultOption, reason: 'requested-unit-unavailable' };
+    }
+  }
+
+  const manufacturerServing = options.find((option) => option.source === 'manufacturer_serving');
+  if (manufacturerServing) {
+    return { option: manufacturerServing, reason: 'manufacturer-serving' };
+  }
+  const productQuantity = options.find((option) => option.source === 'product_quantity');
+  if (productQuantity) {
+    return { option: productQuantity, reason: 'product-quantity' };
+  }
+  const direct = options.find((option) =>
+    option.source === 'direct_mass' || option.source === 'direct_volume'
+  ) ?? null;
+  return {
+    option: direct,
+    reason: direct ? 'direct-basis' : 'requested-unit-unavailable'
+  };
+}
+
 export function resolveCatalogUnits(
   product: CatalogProduct,
   request: CatalogUnitRequest,
@@ -317,22 +402,7 @@ export function resolveCatalogUnits(
   const options: ResolvedUnitOption[] = [];
   const basis = product.nutritionBasis;
 
-  const selectedCalibration = selectCalibration(calibrations);
-  if (basis === 'mass' && selectedCalibration) {
-    const value = calibrationWeight(selectedCalibration);
-    if (value !== null) {
-      addUnique(options, makeOption({
-        unit: selectedCalibration.unit,
-        basis: 'mass',
-        baseValue: value,
-        source: 'user_calibration',
-        smallestEdibleUnit: isCountedUnit(selectedCalibration.unit),
-        note: selectedCalibration.measuredCount >= 2
-          ? `Persönlich kalibriert aus ${selectedCalibration.measuredCount} gemeinsam gewogenen Einheiten.`
-          : 'Persönlich gemessenes Einzelgewicht.'
-      }));
-    }
-  }
+  addCalibrationOptions(options, calibrations, basis);
 
   if (unitEvidenceIsValid(product.provenUnit, basis) && product.provenUnit) {
     const unit = requestedUnitForCatalogKind(product.provenUnit.kind);
@@ -384,8 +454,7 @@ export function resolveCatalogUnits(
     }));
   }
 
-  const requestedExisting = options.filter((option) => option.unit === request.unit);
-  if (request.unitExplicit && requestedExisting.length === 0) {
+  if (request.unitExplicit && !options.some((option) => option.unit === request.unit)) {
     addUnique(options, unresolvedOption(request.unit, basis));
   }
 
@@ -394,47 +463,17 @@ export function resolveCatalogUnits(
     addUnique(options, unresolvedOption(implicitDefault, basis));
   }
 
-  let selected: ResolvedUnitOption | null = null;
-  let reason: CatalogUnitResolution['reason'] = 'requested-unit-unavailable';
-
+  let selected: ResolvedUnitOption | null;
+  let reason: CatalogUnitResolution['reason'];
   if (request.unitExplicit) {
     selected = options
       .filter((option) => option.unit === request.unit)
       .sort((a, b) => a.priority - b.priority)[0] ?? null;
     reason = 'explicit-unit-preserved';
-  } else if (isCountedUnit(implicitDefault) || implicitDefault === 'portion') {
-    selected = options
-      .filter((option) => option.unit === implicitDefault)
-      .sort((a, b) => a.priority - b.priority)[0] ?? null;
-    if (selected?.source === 'user_calibration') reason = 'calibration-preferred';
-    else if (selected?.smallestEdibleUnit) reason = 'smallest-proven-unit';
-    else if (selected?.source === 'manufacturer_serving') reason = 'manufacturer-serving';
-  }
-
-  selected ??= options
-    .filter((option) => option.source === 'user_calibration' && option.smallestEdibleUnit)
-    .sort((a, b) => a.priority - b.priority)[0] ?? null;
-  if (selected?.source === 'user_calibration') reason = 'calibration-preferred';
-
-  selected ??= options
-    .filter((option) => option.smallestEdibleUnit && option.baseValue !== null)
-    .sort((a, b) =>
-      a.priority - b.priority
-      || (a.baseValue ?? Number.POSITIVE_INFINITY) - (b.baseValue ?? Number.POSITIVE_INFINITY)
-    )[0] ?? null;
-  if (selected?.smallestEdibleUnit) reason = 'smallest-proven-unit';
-
-  selected ??= options.find((option) => option.source === 'manufacturer_serving') ?? null;
-  if (selected?.source === 'manufacturer_serving') reason = 'manufacturer-serving';
-
-  selected ??= options.find((option) => option.source === 'product_quantity') ?? null;
-  if (selected?.source === 'product_quantity') reason = 'product-quantity';
-
-  selected ??= options.find((option) =>
-    option.source === 'direct_mass' || option.source === 'direct_volume'
-  ) ?? null;
-  if (selected && (selected.source === 'direct_mass' || selected.source === 'direct_volume')) {
-    reason = 'direct-basis';
+  } else {
+    const implicit = selectImplicitOption(options, implicitDefault);
+    selected = implicit.option;
+    reason = implicit.reason;
   }
 
   const selectedNeedsCalibration = selected?.source === 'unresolved'
@@ -448,11 +487,10 @@ export function resolveCatalogUnits(
     reason = 'countable-weight-missing';
   }
 
-  const ordered = orderOptions(options, selected);
   return {
     status,
     selectedOptionId: selected?.id ?? null,
-    options: ordered,
+    options: orderOptions(options, selected),
     reason
   };
 }
