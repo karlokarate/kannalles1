@@ -71,7 +71,12 @@ function post<T>(request: RequestWithoutId, signal?: AbortSignal): Promise<T> {
   if (signal?.aborted) return Promise.reject(abortError());
   const id = nextRequestId++;
   return new Promise<T>((resolve, reject) => {
-    const entry: PendingRequest = { resolve, reject, requestType: request.type, signal };
+    const entry: PendingRequest = {
+      resolve: (value) => resolve(value as T),
+      reject,
+      requestType: request.type,
+      signal
+    };
     if (signal) {
       entry.abort = () => {
         if (!pending.delete(id)) return;
