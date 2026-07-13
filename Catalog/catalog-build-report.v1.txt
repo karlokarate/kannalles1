@@ -1,0 +1,37 @@
+KH CHECKER PRODUCTION OFFLINE CATALOG V1
+============================================================================================
+status=ok
+catalog_version=2026-07-13
+products=317579
+database_mib=24.059
+database_sha256=df177ab7545b13b39f40f1c2474adeb1501b19a44a82bf04838b4fd2e819458d
+writer=duckdb-sqlite-extension
+warm_search_p95_ms=18.246
+open_plus_query_max_ms=30.768
+proven_units=116335
+proven_countable_units=2021
+default_bar=2030
+default_slice=2462
+default_piece=5431
+improved_display_names=1
+integrity=ok
+fts_integrity=ok
+transport_compression=none
+
+[SMOKE SEARCHES]
+kinder bueno	hits=20	Kinder bueno | Kinder Bueno | Kinder bueno
+vollkornbrot	hits=20	Vollkornbrot | Vollkornbrot | Vollkornbrot
+erdnüsse	hits=20	Erdnüsse | Erdnüsse | Erdnüsse
+nutella	hits=20	Nutella | Nutella | Nutella
+salzstangen	hits=20	Salzstangen | Salzstangen | Salzstangen
+
+[TIMINGS]
+inputValidationSeconds=0.085
+schemaValidationSeconds=3.511
+singleEnrichmentScanSeconds=16.188
+semanticDerivationSeconds=4.717
+sqliteDataWriteSeconds=1.012
+ftsAndVacuumSeconds=1.403
+qualityGatesSeconds=1.866
+publicationSeconds=0.098
+totalSeconds=28.882

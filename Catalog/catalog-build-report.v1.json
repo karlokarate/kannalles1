@@ -1,0 +1,162 @@
+{
+  "status": "ok",
+  "contract": "kh-checker-offline-catalog-production",
+  "version": "1.0.0",
+  "catalogVersion": "2026-07-13",
+  "runtime": {
+    "python": "3.12.3",
+    "duckdb": "1.5.4",
+    "sqlite": "3.45.1",
+    "writer": "duckdb-sqlite-extension",
+    "threads": 4,
+    "memoryLimit": "3GB"
+  },
+  "source": {
+    "path": "/root/off-builder/source/food.parquet",
+    "bytes": 7657020586,
+    "schemaFingerprintSha256": "1da7454e1f983cf9528124ad0e960ef3fa56083122757a5129723c95bc8bcc23",
+    "schemaFingerprintMatches": true,
+    "topLevelColumns": 111,
+    "nestedSchemaRows": 266
+  },
+  "audit": {
+    "status": "ok",
+    "products": 317579,
+    "warnings": [],
+    "blockers": []
+  },
+  "catalog": {
+    "products": 317579,
+    "distinct_ids": 317579,
+    "standard_products": 316642,
+    "rescue_products": 937,
+    "rescue_text_codes": 937,
+    "missing_names": 0,
+    "invalid_carbs": 0,
+    "unsafe_metadata": 0,
+    "products_with_proven_unit": 116335,
+    "products_with_proven_countable_unit": 2021,
+    "default_bar": 2030,
+    "default_slice": 2462,
+    "default_piece": 5431,
+    "default_portion": 114314,
+    "default_volume": 16527,
+    "default_mass": 176815,
+    "improved_display_names": 1,
+    "max_display_name_length": 481,
+    "max_search_text_length": 1024,
+    "average_search_text_length": 61.224318988346205,
+    "max_metadata": 274879035092,
+    "max_rank_ordinal": 1150
+  },
+  "sqlite": {
+    "integrity": "ok",
+    "ftsIntegrity": "ok",
+    "productCount": 317579,
+    "brandCount": 60682,
+    "pageSize": 4096,
+    "pageCount": 6159,
+    "applicationId": 1263027011,
+    "userVersion": 1,
+    "objectBytes": {
+      "d": 1511424,
+      "p": 17223680,
+      "pg": 36864,
+      "sqlite_schema": 4096,
+      "sqlite_stat1": 4096,
+      "x_config": 4096,
+      "x_data": 6410240,
+      "x_idx": 32768
+    },
+    "bytes": 25227264,
+    "mib": 24.05859375,
+    "sha256": "df177ab7545b13b39f40f1c2474adeb1501b19a44a82bf04838b4fd2e819458d"
+  },
+  "roundtrip": {
+    "rows": 317579,
+    "missing_sqlite_rows": 0,
+    "carbs_mismatches": 0,
+    "serving_mismatches": 0,
+    "quantity_mismatches": 0,
+    "unit_mismatches": 0,
+    "metadata_mismatches": 0,
+    "rank_mismatches": 0,
+    "standard_code_roundtrip_mismatches": 0,
+    "rescue_code_roundtrip_mismatches": 0
+  },
+  "searchBenchmark": {
+    "queryCount": 85,
+    "measurements": 340,
+    "warmP50Ms": 2.1553125,
+    "warmP95Ms": 18.246028800000005,
+    "warmP99Ms": 23.256182090000003,
+    "warmMaxMs": 31.876823,
+    "openPlusQueryP95Ms": 24.22,
+    "openPlusQueryMaxMs": 30.767917,
+    "smoke": [
+      {
+        "input": "kinder bueno",
+        "fts": "\"kinder\"* AND \"bueno\"*",
+        "hits": 20,
+        "topNames": [
+          "Kinder bueno",
+          "Kinder Bueno",
+          "Kinder bueno"
+        ]
+      },
+      {
+        "input": "vollkornbrot",
+        "fts": "\"vollkornbrot\"*",
+        "hits": 20,
+        "topNames": [
+          "Vollkornbrot",
+          "Vollkornbrot",
+          "Vollkornbrot"
+        ]
+      },
+      {
+        "input": "erdnüsse",
+        "fts": "\"erdnüsse\"*",
+        "hits": 20,
+        "topNames": [
+          "Erdnüsse",
+          "Erdnüsse",
+          "Erdnüsse"
+        ]
+      },
+      {
+        "input": "nutella",
+        "fts": "\"nutella\"*",
+        "hits": 20,
+        "topNames": [
+          "Nutella",
+          "Nutella",
+          "Nutella"
+        ]
+      },
+      {
+        "input": "salzstangen",
+        "fts": "\"salzstangen\"*",
+        "hits": 20,
+        "topNames": [
+          "Salzstangen",
+          "Salzstangen",
+          "Salzstangen"
+        ]
+      }
+    ]
+  },
+  "timings": {
+    "inputValidationSeconds": 0.08542510400002357,
+    "schemaValidationSeconds": 3.511449477999122,
+    "singleEnrichmentScanSeconds": 16.187790515003144,
+    "semanticDerivationSeconds": 4.717294477013638,
+    "sqliteDataWriteSeconds": 1.0116743739927188,
+    "ftsAndVacuumSeconds": 1.40301765598997,
+    "qualityGatesSeconds": 1.8664576550072525,
+    "publicationSeconds": 0.09833807300310582,
+    "totalSeconds": 28.882030770007987
+  },
+  "warnings": [],
+  "blockers": []
+}
