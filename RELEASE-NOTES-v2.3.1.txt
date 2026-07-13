@@ -1,0 +1,11 @@
+FishIT KH Checker v2.3.1 – Editierbare persönliche Therapiewerte
+================================================================
+
+- Der persönliche Zielblutzucker lässt sich jetzt vollständig leeren und
+  anschließend Ziffer für Ziffer neu eingeben.
+- Dieselbe robuste Eingabelogik gilt für KH-Insulin-Verhältnis und
+  Korrekturfaktor.
+- Gültige Werte werden weiterhin unmittelbar lokal gespeichert.
+- Vorübergehend unvollständige Zahlen bleiben während der Bearbeitung sichtbar;
+  beim Verlassen wird ein ungültiger Entwurf auf den letzten gültigen Wert
+  zurückgesetzt.

@@ -77,6 +77,15 @@ test('segmentiertes Diabetikerprofil berechnet Korrektur allein und zusammen mit
   for (const input of await page.getByTestId('correction-factor-input').all()) await input.fill('50');
   for (const input of await page.getByTestId('target-glucose-input').all()) await input.fill('100');
 
+  const editableTarget = page.getByTestId('target-glucose-input').first();
+  await editableTarget.selectText();
+  await editableTarget.press('Backspace');
+  await expect(editableTarget).toHaveValue('');
+  await editableTarget.pressSequentially('120');
+  await expect(editableTarget).toHaveValue('120');
+  await editableTarget.selectText();
+  await editableTarget.pressSequentially('100');
+
   await page.getByRole('button', { name: 'Rechner', exact: true }).click();
   const panel = page.getByTestId('diabetes-bolus-panel');
   await expect(panel).toBeVisible();

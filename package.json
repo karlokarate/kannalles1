@@ -1,7 +1,7 @@
 {
   "name": "kh-checker-v2",
   "private": true,
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "Installierbare PWA mit deterministischer Kohlenhydratberechnung und lokalem SQLite-Produktkatalog.",
   "license": "MIT",
   "repository": {

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { addDiabetesSegment, changeSegmentBoundary, minuteToTimeInput, removeDiabetesSegment, timeInputToMinute } from '../lib/diabetesProfile';
 import type { DiabetesTimeSegment } from '../lib/diabetesProfile';
@@ -15,10 +16,64 @@ function optionalNumber(value: string, min: number, max: number): number | null 
   return Number.isFinite(number) && number >= min && number <= max ? number : undefined;
 }
 
+interface EditableNumberFieldProps {
+  label: string;
+  unit: string;
+  value: number | null;
+  min: number;
+  max: number;
+  step: number;
+  placeholder: string;
+  testId: string;
+  onValueChange: (value: number | null) => void;
+}
+
+function EditableNumberField({ label, unit, value, min, max, step, placeholder, testId, onValueChange }: EditableNumberFieldProps) {
+  const [draft, setDraft] = useState(value === null ? '' : String(value));
+
+  useEffect(() => {
+    setDraft(value === null ? '' : String(value));
+  }, [value]);
+
+  const parsed = optionalNumber(draft, min, max);
+  const invalid = parsed === undefined;
+
+  const handleChange = (raw: string) => {
+    setDraft(raw);
+    const next = optionalNumber(raw, min, max);
+    if (next !== undefined) onValueChange(next);
+  };
+
+  const handleBlur = () => {
+    if (optionalNumber(draft, min, max) === undefined) {
+      setDraft(value === null ? '' : String(value));
+    }
+  };
+
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <span className="input-with-unit">
+        <input
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          value={draft}
+          onChange={(event) => handleChange(event.target.value)}
+          onBlur={handleBlur}
+          placeholder={placeholder}
+          data-testid={testId}
+          aria-invalid={invalid}
+        />
+        <b>{unit}</b>
+      </span>
+    </label>
+  );
+}
+
 export function DiabetesSettings({ enabled, segments, onEnabledChange, onSegmentsChange }: DiabetesSettingsProps) {
-  const updateValue = (index: number, key: 'carbohydrateRatioG' | 'correctionFactorMgDl' | 'targetGlucoseMgDl', raw: string, min: number, max: number) => {
-    const value = optionalNumber(raw, min, max);
-    if (value === undefined) return;
+  const updateValue = (index: number, key: 'carbohydrateRatioG' | 'correctionFactorMgDl' | 'targetGlucoseMgDl', value: number | null) => {
     onSegmentsChange(segments.map((segment, current) => current === index ? { ...segment, [key]: value } : segment));
   };
   const updateBoundary = (boundaryIndex: number, event: ChangeEvent<HTMLInputElement>) => {
@@ -38,9 +93,9 @@ export function DiabetesSettings({ enabled, segments, onEnabledChange, onSegment
           <div className="diabetes-segment-grid">
             {index === 0 ? <div className="field"><span>Von</span><output>00:00</output></div> : <label className="field"><span>Von</span><input type="time" value={minuteToTimeInput(segment.startMinute)} min={minuteToTimeInput(segments[index - 1].startMinute + 1)} max={minuteToTimeInput(segment.endMinute - 1)} onChange={(event) => updateBoundary(index, event)} /></label>}
             {index === segments.length - 1 ? <div className="field"><span>Bis</span><output>24:00</output></div> : <label className="field"><span>Bis</span><input type="time" value={minuteToTimeInput(segment.endMinute)} min={minuteToTimeInput(segment.startMinute + 1)} max={minuteToTimeInput(segments[index + 1].endMinute - 1)} onChange={(event) => updateBoundary(index + 1, event)} /></label>}
-            <label className="field"><span>1 Einheit Insulin reicht für</span><span className="input-with-unit"><input type="number" min="1" max="150" step="0.1" value={segment.carbohydrateRatioG ?? ''} onChange={(event) => updateValue(index, 'carbohydrateRatioG', event.target.value, 1, 150)} placeholder="z. B. 10" data-testid="carbohydrate-ratio-input" /><b>g KH</b></span></label>
-            <label className="field"><span>1 Einheit Insulin senkt um</span><span className="input-with-unit"><input type="number" min="1" max="400" step="1" value={segment.correctionFactorMgDl ?? ''} onChange={(event) => updateValue(index, 'correctionFactorMgDl', event.target.value, 1, 400)} placeholder="z. B. 50" data-testid="correction-factor-input" /><b>mg/dL</b></span></label>
-            <label className="field"><span>Persönlicher Zielblutzucker</span><span className="input-with-unit"><input type="number" min="40" max="300" step="1" value={segment.targetGlucoseMgDl ?? ''} onChange={(event) => updateValue(index, 'targetGlucoseMgDl', event.target.value, 40, 300)} placeholder="Vom Behandlungsteam" data-testid="target-glucose-input" /><b>mg/dL</b></span></label>
+            <EditableNumberField label="1 Einheit Insulin reicht für" unit="g KH" value={segment.carbohydrateRatioG} min={1} max={150} step={0.1} placeholder="z. B. 10" testId="carbohydrate-ratio-input" onValueChange={(value) => updateValue(index, 'carbohydrateRatioG', value)} />
+            <EditableNumberField label="1 Einheit Insulin senkt um" unit="mg/dL" value={segment.correctionFactorMgDl} min={1} max={400} step={1} placeholder="z. B. 50" testId="correction-factor-input" onValueChange={(value) => updateValue(index, 'correctionFactorMgDl', value)} />
+            <EditableNumberField label="Persönlicher Zielblutzucker" unit="mg/dL" value={segment.targetGlucoseMgDl} min={40} max={300} step={1} placeholder="Vom Behandlungsteam" testId="target-glucose-input" onValueChange={(value) => updateValue(index, 'targetGlucoseMgDl', value)} />
           </div>
         </article>)}
       </div>

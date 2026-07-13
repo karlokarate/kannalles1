@@ -1,4 +1,4 @@
-# FishIT KH Checker v2.3.0
+# FishIT KH Checker v2.3.1
 
 FishIT KH Checker ist eine installierbare, offlinefähige Web-App zur nachvollziehbaren Kohlenhydratberechnung. Produktsuche und Nährwerte kommen aus dem versionierten SQLite-Katalog im Repository. Die App lädt weder Suchergebnisse noch Produktdetails über eine API oder ein Gateway.
 

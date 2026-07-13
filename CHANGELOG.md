@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.1 – Editierbare persönliche Therapiewerte
+
+- kontrollierte Zahlenfelder im Diabetikerprofil erlauben jetzt vollständiges Löschen und ziffernweise Neueingabe,
+- gültige Werte werden weiterhin sofort gespeichert; unvollständige Werte bleiben während der Eingabe als Entwurf sichtbar,
+- ungültige Entwürfe werden beim Verlassen des Feldes auf den letzten gültigen Wert zurückgesetzt,
+- Browser-Regressionstest für das Editieren des persönlichen Zielblutzuckers ergänzt.
+
 ## 2.2.4 – Offline-SQLite-Cutover
 
 - produktive Datenautorität auf den versionierten lokalen SQLite-Katalog umgestellt,
