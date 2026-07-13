@@ -1,4 +1,4 @@
-name: Build and deploy KH Checker to Pages
+name: Build, prove and deploy KH Checker to Pages
 
 on:
   push:
@@ -10,22 +10,64 @@ on:
 permissions:
   contents: read
 
+env:
+  VITE_DATA_GATEWAY_URL: ""
+
 concurrency:
   group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  quality:
+    name: Validate hard-cutover architecture
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node.js 24 LTS
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24.18.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            Catalog/runtime/package-lock.json
+
+      - name: Install locked application dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install locked SQLite-WASM runtime
+        run: npm ci --prefix Catalog/runtime --no-audit --no-fund
+
+      - name: Validate production catalog and workflow
+        run: |
+          npm run check:catalog
+          npm run check:workflow
+
+      - name: Typecheck and run deterministic tests
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Enforce architecture and dead-code gates
+        run: |
+          npm run check:architecture
+          npm run check:knip
+
   build:
-    name: Build offline Pages artifact
+    name: Build manifest-derived Pages artifact
+    needs: quality
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
-    env:
-      # Online product access is intentionally disabled. The application reads
-      # exclusively from the deployed SQLite catalog after installation in OPFS.
-      VITE_DATA_GATEWAY_URL: ""
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -49,7 +91,7 @@ jobs:
         run: npm ci --prefix Catalog/runtime --no-audit --no-fund
 
       - name: Validate production catalog artifacts
-        run: python3 scripts/validate-catalog-artifacts.py
+        run: npm run check:catalog
 
       - name: Build production PWA
         shell: bash
@@ -57,8 +99,11 @@ jobs:
           set +e
           npm run build > build-output.log 2>&1
           status=$?
-          tail -n 160 build-output.log
+          tail -n 200 build-output.log
           exit "$status"
+
+      - name: Verify manifest-derived Pages artifact
+        run: npm run check:pages
 
       - name: Upload compiler log on failure
         if: failure()
@@ -68,51 +113,6 @@ jobs:
           path: build-output.log
           if-no-files-found: ignore
           retention-days: 3
-
-      - name: Verify offline runtime artifact
-        shell: bash
-        run: |
-          set +e
-          {
-            set -x
-            test -s dist/catalog/kh-checker-dach.sqlite
-            test -s dist/catalog/manifest.json
-            test -s dist/catalog/catalog-codecs.v1.json
-            test -s dist/catalog/catalog-image-keys.v2.json
-            test -s dist/vendor/sqlite/index.mjs
-            test -s dist/vendor/sqlite/sqlite3.wasm
-            test "$(stat -c %s dist/catalog/kh-checker-dach.sqlite)" -eq 25227264
-            test "$(sha256sum dist/catalog/kh-checker-dach.sqlite | cut -d' ' -f1)" = "df177ab7545b13b39f40f1c2474adeb1501b19a44a82bf04838b4fd2e819458d"
-            if grep -R --line-number --fixed-strings "search.openfoodfacts.org" dist/assets; then
-              echo "FEHLER: Online-Produktsuche ist noch im produktiven App-Bundle enthalten."
-              exit 1
-            fi
-          } > verify-output.log 2>&1
-          status=$?
-          cat verify-output.log
-          exit "$status"
-
-      - name: Upload artifact verification log on failure
-        if: failure()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
-        with:
-          name: offline-verify-output
-          path: verify-output.log
-          if-no-files-found: ignore
-          retention-days: 3
-
-      - name: Package exact branch source snapshot
-        if: always() && github.event_name == 'pull_request'
-        run: git archive --format=zip --output=offline-cutover-source.zip HEAD
-
-      - name: Upload exact branch source snapshot
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
-        with:
-          name: offline-cutover-source
-          path: offline-cutover-source.zip
-          if-no-files-found: error
-          retention-days: 1
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
@@ -124,10 +124,56 @@ jobs:
         with:
           path: dist
 
+  browser-e2e:
+    name: Prove real SQLite-WASM and OPFS journeys
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node.js 24 LTS
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24.18.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            Catalog/runtime/package-lock.json
+
+      - name: Install locked application dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install locked SQLite-WASM runtime
+        run: npm ci --prefix Catalog/runtime --no-audit --no-fund
+
+      - name: Install Playwright browser engines
+        run: npm run test:e2e:install
+
+      - name: Run real browser catalog proof
+        run: npm run test:e2e
+
+      - name: Upload Playwright evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
+        with:
+          name: playwright-catalog-evidence
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+          retention-days: 5
+
   deploy:
     name: Deploy KH Checker PWA
     if: github.event_name != 'pull_request'
-    needs: build
+    needs: [build, browser-e2e]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -137,23 +183,35 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-
     steps:
+      - name: Checkout manifest for deployment summary
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
 
-      - name: Deployment summary
+      - name: Deployment summary from production manifest
         shell: bash
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
-          {
-            echo "## KH Checker offline catalog deployed"
-            echo
-            echo "- URL: ${PAGE_URL}"
-            echo "- Commit: ${GITHUB_SHA}"
-            echo "- Catalog: production-v1 · 317579 products · 25227264 bytes"
-            echo "- Product source: deployed SQLite → OPFS → SQLite-WASM worker"
-            echo "- Online OFF/Search-a-licious product access: disabled"
-          } >> "${GITHUB_STEP_SUMMARY}"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const manifest = JSON.parse(fs.readFileSync('Catalog/catalog-manifest.v1.json', 'utf8'));
+          const lines = [
+            '## KH Checker offline catalog deployed',
+            '',
+            `- URL: ${process.env.PAGE_URL}`,
+            `- Commit: ${process.env.GITHUB_SHA}`,
+            `- Catalog: ${manifest.catalogVersion} · ${manifest.database.products} products · ${manifest.database.bytes} bytes`,
+            `- SQLite SHA-256: ${manifest.database.sha256}`,
+            '- Product source: deployed SQLite → A/B OPFS slots → SQLite-WASM worker',
+            '- Online OFF/Search-a-licious product access: disabled',
+            '',
+          ];
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n'));
+          NODE

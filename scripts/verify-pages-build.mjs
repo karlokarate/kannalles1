@@ -7,7 +7,14 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const pagesDir = process.argv[2] ? path.resolve(process.argv[2]) : path.join(rootDir, 'dist');
 const pagesLabel = path.relative(rootDir, pagesDir) || '.';
 const packageJson = JSON.parse(await fs.readFile(path.join(rootDir, 'package.json'), 'utf8'));
+const sourceManifest = JSON.parse(
+  await fs.readFile(path.join(rootDir, 'Catalog/catalog-manifest.v1.json'), 'utf8'),
+);
 const appVersion = String(packageJson.version);
+const deployedDatabase = 'catalog/kh-checker-dach.sqlite';
+const deployedManifest = 'catalog/manifest.json';
+const codecAsset = `catalog/${sourceManifest.codecFile}`;
+const imageDictionaryAsset = `catalog/${sourceManifest.image.dictionaryFile}`;
 
 function fail(message) {
   throw new Error(`GitHub-Pages-Prüfung fehlgeschlagen: ${message}`);
@@ -53,12 +60,12 @@ const requiredFiles = [
   'README-ERST-LESEN.html',
   'package-info.css',
   'icons/apple-touch-icon.png',
-  'catalog/kh-checker-dach.sqlite',
-  'catalog/manifest.json',
-  'catalog/catalog-codecs.v1.json',
-  'catalog/catalog-image-keys.v2.json',
+  deployedDatabase,
+  deployedManifest,
+  codecAsset,
+  imageDictionaryAsset,
   'vendor/sqlite/index.mjs',
-  'vendor/sqlite/sqlite3.wasm'
+  'vendor/sqlite/sqlite3.wasm',
 ];
 await Promise.all(requiredFiles.map(requireFile));
 
@@ -104,33 +111,42 @@ if (!indexHtml.includes('id="vite-legacy-polyfill"') || !indexHtml.includes('id=
   fail('index.html bindet den kontrollierten Legacy-/Polyfill-Pfad nicht ein.');
 }
 
-const catalogManifest = JSON.parse(await fs.readFile(path.join(pagesDir, 'catalog/manifest.json'), 'utf8'));
-const databasePath = path.join(pagesDir, 'catalog/kh-checker-dach.sqlite');
+const catalogManifest = JSON.parse(await fs.readFile(path.join(pagesDir, deployedManifest), 'utf8'));
+const databasePath = path.join(pagesDir, deployedDatabase);
 const databaseStats = await fs.stat(databasePath);
-if (catalogManifest?.contract !== 'kh-checker-offline-catalog-production') fail('Katalogmanifest hat den falschen Vertrag.');
-if (catalogManifest?.contractVersion !== '1.0.0') fail('Katalogmanifest hat die falsche Vertragsversion.');
-if (catalogManifest?.database?.file !== 'kh-checker-dach-v1.sqlite') fail('Katalogmanifest nennt nicht das Production-v1-Artefakt.');
-if (catalogManifest?.database?.bytes !== databaseStats.size) fail('Katalogmanifest und ausgelieferte Dateigröße weichen ab.');
-if (catalogManifest?.database?.products !== 317579) fail('Katalogmanifest enthält nicht die freigegebene Produktzahl.');
-if (catalogManifest?.database?.applicationId !== 1263027011 || catalogManifest?.database?.userVersion !== 1) {
-  fail('Katalogmanifest enthält nicht die freigegebenen SQLite-Identitäten.');
+for (const [field, actual, expected] of [
+  ['contract', catalogManifest.contract, sourceManifest.contract],
+  ['contractVersion', catalogManifest.contractVersion, sourceManifest.contractVersion],
+  ['catalogVersion', catalogManifest.catalogVersion, sourceManifest.catalogVersion],
+  ['database.file', catalogManifest.database?.file, sourceManifest.database.file],
+  ['database.bytes', catalogManifest.database?.bytes, sourceManifest.database.bytes],
+  ['database.sha256', catalogManifest.database?.sha256, sourceManifest.database.sha256],
+  ['database.applicationId', catalogManifest.database?.applicationId, sourceManifest.database.applicationId],
+  ['database.userVersion', catalogManifest.database?.userVersion, sourceManifest.database.userVersion],
+  ['database.products', catalogManifest.database?.products, sourceManifest.database.products],
+  ['codecFile', catalogManifest.codecFile, sourceManifest.codecFile],
+  ['image.dictionaryFile', catalogManifest.image?.dictionaryFile, sourceManifest.image.dictionaryFile],
+  ['image.dictionarySha256', catalogManifest.image?.dictionarySha256, sourceManifest.image.dictionarySha256],
+]) {
+  if (actual !== expected) fail(`${field} weicht vom eingecheckten Produktionsmanifest ab.`);
 }
-if (await sha256(databasePath) !== catalogManifest?.database?.sha256) fail('Ausgelieferte SQLite-SHA-256 stimmt nicht zum Manifest.');
-if (await sha256(path.join(pagesDir, 'catalog/catalog-image-keys.v2.json')) !== catalogManifest?.image?.dictionarySha256) {
-  fail('Ausgelieferter Bildschlüsselvertrag stimmt nicht zum Manifest.');
+if (databaseStats.size !== sourceManifest.database.bytes) fail('Ausgelieferte SQLite-Größe stimmt nicht zum Produktionsmanifest.');
+if (await sha256(databasePath) !== sourceManifest.database.sha256) fail('Ausgelieferte SQLite-SHA-256 stimmt nicht zum Produktionsmanifest.');
+if (await sha256(path.join(pagesDir, imageDictionaryAsset)) !== sourceManifest.image.dictionarySha256) {
+  fail('Ausgelieferter Bildschlüsselvertrag stimmt nicht zum Produktionsmanifest.');
 }
 
 const serviceWorker = await fs.readFile(path.join(pagesDir, 'sw.js'), 'utf8');
 for (const precached of ['index.html', 'app.css', 'README-ERST-LESEN.html', 'package-info.css', 'icons/apple-touch-icon.png']) {
   if (!serviceWorker.includes(precached)) fail(`Service Worker precacht ${precached} nicht.`);
 }
-for (const excluded of ['catalog/kh-checker-dach.sqlite', 'catalog/manifest.json', 'vendor/sqlite/sqlite3.wasm']) {
+for (const excluded of [deployedDatabase, deployedManifest, 'vendor/sqlite/sqlite3.wasm']) {
   if (serviceWorker.includes(excluded)) fail(`Service Worker darf ${excluded} nicht als App-Shell precachen.`);
 }
 
 const allFiles = await listFiles(pagesDir);
-const jsFiles = allFiles.filter((file) => file.endsWith('.js') && file.startsWith('assets/'));
-if (!jsFiles.length) fail('Kein gebautes JavaScript-Asset gefunden.');
+const jsFiles = allFiles.filter((file) => /\.(?:js|mjs)$/u.test(file));
+if (!jsFiles.some((file) => file.startsWith('assets/'))) fail('Kein gebautes JavaScript-Asset gefunden.');
 if (!jsFiles.some((file) => /(?:^|-)legacy(?:-|\.)/.test(path.basename(file)))) {
   fail('Kein syntax-abgesenkter Legacy-Bundlepfad gefunden.');
 }
@@ -138,21 +154,30 @@ const appJavaScript = (await Promise.all(jsFiles.map((file) => fs.readFile(path.
 for (const required of [
   'kh-checker-dach.sqlite',
   'catalog/manifest.json',
-  'Produktkatalog ist lokal aktiv',
-  appVersion
+  appVersion,
 ]) {
   if (!appJavaScript.includes(required)) fail(`Offline-App-Build enthält nicht: ${required}`);
 }
 for (const forbidden of [
-  'https://search.openfoodfacts.org/search',
-  'https://world.openfoodfacts.org/cgi/search.pl',
+  'search.openfoodfacts.org',
+  'world.openfoodfacts.org/cgi/search.pl',
   '/api/v1/search',
   '/api/v1/product/',
+  'api.openai.com',
   'OPENAI_API_KEY',
   'OFF_USER_AGENT',
-  'process.env.OFF_USER_AGENT'
+  'process.env.OFF_USER_AGENT',
 ]) {
   if (appJavaScript.includes(forbidden)) fail(`Retired online/server path is present in the app bundle: ${forbidden}`);
 }
 
-console.log(`GitHub-Pages-Build v${appVersion} geprüft: Production-v1 SQLite, OPFS/SQLite-WASM-Runtime, ${htmlFiles.length} HTML-Dateien und ${referenceCount} Referenzen.`);
+console.log(JSON.stringify({
+  pagesValid: true,
+  appVersion,
+  catalogVersion: sourceManifest.catalogVersion,
+  productCount: sourceManifest.database.products,
+  sizeBytes: sourceManifest.database.bytes,
+  sha256: sourceManifest.database.sha256,
+  htmlFiles: htmlFiles.length,
+  references: referenceCount,
+}));
