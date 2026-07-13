@@ -51,20 +51,32 @@ if (workflow.concurrency?.group !== 'pages' || workflow.concurrency?.['cancel-in
 }
 const build = workflow.jobs.build;
 const buildCommands = (build?.steps ?? []).map((step) => String(step?.run ?? '')).join('\n');
-if (!buildCommands.includes('npm ci --no-audit --no-fund') || !buildCommands.includes('npm run build')) {
-  throw new Error('The Pages job must install the lockfile and build the production PWA.');
+for (const required of [
+  'npm ci --no-audit --no-fund',
+  'npm ci --prefix Catalog/runtime --no-audit --no-fund',
+  'python3 scripts/validate-catalog-artifacts.py',
+  'npm run build',
+  'dist/catalog/kh-checker-dach.sqlite',
+  'dist/vendor/sqlite/sqlite3.wasm'
+]) {
+  if (!buildCommands.includes(required)) {
+    throw new Error(`Offline Pages build command missing: ${required}`);
+  }
 }
 for (const forbidden of [
   'npm test', 'npm run check', 'npm run audit', 'playwright', 'gitleaks',
-  'docker build', 'docker compose', 'check:gateway', 'check:search-index', 'npm run release'
+  'docker build', 'docker compose', 'check:gateway', 'check:search-index', 'npm run release',
+  '--allow-benchmark', 'vars.data_gateway_url', 'vars.vite_data_gateway_url'
 ]) {
   if (text.toLowerCase().includes(forbidden)) {
-    throw new Error(`Pages deploy must stay build-only; forbidden gate found: ${forbidden}`);
+    throw new Error(`Pages deploy contains a retired or excessive gate: ${forbidden}`);
   }
 }
-if (!text.includes('VITE_DATA_GATEWAY_URL: ${{ vars.DATA_GATEWAY_URL }}')
-  || text.includes('vars.VITE_DATA_GATEWAY_URL')) {
-  throw new Error('Pages must use only the optional canonical DATA_GATEWAY_URL repository variable.');
+if (!text.includes('VITE_DATA_GATEWAY_URL: ""')) {
+  throw new Error('Pages must force an empty gateway URL for the offline product runtime.');
+}
+if (!text.includes('Online OFF/Search-a-licious product access: disabled')) {
+  throw new Error('Deployment summary must state that online product access is disabled.');
 }
 const upload = build.steps.find((step) => String(step?.uses ?? '').startsWith('actions/upload-pages-artifact@'));
 if (upload?.with?.path !== 'dist') throw new Error('Pages must upload the direct Vite dist directory.');
@@ -78,7 +90,7 @@ if (deploy?.environment?.name !== 'github-pages') throw new Error('Deploy must t
 
 console.log(JSON.stringify({
   workflowValid: true,
-  mode: 'build-only-pages-deploy',
+  mode: 'offline-sqlite-pages-deploy',
   file: `.github/workflows/${files[0]}`,
   jobs
 }));
