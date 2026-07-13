@@ -13,12 +13,21 @@ function isLoopback(hostname: string): boolean {
     || /^127(?:\.\d{1,3}){3}$/.test(normalized);
 }
 
-/** Enforces HTTPS except for same-origin and loopback development traffic. */
+/**
+ * Browser product access is offline-catalog-only. Returning an empty runtime
+ * endpoint also neutralizes gateway URLs persisted by previous releases, so an
+ * obsolete setting can never block or silently re-enable network search.
+ *
+ * Node-side validation remains available for retained migration tooling until
+ * the old gateway tree is removed in a separate cleanup.
+ */
 export function validatedGatewayBase(
   value: string,
   currentOrigin?: string,
   allowEmpty = false
 ): string {
+  if (typeof window !== 'undefined') return '';
+
   const clean = value.trim();
   if (!clean) {
     if (allowEmpty) return '';
