@@ -5,11 +5,16 @@ import type {
   CatalogWorkerResponse
 } from './catalogProtocol';
 
-type RequestWithoutId = Omit<CatalogWorkerRequest, 'id'>;
+type RequestWithoutId = CatalogWorkerRequest extends infer Request
+  ? Request extends { id: number }
+    ? Omit<Request, 'id'>
+    : never
+  : never;
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (reason?: unknown) => void;
+  requestType: CatalogWorkerRequest['type'];
   signal?: AbortSignal;
   abort?: () => void;
 }
@@ -66,7 +71,7 @@ function post<T>(request: RequestWithoutId, signal?: AbortSignal): Promise<T> {
   if (signal?.aborted) return Promise.reject(abortError());
   const id = nextRequestId++;
   return new Promise<T>((resolve, reject) => {
-    const entry: PendingRequest = { resolve, reject, signal };
+    const entry: PendingRequest = { resolve, reject, requestType: request.type, signal };
     if (signal) {
       entry.abort = () => {
         if (!pending.delete(id)) return;
@@ -127,7 +132,12 @@ export async function getOfflineCatalogStatus(): Promise<CatalogRuntimeStatus> {
 }
 
 export function cancelOfflineCatalogRequests(): void {
-  rejectAll(abortError());
+  for (const [id, request] of pending) {
+    if (request.requestType === 'init' || request.requestType === 'status') continue;
+    pending.delete(id);
+    if (request.abort && request.signal) request.signal.removeEventListener('abort', request.abort);
+    request.reject(abortError());
+  }
 }
 
 // Start installation as soon as the application module is evaluated. Search still
