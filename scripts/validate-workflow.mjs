@@ -13,12 +13,14 @@ if (files.length !== 1 || files[0] !== 'build-deploy-pages.yml') {
 const text = await readFile(path.join(workflowDir, files[0]), 'utf8');
 const workflow = YAML.parse(text);
 const events = Object.keys(workflow?.on ?? {}).sort();
-if (events.join(',') !== 'push,workflow_dispatch') {
-  throw new Error(`Pages must run only for main pushes or manual dispatches; got ${events.join(',')}`);
+if (events.join(',') !== 'pull_request,push,workflow_dispatch') {
+  throw new Error(`Pages must build PRs and deploy only main/manual refs; got ${events.join(',')}`);
 }
-const pushBranches = workflow.on?.push?.branches ?? [];
-if (pushBranches.length !== 1 || pushBranches[0] !== 'main') {
-  throw new Error('Automatic Pages deployments must be restricted to main.');
+for (const eventName of ['push', 'pull_request']) {
+  const branches = workflow.on?.[eventName]?.branches ?? [];
+  if (branches.length !== 1 || branches[0] !== 'main') {
+    throw new Error(`${eventName} must be restricted to main.`);
+  }
 }
 if (workflow.permissions?.contents !== 'read') throw new Error('Top-level contents permission must be read-only.');
 if (/contents:\s*write/iu.test(text) || /git\s+(?:push|commit)/iu.test(text)) {
@@ -46,8 +48,9 @@ for (const job of Object.values(workflow.jobs ?? {})) {
 
 const jobs = Object.keys(workflow.jobs ?? {});
 if (jobs.join(',') !== 'build,deploy') throw new Error(`Expected build/deploy jobs, got ${jobs.join(',')}`);
-if (workflow.concurrency?.group !== 'pages' || workflow.concurrency?.['cancel-in-progress'] !== true) {
-  throw new Error('Pages must serialize under the dedicated pages concurrency group.');
+if (workflow.concurrency?.group !== 'pages-${{ github.ref }}'
+  || workflow.concurrency?.['cancel-in-progress'] !== true) {
+  throw new Error('Pages must serialize each ref under the dedicated pages concurrency group.');
 }
 const build = workflow.jobs.build;
 const buildCommands = (build?.steps ?? []).map((step) => String(step?.run ?? '')).join('\n');
@@ -78,10 +81,17 @@ if (!text.includes('VITE_DATA_GATEWAY_URL: ""')) {
 if (!text.includes('Online OFF/Search-a-licious product access: disabled')) {
   throw new Error('Deployment summary must state that online product access is disabled.');
 }
+const configure = build.steps.find((step) => String(step?.uses ?? '').startsWith('actions/configure-pages@'));
 const upload = build.steps.find((step) => String(step?.uses ?? '').startsWith('actions/upload-pages-artifact@'));
+if (configure?.if !== "github.event_name != 'pull_request'" || upload?.if !== "github.event_name != 'pull_request'") {
+  throw new Error('PR checks must build but must not configure or upload a Pages deployment artifact.');
+}
 if (upload?.with?.path !== 'dist') throw new Error('Pages must upload the direct Vite dist directory.');
 
 const deploy = workflow.jobs.deploy;
+if (deploy?.if !== "github.event_name != 'pull_request'") {
+  throw new Error('Deploy job must be disabled for pull requests.');
+}
 if (deploy?.needs !== 'build') throw new Error('Deploy must depend on the build artifact.');
 if (deploy?.permissions?.pages !== 'write' || deploy?.permissions?.['id-token'] !== 'write') {
   throw new Error('Deploy is missing scoped Pages/OIDC permissions.');
@@ -90,7 +100,7 @@ if (deploy?.environment?.name !== 'github-pages') throw new Error('Deploy must t
 
 console.log(JSON.stringify({
   workflowValid: true,
-  mode: 'offline-sqlite-pages-deploy',
+  mode: 'offline-sqlite-pr-build-and-pages-deploy',
   file: `.github/workflows/${files[0]}`,
   jobs
 }));
