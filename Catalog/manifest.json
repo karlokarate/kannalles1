@@ -1,0 +1,15 @@
+{
+  "catalogVersion": "2026-07-13-benchmark.1",
+  "artifactKind": "benchmark",
+  "filename": "kh-checker-dach.sqlite",
+  "sizeBytes": 24473600,
+  "sha256": "f2d18a31e5b2be79f738f4b40064bca1e6b34063edd069956da484bea43f0bc3",
+  "applicationId": 1263027011,
+  "userVersion": 2,
+  "productCount": 317579,
+  "schema": {
+    "productsTable": "p",
+    "dictionaryTable": "d",
+    "searchTable": "x"
+  }
+}
