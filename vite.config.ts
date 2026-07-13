@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import legacy from '@vitejs/plugin-legacy';
 import { VitePWA } from 'vite-plugin-pwa';
+import { offlineAppTransformPlugin } from './scripts/offline-app-transform.mjs';
 
 const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 const appVersion = packageJson.version;
@@ -14,6 +15,7 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(appVersion)
   },
   plugins: [
+    offlineAppTransformPlugin(),
     react(),
     legacy({
       // This explicit baseline is retained for the general UI. The offline
@@ -94,9 +96,6 @@ export default defineConfig({
     })
   ],
   server: {
-    port: 5173,
-    proxy: {
-      '^/api(/|$)': 'http://localhost:8787'
-    }
+    port: 5173
   }
 });
