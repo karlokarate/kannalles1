@@ -1,0 +1,52 @@
+{
+  "contract": "kh-checker-offline-catalog-production",
+  "contractVersion": "1.0.0",
+  "catalogVersion": "2026-07-13",
+  "generatedAtUtc": "2026-07-13T15:57:52.861271+00:00",
+  "database": {
+    "file": "kh-checker-dach-v1.sqlite",
+    "bytes": 25227264,
+    "sha256": "df177ab7545b13b39f40f1c2474adeb1501b19a44a82bf04838b4fd2e819458d",
+    "applicationId": 1263027011,
+    "userVersion": 1,
+    "pageSize": 4096,
+    "products": 317579,
+    "brands": 60682
+  },
+  "source": {
+    "path": "/root/off-builder/source/food.parquet",
+    "bytes": 7657020586,
+    "schemaFingerprintSha256": "1da7454e1f983cf9528124ad0e960ef3fa56083122757a5129723c95bc8bcc23",
+    "schemaFingerprintMatches": true,
+    "topLevelColumns": 111,
+    "nestedSchemaRows": 266
+  },
+  "audit": {
+    "bundleSha256": "f3e5f3e133c0decfb7723790ae974ca8ca5150b288419595a2fc27678ea2dc41",
+    "benchmarkParquetSha256": "250d11cd74029927e073533bd34c4a5cae1d164cf4c7fc714a168eebb67c7f5b",
+    "contract": "kh-checker-off-catalog-audit",
+    "version": "2.0.0",
+    "products": 317579
+  },
+  "image": {
+    "resolution": 200,
+    "dictionaryFile": "catalog-image-keys.v2.json",
+    "dictionarySha256": "cb573e736bd67b5477210a2f3de0d9cca2e0b34130703649be64060a507aef21"
+  },
+  "codecFile": "catalog-codecs.v1.json",
+  "runtimeTypescript": "catalog-runtime.generated.ts",
+  "transportCompression": null,
+  "search": {
+    "ftsQueryMode": "AND of escaped tokens; prefix marker supplied by runtime query builder",
+    "ordering": "exact display-name match, display-name prefix, display-name contains, then r DESC, n COLLATE NOCASE ASC, id ASC",
+    "resultLimitDefault": 20,
+    "noSeparatePrefixIndex": true,
+    "runtimeParameters": [
+      "ftsQuery",
+      "canonicalProductQuery",
+      "canonicalProductQuery",
+      "canonicalProductQuery",
+      "limit"
+    ]
+  }
+}

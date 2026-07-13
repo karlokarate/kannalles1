@@ -1,0 +1,369 @@
+{
+  "contract": "kh-checker-off-image-key-dictionary",
+  "version": "2.0.0",
+  "resolution": 200,
+  "keyBits": 7,
+  "keyCount": 72,
+  "entries": [
+    {
+      "image_key_id": 1,
+      "image_key": "front_de",
+      "products": 157066
+    },
+    {
+      "image_key_id": 2,
+      "image_key": "front_fr",
+      "products": 69308
+    },
+    {
+      "image_key_id": 3,
+      "image_key": "front_en",
+      "products": 30658
+    },
+    {
+      "image_key_id": 4,
+      "image_key": "front_it",
+      "products": 3385
+    },
+    {
+      "image_key_id": 5,
+      "image_key": "front_es",
+      "products": 1437
+    },
+    {
+      "image_key_id": 6,
+      "image_key": "front_nl",
+      "products": 610
+    },
+    {
+      "image_key_id": 7,
+      "image_key": "front_pl",
+      "products": 484
+    },
+    {
+      "image_key_id": 8,
+      "image_key": "front_sv",
+      "products": 340
+    },
+    {
+      "image_key_id": 9,
+      "image_key": "front_cs",
+      "products": 257
+    },
+    {
+      "image_key_id": 10,
+      "image_key": "front_ru",
+      "products": 230
+    },
+    {
+      "image_key_id": 11,
+      "image_key": "front_ro",
+      "products": 223
+    },
+    {
+      "image_key_id": 12,
+      "image_key": "front_da",
+      "products": 212
+    },
+    {
+      "image_key_id": 13,
+      "image_key": "front_hu",
+      "products": 201
+    },
+    {
+      "image_key_id": 14,
+      "image_key": "front_pt",
+      "products": 195
+    },
+    {
+      "image_key_id": 15,
+      "image_key": "front_bg",
+      "products": 190
+    },
+    {
+      "image_key_id": 16,
+      "image_key": "front_hr",
+      "products": 172
+    },
+    {
+      "image_key_id": 17,
+      "image_key": "front_nb",
+      "products": 130
+    },
+    {
+      "image_key_id": 18,
+      "image_key": "front_fi",
+      "products": 121
+    },
+    {
+      "image_key_id": 19,
+      "image_key": "front_tr",
+      "products": 99
+    },
+    {
+      "image_key_id": 20,
+      "image_key": "front_ar",
+      "products": 69
+    },
+    {
+      "image_key_id": 21,
+      "image_key": "front_no",
+      "products": 63
+    },
+    {
+      "image_key_id": 22,
+      "image_key": "front_uk",
+      "products": 56
+    },
+    {
+      "image_key_id": 23,
+      "image_key": "front_se",
+      "products": 54
+    },
+    {
+      "image_key_id": 24,
+      "image_key": "front_xx",
+      "products": 54
+    },
+    {
+      "image_key_id": 25,
+      "image_key": "front_sl",
+      "products": 52
+    },
+    {
+      "image_key_id": 26,
+      "image_key": "front_el",
+      "products": 47
+    },
+    {
+      "image_key_id": 27,
+      "image_key": "front_lb",
+      "products": 43
+    },
+    {
+      "image_key_id": 28,
+      "image_key": "front_sk",
+      "products": 38
+    },
+    {
+      "image_key_id": 29,
+      "image_key": "front_lt",
+      "products": 31
+    },
+    {
+      "image_key_id": 30,
+      "image_key": "front_ja",
+      "products": 27
+    },
+    {
+      "image_key_id": 31,
+      "image_key": "front_et",
+      "products": 26
+    },
+    {
+      "image_key_id": 32,
+      "image_key": "front_sr",
+      "products": 22
+    },
+    {
+      "image_key_id": 33,
+      "image_key": "front_ca",
+      "products": 17
+    },
+    {
+      "image_key_id": 34,
+      "image_key": "front_zh",
+      "products": 17
+    },
+    {
+      "image_key_id": 35,
+      "image_key": "front_id",
+      "products": 15
+    },
+    {
+      "image_key_id": 36,
+      "image_key": "front_la",
+      "products": 15
+    },
+    {
+      "image_key_id": 37,
+      "image_key": "front_af",
+      "products": 14
+    },
+    {
+      "image_key_id": 38,
+      "image_key": "front_ch",
+      "products": 14
+    },
+    {
+      "image_key_id": 39,
+      "image_key": "front_fy",
+      "products": 14
+    },
+    {
+      "image_key_id": 40,
+      "image_key": "front_fa",
+      "products": 11
+    },
+    {
+      "image_key_id": 41,
+      "image_key": "front_lv",
+      "products": 11
+    },
+    {
+      "image_key_id": 42,
+      "image_key": "front_aa",
+      "products": 10
+    },
+    {
+      "image_key_id": 43,
+      "image_key": "front_is",
+      "products": 10
+    },
+    {
+      "image_key_id": 44,
+      "image_key": "front_th",
+      "products": 10
+    },
+    {
+      "image_key_id": 45,
+      "image_key": "front_vi",
+      "products": 9
+    },
+    {
+      "image_key_id": 46,
+      "image_key": "front_eu",
+      "products": 8
+    },
+    {
+      "image_key_id": 47,
+      "image_key": "front_bs",
+      "products": 6
+    },
+    {
+      "image_key_id": 48,
+      "image_key": "front_co",
+      "products": 6
+    },
+    {
+      "image_key_id": 49,
+      "image_key": "front_cy",
+      "products": 6
+    },
+    {
+      "image_key_id": 50,
+      "image_key": "front_jv",
+      "products": 5
+    },
+    {
+      "image_key_id": 51,
+      "image_key": "front_ko",
+      "products": 5
+    },
+    {
+      "image_key_id": 52,
+      "image_key": "front_gd",
+      "products": 3
+    },
+    {
+      "image_key_id": 53,
+      "image_key": "front_gl",
+      "products": 3
+    },
+    {
+      "image_key_id": 54,
+      "image_key": "front_ka",
+      "products": 3
+    },
+    {
+      "image_key_id": 55,
+      "image_key": "front_mg",
+      "products": 3
+    },
+    {
+      "image_key_id": 56,
+      "image_key": "front_az",
+      "products": 2
+    },
+    {
+      "image_key_id": 57,
+      "image_key": "front_ht",
+      "products": 2
+    },
+    {
+      "image_key_id": 58,
+      "image_key": "front_mt",
+      "products": 2
+    },
+    {
+      "image_key_id": 59,
+      "image_key": "front_new_lc",
+      "products": 2
+    },
+    {
+      "image_key_id": 60,
+      "image_key": "front_ny",
+      "products": 2
+    },
+    {
+      "image_key_id": 61,
+      "image_key": "front_sq",
+      "products": 2
+    },
+    {
+      "image_key_id": 62,
+      "image_key": "front_am",
+      "products": 1
+    },
+    {
+      "image_key_id": 63,
+      "image_key": "front_be",
+      "products": 1
+    },
+    {
+      "image_key_id": 64,
+      "image_key": "front_bn",
+      "products": 1
+    },
+    {
+      "image_key_id": 65,
+      "image_key": "front_eo",
+      "products": 1
+    },
+    {
+      "image_key_id": 66,
+      "image_key": "front_ha",
+      "products": 1
+    },
+    {
+      "image_key_id": 67,
+      "image_key": "front_hy",
+      "products": 1
+    },
+    {
+      "image_key_id": 68,
+      "image_key": "front_ms",
+      "products": 1
+    },
+    {
+      "image_key_id": 69,
+      "image_key": "front_sn",
+      "products": 1
+    },
+    {
+      "image_key_id": 70,
+      "image_key": "front_st",
+      "products": 1
+    },
+    {
+      "image_key_id": 71,
+      "image_key": "front_tg",
+      "products": 1
+    },
+    {
+      "image_key_id": 72,
+      "image_key": "front_uz",
+      "products": 1
+    }
+  ]
+}

@@ -1,0 +1,388 @@
+{
+  "contract": "kh-checker-offline-catalog-production",
+  "version": "1.0.0",
+  "normative": true,
+  "input": {
+    "auditContract": "kh-checker-off-catalog-audit",
+    "auditVersion": "2.0.0",
+    "requiredAuditStatus": "ok",
+    "requiredSourceSchemaFingerprintSha256": "1da7454e1f983cf9528124ad0e960ef3fa56083122757a5129723c95bc8bcc23",
+    "requiredBenchmarkColumns": {
+      "code_text": "VARCHAR",
+      "standard_code_numeric": "UBIGINT",
+      "code_length": "UTINYINT",
+      "code_class": "UTINYINT",
+      "gtin_checksum_valid": "BOOLEAN",
+      "display_name": "VARCHAR",
+      "brand": "VARCHAR",
+      "brand_id": "UINTEGER",
+      "carbs_per_100": "FLOAT",
+      "carbohydrate_source_code": "UTINYINT",
+      "carbohydrate_basis_code": "UTINYINT",
+      "serving_base_value": "FLOAT",
+      "serving_basis_code": "UTINYINT",
+      "product_quantity_base_value": "FLOAT",
+      "product_quantity_basis_code": "UTINYINT",
+      "proposed_flags": "UINTEGER",
+      "best_image_ref": "UBIGINT",
+      "rank_signal": "BIGINT",
+      "search_text": "VARCHAR"
+    }
+  },
+  "runtime": {
+    "duckdbMinimum": "1.5.4",
+    "duckdbMaximumExclusive": "1.6.0",
+    "sqliteMinimum": "3.45.0",
+    "defaultThreads": 4,
+    "defaultMemoryLimit": "3GB",
+    "preserveInsertionOrder": false,
+    "sqliteWriter": "duckdb_sqlite_extension",
+    "minimumFreeBytes": 1610612736
+  },
+  "physicalSchema": {
+    "applicationId": 1263027011,
+    "applicationIdHex": "0x4B484343",
+    "userVersion": 1,
+    "pageSize": 4096,
+    "tables": {
+      "product": {
+        "name": "p",
+        "columns": [
+          {
+            "name": "id",
+            "semantic": "packedProductId",
+            "type": "INTEGER",
+            "constraints": "PRIMARY KEY"
+          },
+          {
+            "name": "g",
+            "semantic": "rescueCodeOnly",
+            "type": "TEXT",
+            "nullable": true
+          },
+          {
+            "name": "n",
+            "semantic": "displayName",
+            "type": "TEXT",
+            "constraints": "NOT NULL"
+          },
+          {
+            "name": "b",
+            "semantic": "brandDictionaryId",
+            "type": "INTEGER",
+            "nullable": true
+          },
+          {
+            "name": "c",
+            "semantic": "carbohydratesPer100",
+            "type": "REAL",
+            "constraints": "NOT NULL"
+          },
+          {
+            "name": "s",
+            "semantic": "manufacturerServingBaseValue",
+            "type": "REAL",
+            "nullable": true
+          },
+          {
+            "name": "q",
+            "semantic": "productQuantityBaseValue",
+            "type": "REAL",
+            "nullable": true
+          },
+          {
+            "name": "u",
+            "semantic": "provenSmallestUnitBaseValue",
+            "type": "REAL",
+            "nullable": true
+          },
+          {
+            "name": "m",
+            "semantic": "packedMetadataAndImageReference",
+            "type": "INTEGER",
+            "constraints": "NOT NULL"
+          },
+          {
+            "name": "r",
+            "semantic": "losslessRankOrdinal",
+            "type": "INTEGER",
+            "constraints": "NOT NULL"
+          }
+        ]
+      },
+      "brandDictionary": {
+        "name": "d",
+        "columns": [
+          {
+            "name": "id",
+            "semantic": "brandDictionaryId",
+            "type": "INTEGER",
+            "constraints": "PRIMARY KEY"
+          },
+          {
+            "name": "v",
+            "semantic": "brandDisplayText",
+            "type": "TEXT",
+            "constraints": "NOT NULL"
+          }
+        ]
+      },
+      "searchIndex": {
+        "name": "x",
+        "type": "fts5",
+        "contentless": true,
+        "detail": "none",
+        "columnsize": 0,
+        "prefix": null,
+        "tokenizer": "unicode61 remove_diacritics 2",
+        "column": "s"
+      }
+    },
+    "indexes": [
+      {
+        "name": "pg",
+        "sql": "CREATE UNIQUE INDEX pg ON p(g) WHERE g IS NOT NULL"
+      }
+    ]
+  },
+  "codecs": {
+    "productId": {
+      "standardFormula": "numericCode * 4 + lengthCode + 1",
+      "lengthCodes": {
+        "8": 0,
+        "13": 1,
+        "14": 2
+      },
+      "rescueLane": "negative sequential id ordered by code text",
+      "rescueCodeStoredIn": "p.g"
+    },
+    "image": {
+      "resolution": 200,
+      "keyBits": 7,
+      "externalDictionary": true,
+      "bestImageRefFormula": "revision << 7 | imageKeyId",
+      "metadataImageShift": 19,
+      "metadataImagePayload": "bestImageRef + 1; zero means no image",
+      "baseUrl": "https://images.openfoodfacts.org/images/products"
+    },
+    "metadata": {
+      "javascriptSafeIntegerRequired": true,
+      "imageShift": 19,
+      "bits": [
+        {
+          "bit": 0,
+          "name": "carbohydrateBasisVolume"
+        },
+        {
+          "bit": 1,
+          "name": "carbohydrateSourcePrepared"
+        },
+        {
+          "bit": 2,
+          "name": "hasServing"
+        },
+        {
+          "bit": 3,
+          "name": "servingBasisVolume"
+        },
+        {
+          "bit": 4,
+          "name": "hasProductQuantity"
+        },
+        {
+          "bit": 5,
+          "name": "productQuantityBasisVolume"
+        },
+        {
+          "bit": 6,
+          "name": "standardGtin"
+        },
+        {
+          "bit": 7,
+          "name": "gtinChecksumValid"
+        },
+        {
+          "bit": 8,
+          "name": "hasQualityErrors"
+        },
+        {
+          "fromBit": 9,
+          "width": 3,
+          "name": "defaultUnitKind"
+        },
+        {
+          "fromBit": 12,
+          "width": 3,
+          "name": "provenUnitKind"
+        },
+        {
+          "fromBit": 15,
+          "width": 2,
+          "name": "provenUnitSource"
+        },
+        {
+          "bit": 17,
+          "name": "provenUnitBasisVolume"
+        }
+      ]
+    },
+    "unitKinds": {
+      "none": 0,
+      "mass": 1,
+      "volume": 2,
+      "portion": 3,
+      "piece": 4,
+      "bar": 5,
+      "slice": 6,
+      "package": 7
+    },
+    "unitSources": {
+      "none": 0,
+      "manufacturerServing": 1,
+      "explicitServingCount": 2,
+      "explicitMultipackQuantity": 3
+    },
+    "basisCodes": {
+      "mass": 0,
+      "volume": 1
+    }
+  },
+  "semanticEnrichment": {
+    "invalidNormalizedNames": [
+      "",
+      "undefined",
+      "null",
+      "unknown",
+      "n/a",
+      "na"
+    ],
+    "displayNamePreferredMaxCharacters": 180,
+    "searchAliasMaxCharacters": 180,
+    "searchTextMaxCharacters": 1024,
+    "countableServingPatterns": {
+      "bar": [
+        "riegel",
+        "bar",
+        "bars",
+        "barre",
+        "barres",
+        "barra",
+        "barras",
+        "barretta",
+        "barrette"
+      ],
+      "slice": [
+        "scheibe",
+        "scheiben",
+        "slice",
+        "slices",
+        "tranche",
+        "tranches",
+        "fetta",
+        "fette"
+      ],
+      "piece": [
+        "stück",
+        "stücke",
+        "stueck",
+        "stuecke",
+        "piece",
+        "pieces",
+        "pièce",
+        "pièces",
+        "pezzo",
+        "pezzi",
+        "unidad",
+        "unidades",
+        "unit",
+        "units"
+      ],
+      "portion": [
+        "portion",
+        "portions",
+        "serving",
+        "servings",
+        "porzione",
+        "porzioni",
+        "porción",
+        "porciones"
+      ]
+    },
+    "categoryRules": {
+      "bar": {
+        "includeRegex": [
+          "^en:bars$",
+          "^en:.*-bars$"
+        ],
+        "excludeRegex": []
+      },
+      "slice": {
+        "includeRegex": [
+          "^en:breads$",
+          "^en:sliced-breads$",
+          "^en:toast-breads$",
+          "^en:sandwich-breads$",
+          "^en:bread-slices$",
+          "^en:crispbreads$",
+          "^en:(wholemeal|rye|wheat|white|brown|multigrain|spelt|mixed-rye|pumpernickel)-breads$"
+        ],
+        "excludeRegex": [
+          "^en:(bread-rolls|buns|baguettes|flatbreads|pita-breads|pretzels|croissants|wraps)$"
+        ]
+      },
+      "piece": {
+        "includeRegex": [
+          "^en:(eggs|pralines|candies|chocolate-candies|bonbons|lollipops|chewing-gum)$"
+        ],
+        "excludeRegex": []
+      }
+    },
+    "quantityMultipackRegex": "([0-9]+)\\s*[x×]\\s*([0-9]+(?:[.,][0-9]+)?)\\s*(mg|g|kg|ml|cl|dl|l)(?:[^[:alpha:]]|$)",
+    "contractRules": [
+      "serving without semantic countable label remains portion",
+      "packaging number_of_units is never treated as edible unit count",
+      "piece weight is never guessed",
+      "zero carbohydrates is valid",
+      "full source float precision is retained in SQLite REAL"
+    ]
+  },
+  "search": {
+    "ftsQueryMode": "AND of escaped tokens; prefix marker supplied by runtime query builder",
+    "ordering": "exact display-name match, display-name prefix, display-name contains, then r DESC, n COLLATE NOCASE ASC, id ASC",
+    "resultLimitDefault": 20,
+    "noSeparatePrefixIndex": true,
+    "runtimeParameters": [
+      "ftsQuery",
+      "canonicalProductQuery",
+      "canonicalProductQuery",
+      "canonicalProductQuery",
+      "limit"
+    ]
+  },
+  "qualityGates": {
+    "integrityCheck": "ok",
+    "ftsIntegrityCheck": true,
+    "requiredProductCount": 317579,
+    "maximumNativeWarmP95Ms": 50,
+    "maximumNativeOpenPlusQueryMs": 250,
+    "maximumMetadataValue": 9007199254740991,
+    "requiredSmokeQueries": [
+      "kinder bueno",
+      "vollkornbrot",
+      "erdnüsse",
+      "nutella",
+      "salzstangen"
+    ]
+  },
+  "outputs": {
+    "database": "kh-checker-dach-v1.sqlite",
+    "manifest": "catalog-manifest.v1.json",
+    "codecContract": "catalog-codecs.v1.json",
+    "imageKeyDictionary": "catalog-image-keys.v2.json",
+    "runtimeTypescript": "catalog-runtime.generated.ts",
+    "reportJson": "catalog-build-report.v1.json",
+    "reportText": "catalog-build-report.v1.txt",
+    "checksums": "SHA256SUMS.txt",
+    "bundle": "kh-checker-dach-v1-bundle.zip"
+  }
+}
