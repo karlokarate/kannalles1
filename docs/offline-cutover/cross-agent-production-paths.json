@@ -36,10 +36,11 @@
     "atlas": {
       "agentName":"Atlas",
       "branch":"agent/offline-cutover-atlas-domain",
-      "lastReadAtUtc":null,
-      "lastRebasedOn":null,
+      "lastReadAtUtc":"2026-07-13T18:12:34Z",
+      "lastRebasedOn":"1f6aa59e41c7153784d4fed0fdc8c67d36dce2b3",
       "events":[
-        {"eventId":"ATLAS-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["ATLAS-100","ATLAS-110"],"summary":"Catalog-native domain types and contract overrides","affectedPaths":[],"consumers":["forge","helix","lumen","sentinel"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]}
+        {"eventId":"ATLAS-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["ATLAS-100","ATLAS-110"],"summary":"Catalog-native domain types and contract overrides","affectedPaths":[],"consumers":["forge","helix","lumen","sentinel"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]},
+        {"eventId":"ATLAS-100-001","timestampUtc":"2026-07-13T18:12:34Z","commit":"SELF","kind":"domain_boundary_created","stepIds":["ATLAS-100"],"summary":"Frozen catalog-native product, unit-evidence, status, diagnostics and failure exports without transport or legacy API aliases.","affectedPaths":["src/lib/catalog/catalogDomain.ts","src/lib/catalog/catalogErrors.ts"],"consumers":["forge","helix","lumen","sentinel"],"requiredActions":["Forge projects verified SQLite rows into CatalogProduct and preserves CatalogSearchHit resultIndex order","Helix consumes CatalogUnitEvidence only when provenUnit is present and returns calibration when countable weight is absent","Lumen renders CatalogStatus and redacted CatalogDiagnostics with immediate retry","Sentinel enforces that catalog domain imports no transport, React, SQLite or legacy API types"]}
       ]
     },
     "forge": {
@@ -57,7 +58,7 @@
       "lastReadAtUtc":null,
       "lastRebasedOn":null,
       "events":[
-        {"eventId":"HELIX-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["HELIX-300","HELIX-310","HELIX-320"],"summary":"Resolver extraction, unit evidence, eligibility and calibration semantics","affectedPaths":[],"consumers":["atlas","forge","lumen","sentinel"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]}
+        {"eventId":"HELIX-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["HELIX-300","HELIX-310","HELIX-320"],"summary":"Resolver extraction, unit evidence, eligibility and calibration semantics","affectedPaths":[],"consumers":["atlas","forge","lumen","sentinel"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation comit"]}
       ]
     },
     "lumen": {
