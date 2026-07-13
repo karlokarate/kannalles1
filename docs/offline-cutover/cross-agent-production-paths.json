@@ -63,11 +63,12 @@
     "lumen": {
       "agentName":"Lumen",
       "branch":"agent/offline-cutover-lumen-ui",
-      "lastReadAtUtc":"2026-07-13T18:13:32Z",
+      "lastReadAtUtc":"2026-07-13T18:16:51Z",
       "lastRebasedOn":"1f6aa59e41c7153784d4fed0fdc8c67d36dce2b3",
       "events":[
         {"eventId":"LUMEN-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["LUMEN-400","LUMEN-410","LUMEN-420"],"summary":"Offline App, catalog-native UI, settings and local user data","affectedPaths":[],"consumers":["atlas","forge","helix","sentinel"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]},
-        {"eventId":"LUMEN-400-001","timestampUtc":"2026-07-13T18:13:32Z","commit":"pending","kind":"implementation","stepIds":["LUMEN-400"],"summary":"Created offline-only settings, versioned local user-data storage, strict calibration persistence and catalog-native search state without API caches, credentials or network modes.","affectedPaths":["src/lib/settings.ts","src/lib/userDataStore.ts","src/lib/searchState.ts","src/session.test.ts"],"consumers":["helix","sentinel","owner"],"requiredActions":["Helix should preserve UnitCalibrationRecord measurement provenance or provide an explicit mapping at integration","Sentinel should cover corrupt local storage and no-rounding calibration derivation"]}
+        {"eventId":"LUMEN-400-001","timestampUtc":"2026-07-13T18:13:32Z","commit":"pending","kind":"implementation","stepIds":["LUMEN-400"],"summary":"Created offline-only settings, versioned local user-data storage, strict calibration persistence and catalog-native search state without API caches, credentials or network modes.","affectedPaths":["src/lib/settings.ts","src/lib/userDataStore.ts","src/lib/searchState.ts","src/session.test.ts"],"consumers":["helix","sentinel","owner"],"requiredActions":["Helix should preserve UnitCalibrationRecord measurement provenance or provide an explicit mapping at integration","Sentinel should cover corrupt local storage and no-rounding calibration derivation"]},
+        {"eventId":"LUMEN-410-001","timestampUtc":"2026-07-13T18:16:51Z","commit":"self","kind":"implementation","stepIds":["LUMEN-410"],"summary":"Added truthful catalog lifecycle status, typed issue diagnostics with immediate retry, and an offline-only settings screen with explicit local-data controls.","affectedPaths":["src/app/CatalogStatus.tsx","src/app/CatalogIssueBanner.tsx","src/app/SettingsScreen.tsx"],"consumers":["forge","sentinel","owner"],"requiredActions":["Forge must preserve the CatalogRuntimeStatus fields consumed by CatalogStatus or provide the frozen CatalogStatus projection","Sentinel should assert visible immediate retry and truthful persistent versus session-only status"]}
       ]
     },
     "sentinel": {
