@@ -17,11 +17,38 @@ export interface CatalogFailureOptions {
   readonly occurredAt?: string;
 }
 
+const SENSITIVE_DETAIL_KEY = /(?:pass(?:word)?|token|secret|authorization|cookie|credential|api[-_]?key|user[-_]?id)/i;
+const SENSITIVE_ASSIGNMENT = /((?:pass(?:word)?|token|secret|authorization|cookie|credential|api[-_]?key|user[-_]?id)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi;
+const BEARER_TOKEN = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
+
+function redactText(value: string): string {
+  return value
+    .replace(BEARER_TOKEN, 'Bearer [redacted]')
+    .replace(SENSITIVE_ASSIGNMENT, '$1[redacted]');
+}
+
+function redactDetails(
+  details: Readonly<Record<string, CatalogDiagnosticValue>> | undefined
+): Readonly<Record<string, CatalogDiagnosticValue>> {
+  if (!details) {
+    return {};
+  }
+
+  const redacted: Record<string, CatalogDiagnosticValue> = {};
+  for (const [key, value] of Object.entries(details)) {
+    if (SENSITIVE_DETAIL_KEY.test(key)) {
+      continue;
+    }
+    redacted[key] = typeof value === 'string' ? redactText(value) : value;
+  }
+  return redacted;
+}
+
 function errorTechnical(error: unknown): string {
   if (error instanceof Error) {
-    return `${error.name}: ${error.message}`;
+    return redactText(`${error.name}: ${error.message}`);
   }
-  return typeof error === 'string' ? error : 'Unknown catalog failure';
+  return redactText(typeof error === 'string' ? error : 'Unknown catalog failure');
 }
 
 /** Typed, serializable catalog failure that never exposes raw runtime objects. */
@@ -30,20 +57,21 @@ export class CatalogFailure extends Error {
   readonly diagnostics: CatalogDiagnostics;
 
   constructor(code: CatalogFailureCode, message: string, options: CatalogFailureOptions) {
-    super(message);
+    const safeMessage = redactText(message);
+    super(safeMessage);
     this.name = 'CatalogFailure';
     this.code = code;
     this.diagnostics = {
       code,
       operation: options.operation,
-      message,
-      technical: options.technical ?? errorTechnical(options.cause),
+      message: safeMessage,
+      technical: redactText(options.technical ?? errorTechnical(options.cause)),
       occurredAt: options.occurredAt ?? new Date().toISOString(),
       retryAllowedImmediately: true,
       activeSlot: options.activeSlot ?? null,
       attemptedSlot: options.attemptedSlot ?? null,
       catalogVersion: options.catalogVersion ?? null,
-      details: options.details ?? {}
+      details: redactDetails(options.details)
     };
 
     if (options.cause !== undefined) {

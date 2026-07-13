@@ -51,6 +51,25 @@ describe('catalog-native core boundary', () => {
     expect(status.activeSlot).toBe('a');
   });
 
+  it('redacts credentials from messages, technical details and structured values', () => {
+    const failure = new CatalogFailure('CATALOG_MANIFEST_INVALID', 'token=visible-in-input', {
+      operation: 'manifest',
+      technical: 'Authorization: Bearer abc.def password=hunter2',
+      details: {
+        password: 'hunter2',
+        note: 'api_key=12345',
+        status: 401
+      }
+    });
+
+    expect(failure.message).not.toContain('visible-in-input');
+    expect(failure.diagnostics.technical).not.toContain('abc.def');
+    expect(failure.diagnostics.technical).not.toContain('hunter2');
+    expect(failure.diagnostics.details).not.toHaveProperty('password');
+    expect(failure.diagnostics.details.note).toBe('api_key=[redacted]');
+    expect(failure.diagnostics.details.status).toBe(401);
+  });
+
   it('preserves an existing CatalogFailure and wraps unknown failures', () => {
     const existing = new CatalogFailure('CATALOG_OPEN_FAILED', 'Katalog konnte nicht geöffnet werden.', {
       operation: 'open',
