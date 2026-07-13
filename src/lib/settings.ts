@@ -1,0 +1,11 @@
+export type DecimalPlaces = 0 | 1 | 2;
+export type SearchResultLimit = 10 | 15 | 20;
+export type ProductImageMode = 'remote' | 'hidden';
+export interface OfflineAppSettings { schemaVersion: 1; decimalPlaces: DecimalPlaces; searchResultLimit: SearchResultLimit; saveHistory: boolean; restoreLastSession: boolean; productImageMode: ProductImageMode; }
+const SETTINGS_KEY = 'kh-checker:offline-settings:v1';
+export const DEFAULT_OFFLINE_SETTINGS: OfflineAppSettings = Object.freeze({ schemaVersion: 1, decimalPlaces: 1, searchResultLimit: 20, saveHistory: false, restoreLastSession: false, productImageMode: 'remote' });
+function isRecord(value: unknown): value is Record<string, unknown> { return Boolean(value) && typeof value === 'object' && !Array.isArray(value); }
+export function normalizeOfflineSettings(value: unknown): OfflineAppSettings { if (!isRecord(value)) return { ...DEFAULT_OFFLINE_SETTINGS }; return { schemaVersion: 1, decimalPlaces: value.decimalPlaces === 0 || value.decimalPlaces === 1 || value.decimalPlaces === 2 ? value.decimalPlaces : 1, searchResultLimit: value.searchResultLimit === 10 || value.searchResultLimit === 15 || value.searchResultLimit === 20 ? value.searchResultLimit : 20, saveHistory: typeof value.saveHistory === 'boolean' ? value.saveHistory : false, restoreLastSession: typeof value.restoreLastSession === 'boolean' ? value.restoreLastSession : false, productImageMode: value.productImageMode === 'hidden' ? 'hidden' : 'remote' }; }
+export function loadOfflineSettings(): OfflineAppSettings { if (typeof window === 'undefined') return { ...DEFAULT_OFFLINE_SETTINGS }; try { const raw = window.localStorage.getItem(SETTINGS_KEY); return raw ? normalizeOfflineSettings(JSON.parse(raw)) : { ...DEFAULT_OFFLINE_SETTINGS }; } catch { return { ...DEFAULT_OFFLINE_SETTINGS }; } }
+export function saveOfflineSettings(settings: OfflineAppSettings): OfflineAppSettings { const normalized = normalizeOfflineSettings(settings); try { window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalized)); } catch {} return normalized; }
+export function formatCarbohydrates(value: number | null, decimalPlaces: DecimalPlaces): string { if (value === null || !Number.isFinite(value)) return '–'; return new Intl.NumberFormat('de-DE', { minimumFractionDigits: decimalPlaces, maximumFractionDigits: decimalPlaces }).format(value); }

@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import App from './App';
 import ErrorBoundary from './ErrorBoundary';
-import './offline-catalog.css';
+import './styles.css';
 
 const isAndroidLocalFileViewer =
   ['127.0.0.1', 'localhost'].includes(window.location.hostname)
@@ -42,15 +42,15 @@ async function bootstrap() {
       },
       onNeedRefresh() {
         window.dispatchEvent(new CustomEvent('kh:pwa-update-available', {
-          detail: {
-            apply: () => updateServiceWorker(true)
-          }
+          detail: { apply: () => updateServiceWorker(true) }
         }));
       },
       onRegisterError(error) {
         console.warn('Service Worker registration failed', error);
         window.dispatchEvent(new CustomEvent('kh:pwa-status', {
-          detail: { message: 'Die Offline-Installation ist in diesem Browser derzeit nicht verfügbar. Die geöffnete App bleibt nutzbar.' }
+          detail: {
+            message: 'Die Offline-Installation ist in diesem Browser derzeit nicht verfügbar. Die geöffnete App bleibt nutzbar.'
+          }
         }));
       }
     });
