@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import App from './App';
 import ErrorBoundary from './ErrorBoundary';
+import './offline-catalog.css';
 
 const isAndroidLocalFileViewer =
   ['127.0.0.1', 'localhost'].includes(window.location.hostname)
