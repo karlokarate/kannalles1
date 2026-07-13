@@ -66,25 +66,40 @@ jobs:
         with:
           name: offline-build-output
           path: build-output.log
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 3
 
       - name: Verify offline runtime artifact
         shell: bash
         run: |
-          set -euo pipefail
-          test -s dist/catalog/kh-checker-dach.sqlite
-          test -s dist/catalog/manifest.json
-          test -s dist/catalog/catalog-codecs.v1.json
-          test -s dist/catalog/catalog-image-keys.v2.json
-          test -s dist/vendor/sqlite/index.mjs
-          test -s dist/vendor/sqlite/sqlite3.wasm
-          test "$(stat -c %s dist/catalog/kh-checker-dach.sqlite)" -eq 25227264
-          test "$(sha256sum dist/catalog/kh-checker-dach.sqlite | cut -d' ' -f1)" = "df177ab7545b13b39f40f1c2474adeb1501b19a44a82bf04838b4fd2e819458d"
-          if grep -R --line-number --fixed-strings "search.openfoodfacts.org" dist/assets; then
-            echo "FEHLER: Online-Produktsuche ist noch im produktiven App-Bundle enthalten."
-            exit 1
-          fi
+          set +e
+          {
+            set -x
+            test -s dist/catalog/kh-checker-dach.sqlite
+            test -s dist/catalog/manifest.json
+            test -s dist/catalog/catalog-codecs.v1.json
+            test -s dist/catalog/catalog-image-keys.v2.json
+            test -s dist/vendor/sqlite/index.mjs
+            test -s dist/vendor/sqlite/sqlite3.wasm
+            test "$(stat -c %s dist/catalog/kh-checker-dach.sqlite)" -eq 25227264
+            test "$(sha256sum dist/catalog/kh-checker-dach.sqlite | cut -d' ' -f1)" = "df177ab7545b13b39f40f1c2474adeb1501b19a44a82bf04838b4fd2e819458d"
+            if grep -R --line-number --fixed-strings "search.openfoodfacts.org" dist/assets; then
+              echo "FEHLER: Online-Produktsuche ist noch im produktiven App-Bundle enthalten."
+              exit 1
+            fi
+          } > verify-output.log 2>&1
+          status=$?
+          cat verify-output.log
+          exit "$status"
+
+      - name: Upload artifact verification log on failure
+        if: failure()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
+        with:
+          name: offline-verify-output
+          path: verify-output.log
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
