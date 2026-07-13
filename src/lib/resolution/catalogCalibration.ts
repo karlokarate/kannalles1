@@ -25,10 +25,7 @@ export interface CreateCatalogCalibrationInput {
   now: string;
 }
 
-/**
- * Catalog-native calibration record. Nutrition snapshots are deliberately absent:
- * measured weight is reusable evidence, carbohydrate values are not.
- */
+/** Measurement-only persistence. Nutrition snapshots are forbidden. */
 export interface CatalogUnitCalibration {
   schemaVersion: 3;
   calibrationId: string;
@@ -62,6 +59,12 @@ const MAX_MEASURED_COUNT = 10_000;
 const MAX_UNIT_WEIGHT_G = 5_000;
 const MAX_TOTAL_WEIGHT_G = 100_000;
 const MAX_REQUESTED_AMOUNT = 10_000;
+const LEGACY_NUTRITION_KEYS = [
+  'nutritionSnapshot',
+  'derivedCarbsPerUnitG',
+  'carbohydratesPer100g',
+  'carbsPerUnitG'
+] as const;
 
 function isPositiveFinite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
@@ -78,8 +81,7 @@ function canonicalToken(value: string): string {
 
 function normalizeNullableToken(value: string | null): string | null {
   if (value === null) return null;
-  const normalized = canonicalToken(value);
-  return normalized || null;
+  return canonicalToken(value) || null;
 }
 
 function normalizeBarcode(value: string | null): string | null {
@@ -104,10 +106,13 @@ function normalizedIdentity(identity: CatalogCalibrationIdentity): CatalogCalibr
 }
 
 function validMeasurement(measuredCount: number, measuredTotalWeightG: number): boolean {
-  if (!Number.isInteger(measuredCount) || measuredCount < 1 || measuredCount > MAX_MEASURED_COUNT) return false;
-  if (!isPositiveFinite(measuredTotalWeightG) || measuredTotalWeightG > MAX_TOTAL_WEIGHT_G) return false;
-  const unitWeight = measuredTotalWeightG / measuredCount;
-  return unitWeight <= MAX_UNIT_WEIGHT_G;
+  if (!Number.isInteger(measuredCount) || measuredCount < 1 || measuredCount > MAX_MEASURED_COUNT) {
+    return false;
+  }
+  if (!isPositiveFinite(measuredTotalWeightG) || measuredTotalWeightG > MAX_TOTAL_WEIGHT_G) {
+    return false;
+  }
+  return measuredTotalWeightG / measuredCount <= MAX_UNIT_WEIGHT_G;
 }
 
 function validCarbohydratesPer100(value: number | null): value is number {
@@ -116,6 +121,21 @@ function validCarbohydratesPer100(value: number | null): value is number {
 
 function validTimestamp(value: string): boolean {
   return value.length > 0 && Number.isFinite(Date.parse(value));
+}
+
+function isCalibrationScope(value: unknown): value is CalibrationScope {
+  return value === 'catalog-product'
+    || value === 'barcode'
+    || value === 'exact-product'
+    || value === 'generic-food';
+}
+
+function isCalibrationUnit(value: unknown): value is CatalogCalibrationUnit {
+  return value === 'piece' || value === 'bar' || value === 'slice' || value === 'portion';
+}
+
+function hasLegacyNutritionSnapshot(value: object): boolean {
+  return LEGACY_NUTRITION_KEYS.some((key) => key in value);
 }
 
 export function catalogCalibrationScopeKey(
@@ -141,7 +161,7 @@ export function catalogCalibrationScopeKey(
     : `generic:${normalized.genericFoodKey}|${unit}`;
 }
 
-/** Lookup keys are strict by unit and ordered from product-specific to generic. */
+/** Strict same-unit keys, strongest identity first. */
 export function catalogCalibrationLookupKeys(
   identity: CatalogCalibrationIdentity,
   unit: CatalogCalibrationUnit,
@@ -153,8 +173,8 @@ export function catalogCalibrationLookupKeys(
     if (key) keys.push(key);
   }
   if (allowGenericScope) {
-    const generic = catalogCalibrationScopeKey('generic-food', identity, unit);
-    if (generic) keys.push(generic);
+    const key = catalogCalibrationScopeKey('generic-food', identity, unit);
+    if (key) keys.push(key);
   }
   return keys;
 }
@@ -209,7 +229,7 @@ export function createCatalogCalibration(
   if (!identity) return null;
   const scopeKey = catalogCalibrationScopeKey(input.scope, identity, input.unit);
   if (!scopeKey) return null;
-
+  const timestamp = new Date(input.now).toISOString();
   return {
     schemaVersion: 3,
     calibrationId: input.calibrationId.trim(),
@@ -224,29 +244,19 @@ export function createCatalogCalibration(
       measuredTotalWeightG: input.measuredTotalWeightG
     },
     derivedUnitWeightG: input.measuredTotalWeightG / input.measuredCount,
-    createdAt: new Date(input.now).toISOString(),
-    updatedAt: new Date(input.now).toISOString(),
+    createdAt: timestamp,
+    updatedAt: timestamp,
     active: true
   };
 }
 
-function isCalibrationScope(value: unknown): value is CalibrationScope {
-  return value === 'catalog-product'
-    || value === 'barcode'
-    || value === 'exact-product'
-    || value === 'generic-food';
-}
-
-function isCalibrationUnit(value: unknown): value is CatalogCalibrationUnit {
-  return value === 'piece' || value === 'bar' || value === 'slice' || value === 'portion';
-}
-
-/** Hard cutover: only schema v3 records are accepted; legacy records are not migrated here. */
+/** Hard cutover: only schema v3 measurement records without nutrition snapshots are accepted. */
 export function normalizeCatalogCalibration(value: unknown): CatalogUnitCalibration | null {
-  if (!value || typeof value !== 'object') return null;
+  if (!value || typeof value !== 'object' || hasLegacyNutritionSnapshot(value)) return null;
   const candidate = value as Partial<CatalogUnitCalibration>;
   if (candidate.schemaVersion !== 3
     || typeof candidate.calibrationId !== 'string'
+    || !candidate.calibrationId.trim()
     || !isCalibrationScope(candidate.scope)
     || !isCalibrationUnit(candidate.unit)
     || typeof candidate.smallestEdibleUnit !== 'boolean'
