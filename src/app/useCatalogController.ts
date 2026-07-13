@@ -116,7 +116,7 @@ export function useCatalogController() {
     if (generic) {
       const noExplicitQuantity = !parsed.amountExplicit && !parsed.unitExplicit;
       setRequest(noExplicitQuantity
-        ? { amount: 100, unit: 'g', unitExplicit: true }
+        ? { amount: 200, unit: 'g', unitExplicit: true }
         : { amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit });
       setSelectedOptionId(null);
       dispatch({ type: 'resolve', query: parsed.catalogQuery, product: generic, candidates: [asGenericSearchHit(generic)] });

@@ -27,6 +27,7 @@ export function catalogProductImageUrl(product: CatalogProduct): string | null {
 }
 
 const MINI_VARIANT = /\b(?:mini|minis|miniatur|bite|bites|snacksize|fun size)\b/;
+const UNREQUESTED_VARIANT = /\b(?:dark|white|weiß|weiss|eis|eggs?|glace)\b/;
 
 /**
  * Chooses a product only when the catalog proves a normal edible unit for a
@@ -42,9 +43,8 @@ export function selectDefaultCatalogCandidate(
   const tokens = normalizedQuery.split(' ').filter(Boolean);
   const eligibleHits = hits.filter((_, index) => eligible[index]);
   if (eligibleHits.length === 1) return eligibleHits[0];
-  if (tokens.length < 2) return null;
 
-  return eligibleHits
+  const strongMatch = tokens.length >= 2 ? eligibleHits
     .filter((hit) => {
       const name = normalizedIdentityText(hit.displayName);
       const proven = hit.unitEvidence.provenSmallestUnit;
@@ -58,9 +58,14 @@ export function selectDefaultCatalogCandidate(
       const bName = normalizedIdentityText(b.displayName);
       const score = (name: string) => (name === normalizedQuery ? 100 : 0)
         + (name.startsWith(normalizedQuery) ? 30 : 0)
+        - (UNREQUESTED_VARIANT.test(name) && !UNREQUESTED_VARIANT.test(normalizedQuery) ? 80 : 0)
         - Math.max(0, name.length - normalizedQuery.length);
       return score(bName) - score(aName) || a.resultIndex - b.resultIndex;
-    })[0] ?? null;
+    })[0] : null;
+
+  // The catalog rank remains the authoritative fallback. This makes every
+  // successful text search immediately useful while keeping all variants.
+  return strongMatch ?? eligibleHits[0] ?? null;
 }
 
 export function inferredCalibrationUnit(product: CatalogProduct): Extract<RequestedUnit, 'piece' | 'bar' | 'slice' | 'portion'> {

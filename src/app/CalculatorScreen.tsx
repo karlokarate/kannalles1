@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { catalogProductEligibility } from '../lib/resolution/catalogResolution';
 import { formatCarbohydrates } from '../lib/settings';
 import { isGenericCatalogProduct } from '../lib/genericFoods';
@@ -19,8 +19,10 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
   const resolution = c.resolution;
   const calculation = c.calculation;
   const selected = c.selectedOption;
+  const [amountValue, setAmountValue] = useState(String(c.request.amount));
   const eligibleCount = c.search.candidates.filter((hit) => catalogProductEligibility(hit).eligible).length;
   const imageUrl = product ? catalogProductImageUrl(product) : null;
+  useEffect(() => { void c.search.query; setAmountValue(String(c.request.amount)); }, [c.request.amount, c.search.query]);
 
   return (
     <section className="screen calculator-screen" aria-labelledby="calculator-title">
@@ -65,7 +67,8 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
             <button type="button" className="favorite-button" aria-pressed={c.isFavorite} onClick={c.toggleFavorite}><span aria-hidden="true">{c.isFavorite ? '★' : '☆'}</span>{c.isFavorite ? 'Favorit' : 'Merken'}</button>
           </div>
           <div className="calculation-grid">
-            <label className="field"><span>Menge</span><input type="number" min="0.01" max="10000" step="any" value={c.request.amount} onChange={(event: ChangeEvent<HTMLInputElement>) => { const amount = Number(event.target.value); if (Number.isFinite(amount) && amount > 0) c.setRequest((r) => ({ ...r, amount })); }} data-testid="catalog-amount-input" /></label>
+            {c.search.candidates.length > 1 && <label className="field field--wide variant-picker"><span>Produktvariante</span><select value={String(product.productId)} onChange={(event: ChangeEvent<HTMLSelectElement>) => { const next = c.search.candidates.find((candidate) => String(candidate.productId) === event.target.value); if (next) c.selectCandidate(next); }} data-testid="catalog-variant-select">{c.search.candidates.map((candidate) => <option key={candidate.productId} value={candidate.productId}>{candidate.displayName}{candidate.brand ? ` · ${candidate.brand}` : ''}</option>)}</select><small>Der beste Treffer ist vorausgewählt; alle Varianten bleiben direkt umschaltbar.</small></label>}
+            <label className="field"><span>Menge</span><input type="number" min="0.01" max="10000" step="any" value={amountValue} onChange={(event: ChangeEvent<HTMLInputElement>) => { const value = event.target.value; setAmountValue(value); const amount = Number(value); if (value !== '' && Number.isFinite(amount) && amount > 0) c.setRequest((r) => ({ ...r, amount })); }} onBlur={() => { const amount = Number(amountValue); if (!Number.isFinite(amount) || amount <= 0) setAmountValue(String(c.request.amount)); }} data-testid="catalog-amount-input" />{selected && (selected.unit === 'g' || selected.unit === 'ml') && <div className="amount-slider"><input type="range" min="1" max={selected.unit === 'g' ? '400' : '1000'} step="1" value={Math.max(1, Math.min(selected.unit === 'g' ? 400 : 1000, Number(amountValue) || c.request.amount))} onChange={(event: ChangeEvent<HTMLInputElement>) => { const value = event.target.value; setAmountValue(value); c.setRequest((current) => ({ ...current, amount: Number(value) })); }} aria-label={`${selected.unit === 'g' ? 'Gramm' : 'Milliliter'}-Menge per Schieberegler`} data-testid="catalog-amount-slider" /><small><span>1 {selected.unit}</span><span>{selected.unit === 'g' ? '400 g' : '1.000 ml'}</span></small></div>}</label>
             <label className="field field--wide"><span>Einheit</span><select value={c.selectedOptionId ?? ''} onChange={(event: ChangeEvent<HTMLSelectElement>) => c.selectUnit(event.target.value)} data-testid="catalog-unit-select">
               {resolution.options.map((option) => <option key={option.id} value={option.id} data-unit-kind={option.unit} data-unit-provenance={semanticUnitProvenance(option)} data-unit-weight-g={option.basis === 'mass' && option.baseValue !== null ? option.baseValue : ''} data-unit-volume-ml={option.basis === 'volume' && option.baseValue !== null ? option.baseValue : ''} data-unit-recommended={String(option.recommended)}>{option.label}{option.baseValue === null ? ' – Gewicht fehlt' : ` – ${option.baseValue.toLocaleString('de-DE')} ${option.basis === 'mass' ? 'g' : 'ml'}`}</option>)}
             </select>{selected && <small>{selected.note}</small>}</label>

@@ -102,14 +102,23 @@ test('zeigt Trefferbilder, nutzt Sprache für gekochten Reis und speichert eine 
   await expect(generic).toContainText('Reis, gekocht');
   await expect(generic).toContainText('BLS 4.0 · C352032');
   await expect(generic).toHaveAttribute('data-carbs-per-100-g', '24.8');
-  await expect(generic).toHaveAttribute('data-amount', '100');
-  await expect(page.getByTestId('catalog-calculation')).toHaveAttribute('data-total-carbs-g', '24.8');
+  await expect(generic).toHaveAttribute('data-amount', '200');
+  await expect(page.getByTestId('catalog-calculation')).toHaveAttribute('data-total-carbs-g', '49.6');
+  await expect(page.getByTestId('catalog-amount-slider')).toHaveValue('200');
+  await page.getByTestId('catalog-amount-slider').fill('250');
+  await expect(generic).toHaveAttribute('data-amount', '250');
 
   await searchCatalog(page, 'Kinder Bueno');
   await expect(page.getByTestId('catalog-search-results').locator('img').first()).toBeVisible();
   await expect(page.getByTestId('catalog-product')).toBeVisible();
-  await expect(page.getByTestId('catalog-product')).not.toContainText(/mini/i);
+  await expect(page.getByTestId('catalog-product').locator('h2')).not.toContainText(/mini/i);
   await expect(page.getByTestId('catalog-unit-select').locator('option:checked')).toHaveAttribute('data-unit-kind', 'bar');
+  await expect(page.getByTestId('catalog-variant-select')).toBeVisible();
+  const amountInput = page.getByTestId('catalog-amount-input');
+  await amountInput.fill('');
+  await expect(amountInput).toHaveValue('');
+  await amountInput.fill('3');
+  await expect(amountInput).toHaveValue('3');
 
   await searchCatalog(page, BUENO_GTIN);
   await page.getByTestId('catalog-calibration-unit').selectOption('bar');

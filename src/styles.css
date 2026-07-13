@@ -126,6 +126,9 @@ input:disabled, select:disabled { opacity: 0.6; }
 .field { display: grid; align-content: start; gap: 7px; }
 .field > span { font-weight: 800; }
 .field > small { color: var(--muted); }
+.amount-slider { display: grid; gap: 2px; }
+.amount-slider input { min-height: 28px; padding: 0; accent-color: var(--primary); }
+.amount-slider small { display: flex; justify-content: space-between; color: var(--muted); }
 .field--wide { grid-column: 1 / -1; }
 .calculation-result { display: grid; gap: 7px; margin: 0 clamp(16px, 3vw, 24px) clamp(16px, 3vw, 24px); padding: clamp(18px, 4vw, 28px); border-radius: 20px; color: #fff; background: linear-gradient(135deg, #176b87, #167653); }
 .calculation-result > span { opacity: 0.82; }

@@ -81,6 +81,11 @@ describe('Lumen hard-cutover state', () => {
     expect(catalogProductImageUrl(regular)).toContain('/400/840/032/2728/front_de.3.400.jpg');
   });
 
+  it('falls back to the first eligible SQLite-ranked result for an immediate default', () => {
+    const second = { ...hit, productId: 2, resultIndex: 1 };
+    expect(selectDefaultCatalogCandidate([hit, second], 'Bueno', [true, true])).toBe(hit);
+  });
+
   it('persists only a minimal versioned session snapshot', () => {
     const snapshot: SearchSessionSnapshot = {
       schemaVersion: 2,
