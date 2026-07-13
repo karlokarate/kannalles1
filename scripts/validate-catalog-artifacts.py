@@ -11,12 +11,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "Catalog"
-PRODUCTION_FILES = (
-    "kh-checker-dach-v1.sqlite",
-    "catalog-manifest.v1.json",
-    "catalog-codecs.v1.json",
-    "catalog-image-keys.v2.json",
-    "catalog-runtime.generated.ts",
+MANIFEST_NAME = "catalog-manifest.v1.json"
+STATIC_PRODUCTION_FILES = (
+    MANIFEST_NAME,
     "catalog-production.contract.v1.json",
     "catalog-build-report.v1.json",
     "catalog-build-report.v1.txt",
@@ -25,6 +22,7 @@ PRODUCTION_FILES = (
 EXPECTED_COLUMNS = ["id", "g", "n", "b", "c", "s", "q", "u", "m", "r"]
 SMOKE_QUERIES = ("kinder bueno", "vollkornbrot", "erdnüsse", "nutella", "salzstangen")
 MAX_SAFE_INTEGER = 9_007_199_254_740_991
+SHA256_PATTERN = re.compile(r"[a-f0-9]{64}", re.IGNORECASE)
 
 
 def nested(value: dict[str, Any], *paths: tuple[str, ...]) -> Any:
@@ -57,9 +55,16 @@ def require_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def safe_catalog_name(value: Any, field: str) -> str:
+    name = str(value or "")
+    if not name or Path(name).name != name or name in {".", ".."}:
+        raise SystemExit(f"FEHLER: Manifest-{field} ist kein sicherer Dateiname: {value!r}")
+    return name
+
+
 def manifest_values(manifest: dict[str, Any]) -> dict[str, Any]:
     return {
-        "filename": nested(manifest, ("database", "file")),
+        "filename": safe_catalog_name(nested(manifest, ("database", "file")), "database.file"),
         "size": nested(manifest, ("database", "bytes")),
         "sha256": nested(manifest, ("database", "sha256")),
         "application_id": nested(manifest, ("database", "applicationId")),
@@ -67,24 +72,42 @@ def manifest_values(manifest: dict[str, Any]) -> dict[str, Any]:
         "page_size": nested(manifest, ("database", "pageSize")),
         "product_count": nested(manifest, ("database", "products")),
         "brand_count": nested(manifest, ("database", "brands")),
-        "codec_file": nested(manifest, ("codecFile",)),
-        "runtime_file": nested(manifest, ("runtimeTypescript",)),
-        "image_file": nested(manifest, ("image", "dictionaryFile")),
+        "codec_file": safe_catalog_name(nested(manifest, ("codecFile",)), "codecFile"),
+        "runtime_file": safe_catalog_name(nested(manifest, ("runtimeTypescript",)), "runtimeTypescript"),
+        "image_file": safe_catalog_name(nested(manifest, ("image", "dictionaryFile")), "image.dictionaryFile"),
         "image_sha256": nested(manifest, ("image", "dictionarySha256")),
     }
 
 
-def verify_sums(path: Path) -> None:
+def require_manifest_shape(manifest: dict[str, Any], values: dict[str, Any]) -> None:
+    if manifest.get("contract") != "kh-checker-offline-catalog-production":
+        raise SystemExit("FEHLER: Falscher Manifestvertrag.")
+    if manifest.get("contractVersion") != "1.0.0":
+        raise SystemExit("FEHLER: Nicht unterstützte Manifestvertragsversion.")
+    if not str(manifest.get("catalogVersion") or "").strip():
+        raise SystemExit("FEHLER: catalogVersion fehlt.")
+    integer_fields = ("size", "application_id", "user_version", "page_size", "product_count", "brand_count")
+    for field in integer_fields:
+        value = values[field]
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            raise SystemExit(f"FEHLER: Manifest-{field} ist keine positive Ganzzahl: {value!r}")
+    if not SHA256_PATTERN.fullmatch(str(values["sha256"] or "")):
+        raise SystemExit("FEHLER: Manifest-Datenbank-SHA-256 ist ungültig.")
+    if not SHA256_PATTERN.fullmatch(str(values["image_sha256"] or "")):
+        raise SystemExit("FEHLER: Manifest-Bildschlüssel-SHA-256 ist ungültig.")
+
+
+def verify_sums(path: Path, expected_references: set[str]) -> None:
     referenced: set[str] = set()
     for line in path.read_text(encoding="utf-8").splitlines():
         clean = line.strip()
         if not clean or clean.startswith("#"):
             continue
         parts = clean.split(maxsplit=1)
-        if len(parts) != 2 or not re.fullmatch(r"[a-f0-9]{64}", parts[0], re.IGNORECASE):
+        if len(parts) != 2 or not SHA256_PATTERN.fullmatch(parts[0]):
             raise SystemExit(f"FEHLER: Ungültige Zeile in {path.name}: {line}")
         expected, raw_name = parts
-        name = raw_name.lstrip("* ")
+        name = safe_catalog_name(raw_name.lstrip("* "), "SHA256SUMS entry")
         referenced.add(name)
         target = CATALOG / name
         if not target.is_file():
@@ -92,7 +115,6 @@ def verify_sums(path: Path) -> None:
         actual = sha256(target)
         if actual.lower() != expected.lower():
             raise SystemExit(f"FEHLER: SHA-256 stimmt nicht für {name}: {actual}")
-    expected_references = set(PRODUCTION_FILES) - {"SHA256SUMS.txt"}
     if referenced != expected_references:
         raise SystemExit(
             "FEHLER: SHA256SUMS-Dateimenge weicht ab: "
@@ -124,7 +146,7 @@ def verify_runtime(runtime_path: Path, application_id: int, user_version: int) -
         raise SystemExit(f"FEHLER: Runtime-SSOT unvollständig: {missing}")
 
 
-def verify_sqlite(database: Path, manifest: dict[str, Any]) -> dict[str, int]:
+def verify_sqlite(database: Path, values: dict[str, Any]) -> dict[str, int]:
     uri = f"file:{database.as_posix()}?mode=ro&immutable=1"
     connection = sqlite3.connect(uri, uri=True)
     try:
@@ -168,7 +190,6 @@ def verify_sqlite(database: Path, manifest: dict[str, Any]) -> dict[str, int]:
     finally:
         connection.close()
 
-    values = manifest_values(manifest)
     checks = (
         ("application_id", application_id),
         ("user_version", user_version),
@@ -177,9 +198,8 @@ def verify_sqlite(database: Path, manifest: dict[str, Any]) -> dict[str, int]:
         ("brand_count", brand_count),
     )
     for key, actual in checks:
-        expected = values[key]
-        if expected is None or int(expected) != actual:
-            raise SystemExit(f"FEHLER: Manifest-{key}={expected}, SQLite={actual}")
+        if int(values[key]) != actual:
+            raise SystemExit(f"FEHLER: Manifest-{key}={values[key]}, SQLite={actual}")
     return {
         "application_id": application_id,
         "user_version": user_version,
@@ -191,22 +211,30 @@ def verify_sqlite(database: Path, manifest: dict[str, Any]) -> dict[str, int]:
 
 
 def main() -> int:
-    missing = [name for name in PRODUCTION_FILES if not (CATALOG / name).is_file()]
-    if missing:
-        raise SystemExit(
-            "FEHLER: Production-v1-Katalog ist unvollständig. Fehlend: " + ", ".join(missing)
-        )
+    missing_static = [name for name in STATIC_PRODUCTION_FILES if not (CATALOG / name).is_file()]
+    if missing_static:
+        raise SystemExit("FEHLER: Produktionskatalog-Metadaten fehlen: " + ", ".join(missing_static))
 
-    database = CATALOG / "kh-checker-dach-v1.sqlite"
-    manifest_path = CATALOG / "catalog-manifest.v1.json"
-    manifest = require_json(manifest_path)
-    codecs = require_json(CATALOG / "catalog-codecs.v1.json")
-    image_keys = require_json(CATALOG / "catalog-image-keys.v2.json")
+    manifest = require_json(CATALOG / MANIFEST_NAME)
+    values = manifest_values(manifest)
+    require_manifest_shape(manifest, values)
+    derived_files = {
+        values["filename"],
+        values["codec_file"],
+        values["image_file"],
+        values["runtime_file"],
+    }
+    production_files = set(STATIC_PRODUCTION_FILES) | derived_files
+    missing = sorted(name for name in production_files if not (CATALOG / name).is_file())
+    if missing:
+        raise SystemExit("FEHLER: Manifestreferenzierte Produktionsdateien fehlen: " + ", ".join(missing))
+
+    database = CATALOG / values["filename"]
+    codecs = require_json(CATALOG / values["codec_file"])
+    image_keys = require_json(CATALOG / values["image_file"])
     production_contract = require_json(CATALOG / "catalog-production.contract.v1.json")
     build_report = require_json(CATALOG / "catalog-build-report.v1.json")
 
-    if manifest.get("contract") != "kh-checker-offline-catalog-production":
-        raise SystemExit("FEHLER: Falscher Manifestvertrag.")
     if codecs.get("contract") != manifest.get("contract"):
         raise SystemExit("FEHLER: Codec- und Manifestvertrag stimmen nicht überein.")
     if production_contract.get("contract") != manifest.get("contract"):
@@ -216,47 +244,27 @@ def main() -> int:
     if image_keys.get("contract") != "kh-checker-off-image-key-dictionary":
         raise SystemExit("FEHLER: Falscher Bildschlüsselvertrag.")
 
-    values = manifest_values(manifest)
-    if values["filename"] != database.name:
-        raise SystemExit(
-            f"FEHLER: Manifest-Dateiname {values['filename']!r} passt nicht zu {database.name!r}."
-        )
-    if values["codec_file"] != "catalog-codecs.v1.json":
-        raise SystemExit("FEHLER: Manifest referenziert nicht den Codec-SSOT.")
-    if values["runtime_file"] != "catalog-runtime.generated.ts":
-        raise SystemExit("FEHLER: Manifest referenziert nicht die Runtime-SSOT.")
-    if values["image_file"] != "catalog-image-keys.v2.json":
-        raise SystemExit("FEHLER: Manifest referenziert nicht das Bildschlüssel-SSOT.")
-    if str(values["image_sha256"]).lower() != sha256(CATALOG / "catalog-image-keys.v2.json"):
-        raise SystemExit("FEHLER: Bildschlüssel-SHA-256 stimmt nicht zum Manifest.")
-
-    verify_sums(CATALOG / "SHA256SUMS.txt")
+    expected_sums = production_files - {"SHA256SUMS.txt"}
+    verify_sums(CATALOG / "SHA256SUMS.txt", expected_sums)
     actual_size = database.stat().st_size
-    if int(values["size"]) != actual_size:
+    if values["size"] != actual_size:
         raise SystemExit(f"FEHLER: Manifest-Größe={values['size']}, Datei={actual_size}")
     actual_hash = sha256(database)
     if str(values["sha256"]).lower() != actual_hash:
         raise SystemExit(f"FEHLER: Manifest-SHA-256 stimmt nicht: {actual_hash}")
+    if str(values["image_sha256"]).lower() != sha256(CATALOG / values["image_file"]):
+        raise SystemExit("FEHLER: Bildschlüssel-SHA-256 stimmt nicht zum Manifest.")
 
-    sqlite_values = verify_sqlite(database, manifest)
-    verify_runtime(
-        CATALOG / "catalog-runtime.generated.ts",
-        sqlite_values["application_id"],
-        sqlite_values["user_version"],
-    )
-    print(
-        json.dumps(
-            {
-                "mode": "production-v1",
-                "database": str(database.relative_to(ROOT)),
-                "sizeBytes": actual_size,
-                "sha256": actual_hash,
-                **sqlite_values,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
+    sqlite_values = verify_sqlite(database, values)
+    verify_runtime(CATALOG / values["runtime_file"], sqlite_values["application_id"], sqlite_values["user_version"])
+    print(json.dumps({
+        "mode": "production-v1",
+        "catalogVersion": manifest["catalogVersion"],
+        "database": str(database.relative_to(ROOT)),
+        "sizeBytes": actual_size,
+        "sha256": actual_hash,
+        **sqlite_values,
+    }, ensure_ascii=False, indent=2))
     return 0
 
 
