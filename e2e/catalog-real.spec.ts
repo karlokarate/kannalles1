@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import {
   BUENO_GTIN,
+  CATALOG_DATABASE_FILENAME,
   collectForbiddenProductRequests,
   expectCatalogReady,
   openCatalogApp,
@@ -10,11 +11,11 @@ import {
 
 test.describe.configure({ mode: 'serial' });
 
-test('installiert den echten Katalog einmal, öffnet ihn erneut und erhält die SQLite-Sortierung', async ({ page }) => {
+test('installiert den manifestbenannten echten Katalog einmal, öffnet ihn erneut und erhält die SQLite-Sortierung', async ({ page }) => {
   const forbidden = collectForbiddenProductRequests(page);
   let databaseDownloads = 0;
   page.on('request', (request) => {
-    if (/\/catalog\/kh-checker-dach\.sqlite(?:\?|$)/u.test(request.url())) databaseDownloads += 1;
+    if (request.url().includes(`/catalog/${CATALOG_DATABASE_FILENAME}`)) databaseDownloads += 1;
   });
 
   await openCatalogApp(page);
@@ -105,6 +106,7 @@ test('verwirft ein korruptes Update im inaktiven Slot und behält den letzten g�
   const manifestResponse = await page.request.get('/catalog/manifest.json');
   expect(manifestResponse.ok()).toBe(true);
   const manifest = await manifestResponse.json();
+  expect(manifest.database.file).toBe(CATALOG_DATABASE_FILENAME);
   const corrupted = Buffer.from('sentinel-corrupt-sqlite-update', 'utf8');
   let corruptDatabaseRequests = 0;
 
@@ -123,7 +125,7 @@ test('verwirft ein korruptes Update im inaktiven Slot und behält den letzten g�
       }),
     });
   });
-  await page.route('**/catalog/kh-checker-dach.sqlite', async (route) => {
+  await page.route(`**/catalog/${CATALOG_DATABASE_FILENAME}`, async (route) => {
     corruptDatabaseRequests += 1;
     await route.fulfill({ status: 200, contentType: 'application/vnd.sqlite3', body: corrupted });
   });

@@ -1,6 +1,19 @@
+import { readFileSync } from 'node:fs';
 import { expect, type Locator, type Page, type Request } from '@playwright/test';
 
-export const EXPECTED_PRODUCT_COUNT = 317_579;
+interface CatalogManifestFixture {
+  database: {
+    file: string;
+    products: number;
+  };
+}
+
+const sourceManifest = JSON.parse(
+  readFileSync(new URL('../Catalog/catalog-manifest.v1.json', import.meta.url), 'utf8'),
+) as CatalogManifestFixture;
+
+export const CATALOG_DATABASE_FILENAME = sourceManifest.database.file;
+export const EXPECTED_PRODUCT_COUNT = sourceManifest.database.products;
 export const BUENO_GTIN = '4008400322728';
 
 const forbiddenProductAuthority = [
@@ -33,9 +46,16 @@ export function catalogStatus(page: Page): Locator {
   return page.getByTestId('catalog-status');
 }
 
-export async function openCatalogApp(page: Page): Promise<void> {
+export async function openAppShell(page: Page): Promise<void> {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle(/KH Checker/i);
+  await expect(
+    page.getByRole('heading', { name: 'Welches Produkt oder Lebensmittel?' }),
+  ).toBeVisible();
+}
+
+export async function openCatalogApp(page: Page): Promise<void> {
+  await openAppShell(page);
   await expect(page.getByTestId('catalog-search-input')).toBeVisible();
 }
 
