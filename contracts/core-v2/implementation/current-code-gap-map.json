@@ -1,24 +1,35 @@
 {
   "document": "current-code-gap-map",
-  "version": "2.0.0",
-  "observedVersion": "2.2.4 production source",
+  "version": "3.0.0",
+  "observedVersion": "2.2.4 offline SQLite cutover branch",
   "items": [
     {
-      "capability": "cache_first_search_and_backend_fallback",
+      "capability": "verified_offline_catalog_search",
       "status": "implemented",
       "evidence": [
-        "src/lib/api.ts: searchFoodCandidates returns fresh cache first and stale cache after a failed refresh",
-        "server/gateway-core/gateway.mjs: auto search owns the index-to-OFF-Legacy fallback and records at most two attempts",
-        "contracts/core-v2/tests/acceptance-integrity.test.ts: search-primary-fails-fallback-succeeds, search-all-fail-stale-cache and search-all-fail-no-cache execute production paths"
+        "Catalog/catalog-runtime.generated.ts: generated SSOT owns GTIN, metadata, image, FTS and deterministic search-order codecs",
+        "src/lib/catalog/catalog.worker.ts: same-origin manifest, SHA-256, SQLite identity/schema/count verification, OPFS import and read-only FTS/product lookup",
+        "scripts/validate-catalog-artifacts.py: production bundle hash, schema, FTS, safe-number and smoke-search gates",
+        "contracts/core-v2/tests/acceptance-integrity.test.ts: product search resolves from the mocked local catalog with zero product-network requests"
       ]
     },
     {
-      "capability": "no_artificial_wait",
+      "capability": "no_product_network_runtime",
       "status": "implemented",
       "evidence": [
-        "src/lib/api.ts: Retry-After is diagnostic metadata and searchFoodCandidatesOutcome always exposes retryAllowedImmediately=true",
-        "src/lib/api.test.ts: consecutive limited requests each execute without installing a local cooldown",
-        "e2e/app.spec.ts: HTTP 429/503 retry controls remain immediately enabled"
+        "src/lib/api.ts: search and barcode lookup use only catalogClient",
+        "src/lib/aiClient.ts: legacy AI signature delegates to the local parser without fetch",
+        "src/lib/gatewayUrl.ts: browser runtime ignores persisted legacy gateway settings",
+        ".github/workflows/build-deploy-pages.yml: product URLs are rejected from built app assets"
+      ]
+    },
+    {
+      "capability": "typed_catalog_failure_and_immediate_retry",
+      "status": "implemented",
+      "evidence": [
+        "src/lib/api.ts: worker, hash, schema and integrity failures map to SearchOutcome temporarily_unavailable",
+        "src/lib/api.test.ts: catalog integrity failure returns a typed outcome with retryAllowedImmediately=true",
+        "src/offline-catalog.css: obsolete API detail fields are removed from the main flow while the primary retry control remains"
       ]
     },
     {
@@ -36,16 +47,17 @@
       "evidence": [
         "src/lib/calibration.ts: schemaVersion 2 records, barcode/exact/generic lookup keys and deterministic conflict selection",
         "src/lib/storage.ts: versioned IndexedDB plus local fallback migration, saveCalibration and findCalibration",
-        "contracts/core-v2/tests/acceptance-integrity.test.ts: saved-calibration-reused saves, reloads by scope chain and injects the restored weight into production resolution"
+        "contracts/core-v2/tests/acceptance-integrity.test.ts: saved-calibration-reused reloads by scope chain and injects the restored weight"
       ]
     },
     {
-      "capability": "smallest_unit_default",
+      "capability": "smallest_proven_unit_default",
       "status": "implemented",
       "evidence": [
+        "Catalog/catalog-codecs.v1.json: provenUnit and defaultUnit semantic contracts",
+        "src/lib/api.ts: decoded proven bar/slice/piece/portion evidence is projected into the existing resolver contract",
         "src/lib/resolver.ts: prepareExactPortionOptions orders a proven smallest edible unit before package/mass alternatives",
-        "contracts/core-v2/tests/acceptance-integrity.test.ts: Bueno, explicit piece, user calibration, package-boundary and Nutella cases execute production resolution",
-        "src/lib/resolver.test.ts: regression fixtures cover Bueno, BiFi, Salzstangen, slices, spreads and generic foods"
+        "contracts/core-v2/tests/acceptance-integrity.test.ts: Bueno, explicit piece, calibration, package-boundary and Nutella cases execute production resolution"
       ]
     }
   ]
