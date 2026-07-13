@@ -17,12 +17,33 @@ const gatewayUrl = validatePublicGatewayUrl(process.env.VITE_DATA_GATEWAY_URL ||
 const gatewayUrlLiteral = javascriptJsonLiteral(gatewayUrl);
 const sourceDir = path.join(rootDir, 'public-template');
 const targetDir = path.join(rootDir, '.generated-public');
+const catalogSourceDir = path.join(rootDir, 'Catalog');
+const catalogTargetDir = path.join(targetDir, 'catalog');
+const sqliteWasmSourceDir = path.join(
+  catalogSourceDir,
+  'runtime',
+  'node_modules',
+  '@sqlite.org',
+  'sqlite-wasm',
+  'dist'
+);
+const sqliteWasmTargetDir = path.join(targetDir, 'vendor', 'sqlite');
 const textExtensions = new Set(['.html', '.js', '.css', '.txt', '.json', '.md', '.webmanifest', '.yaml', '.yml']);
 let versionTokenCount = 0;
 let gatewayTokenCount = 0;
 
+async function exists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 await fs.rm(targetDir, { recursive: true, force: true });
 await fs.cp(sourceDir, targetDir, { recursive: true });
+
 // Keep CSS as a real external asset. The legacy-only SystemJS graph would
 // otherwise inject it as an inline <style>, conflicting with the strict CSP.
 const sourceCssPath = path.join(rootDir, 'src/styles.css');
@@ -42,8 +63,61 @@ const processedCss = await postcss([
 ]).process(sourceCss, { from: sourceCssPath, to: targetCssPath });
 await fs.writeFile(targetCssPath, processedCss.css);
 
-// Generated contract material is part of the static release documentation, not
-// a runtime server dependency.
+// The SQLite runtime has its own exact lock so it can be upgraded independently
+// from the application dependency graph.
+if (!await exists(path.join(sqliteWasmSourceDir, 'index.mjs'))) {
+  throw new Error('SQLite-WASM runtime missing. Run npm ci --prefix Catalog/runtime first.');
+}
+await fs.mkdir(sqliteWasmTargetDir, { recursive: true });
+await fs.cp(sqliteWasmSourceDir, sqliteWasmTargetDir, { recursive: true });
+
+// Production-v1 wins atomically. Until all generated production files are
+// present, the existing benchmark database remains a browser-proof input only.
+const productionRuntimeFiles = [
+  'kh-checker-dach-v1.sqlite',
+  'catalog-manifest.v1.json',
+  'catalog-codecs.v1.json',
+  'catalog-image-keys.v2.json',
+  'catalog-runtime.generated.ts'
+];
+const productionReady = (
+  await Promise.all(productionRuntimeFiles.map((name) => exists(path.join(catalogSourceDir, name))))
+).every(Boolean);
+
+await fs.mkdir(catalogTargetDir, { recursive: true });
+if (productionReady) {
+  await Promise.all([
+    fs.copyFile(
+      path.join(catalogSourceDir, 'kh-checker-dach-v1.sqlite'),
+      path.join(catalogTargetDir, 'kh-checker-dach.sqlite')
+    ),
+    fs.copyFile(
+      path.join(catalogSourceDir, 'catalog-manifest.v1.json'),
+      path.join(catalogTargetDir, 'manifest.json')
+    ),
+    fs.copyFile(
+      path.join(catalogSourceDir, 'catalog-codecs.v1.json'),
+      path.join(catalogTargetDir, 'catalog-codecs.v1.json')
+    ),
+    fs.copyFile(
+      path.join(catalogSourceDir, 'catalog-image-keys.v2.json'),
+      path.join(catalogTargetDir, 'catalog-image-keys.v2.json')
+    )
+  ]);
+} else {
+  const benchmarkDatabase = path.join(catalogSourceDir, 'kh-checker-dach.sqlite');
+  const benchmarkManifest = path.join(catalogSourceDir, 'manifest.json');
+  if (!await exists(benchmarkDatabase) || !await exists(benchmarkManifest)) {
+    throw new Error('Neither the complete production-v1 catalog nor the benchmark proof is available.');
+  }
+  await Promise.all([
+    fs.copyFile(benchmarkDatabase, path.join(catalogTargetDir, 'kh-checker-dach.sqlite')),
+    fs.copyFile(benchmarkManifest, path.join(catalogTargetDir, 'manifest.json'))
+  ]);
+}
+
+// Generated contract material remains static release documentation for the
+// currently retained gateway compatibility layer. It is not a runtime server.
 const apiDocsDir = path.join(targetDir, 'api-docs');
 await fs.mkdir(apiDocsDir, { recursive: true });
 await Promise.all([
@@ -85,4 +159,6 @@ const syntax = spawnSync(process.execPath, ['--check', path.join(targetDir, 'api
 if (syntax.status !== 0) {
   throw new Error(`Generated API diagnosis script is not valid JavaScript: ${syntax.stderr || syntax.stdout}`);
 }
-console.log(`Public assets and generated API documentation prepared for KH Checker v${version}.`);
+console.log(
+  `Public assets prepared for KH Checker v${version}; catalog=${productionReady ? 'production-v1' : 'benchmark-proof'}.`
+);
