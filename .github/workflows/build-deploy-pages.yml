@@ -101,6 +101,19 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
+      - name: Package exact branch source snapshot
+        if: always() && github.event_name == 'pull_request'
+        run: git archive --format=zip --output=offline-cutover-source.zip HEAD
+
+      - name: Upload exact branch source snapshot
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
+        with:
+          name: offline-cutover-source
+          path: offline-cutover-source.zip
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
