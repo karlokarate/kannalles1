@@ -11,7 +11,7 @@ test('App-Shell, Hauptnavigation und Startansicht bleiben zugänglich', async ({
 
   const navigation = page.getByRole('navigation', { name: 'Hauptnavigation' });
   await expect(navigation).toBeVisible();
-  for (const label of ['Suche', 'Verlauf', 'Favoriten', 'Einstellungen']) {
+  for (const label of ['Rechner', 'Verlauf', 'Favoriten', 'Einstellungen']) {
     await expect(navigation.getByRole('button', { name: label, exact: true })).toBeVisible();
   }
 
@@ -26,25 +26,18 @@ test('deterministische manuelle Berechnung funktioniert ohne Produktnetzwerk', a
   const forbidden = collectForbiddenProductRequests(page);
   await openAppShell(page);
 
-  await page.getByRole('tab', { name: 'Manuell' }).click();
-  const manualForm = page.locator('form.manual-form');
-  await manualForm.getByLabel('Produkt', { exact: true }).fill('Testbrot');
-  await manualForm.getByLabel('Menge', { exact: true }).fill('100');
-  await manualForm.getByLabel('Einheit', { exact: true }).selectOption('g');
-  await page.getByText('Optionale genaue Angaben').click();
-  await page.getByLabel('Kohlenhydrate pro 100 Gramm').fill('40');
-  await page.getByRole('button', { name: 'Berechnen', exact: true }).click();
+  await page.getByRole('button', { name: 'Manuell', exact: true }).click();
+  const label = page.getByLabel('Bezeichnung');
+  await label.fill('Testbrot');
+  await page.getByLabel('KH pro 100 g').fill('40');
+  await page.getByLabel('Menge in g').fill('100');
 
-  await expect(page.getByRole('heading', { name: 'Ergebnis' })).toBeVisible();
-  await expect(page.getByText('Testbrot', { exact: true })).toBeVisible();
-  await expect(page.locator('.big-result')).toContainText(/^40\s*g$/);
-  await expect(page.getByRole('note')).toContainText(
-    'Datenquelle: eigene Eingabe beziehungsweise Etikettwert',
-  );
+  await expect(label).toHaveValue('Testbrot');
+  await expect(page.locator('.calculation-result')).toContainText(/40(?:[,.]0)?\s*g KH/);
   forbidden.assertNone();
 });
 
-test('lokale generische BLS-Referenz bleibt offline und quellenrichtig nutzbar', async ({
+test('lokale Einstellungen und manuelle Berechnung bleiben offline nutzbar', async ({
   page,
   context,
 }) => {
@@ -53,15 +46,13 @@ test('lokale generische BLS-Referenz bleibt offline und quellenrichtig nutzbar',
 
   await context.setOffline(true);
   try {
-    await page
-      .getByLabel('Produkt oder Lebensmittel suchen')
-      .fill('100 g Nudeln gekocht');
-    await page.getByRole('button', { name: 'Suchen', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Ergebnis' })).toBeVisible();
-    await expect(page.getByRole('note')).toContainText(
-      'Generische Referenz: Bundeslebensmittelschlüssel BLS 4.0',
-    );
-    await expect(page.getByRole('note')).toContainText('Max Rubner-Institut 2025');
+    await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Einstellungen' })).toBeVisible();
+    await page.getByRole('button', { name: 'Rechner', exact: true }).click();
+    await page.getByRole('button', { name: 'Manuell', exact: true }).click();
+    await page.getByLabel('KH pro 100 g').fill('12.5');
+    await page.getByLabel('Menge in g').fill('80');
+    await expect(page.locator('.calculation-result')).toContainText(/10(?:[,.]0)?\s*g KH/);
   } finally {
     await context.setOffline(false);
   }

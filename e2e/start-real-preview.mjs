@@ -9,16 +9,20 @@ import { spawnSync } from 'node:child_process';
 const root = path.resolve(import.meta.dirname, '..');
 const site = path.join(root, 'dist');
 const port = Number(process.env.PORT || 4173);
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const npmCli = process.env.npm_execpath;
+const npmCommand = npmCli ? process.execPath : process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 if (process.env.PLAYWRIGHT_SKIP_BUILD !== '1') {
-  const build = spawnSync(npm, ['run', 'build'], {
+  const build = spawnSync(npmCommand, npmCli ? [npmCli, 'run', 'build'] : ['run', 'build'], {
     cwd: root,
-    env: { ...process.env, VITE_DATA_GATEWAY_URL: '' },
+    env: { ...process.env },
     stdio: 'inherit',
     windowsHide: true,
   });
-  if (build.status !== 0) process.exit(build.status ?? 1);
+  if (build.status !== 0) {
+    console.error(`Production build failed: ${build.error?.message ?? `exit ${build.status ?? 'unknown'}`}`);
+    process.exit(build.status ?? 1);
+  }
 }
 
 const contentTypes = new Map([

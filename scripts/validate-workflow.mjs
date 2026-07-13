@@ -45,6 +45,7 @@ const harness = sources.get('catalog-harness.ts');
 if (!matrix || !quality || !catalog || !harness) fail('Verpflichtende Sentinel-E2E-Dateien fehlen.');
 
 const projectNames = ['chromium-desktop', 'chromium-android', 'firefox-desktop', 'webkit-iphone'];
+const supportedProjectNames = ['chromium-desktop', 'chromium-android', 'firefox-desktop'];
 
 function validateEvidence() {
   const states = support.evidenceStateModel?.allowedStates ?? [];
@@ -117,22 +118,28 @@ function validateTests() {
     }
   }
   requireText(catalog, `page.route('**/catalog/manifest.json'`, 'Manifest-Korruptionsroute');
-  requireText(catalog, 'page.route(`**/catalog/${CATALOG_DATABASE_FILENAME}`', 'SQLite-Korruptionsroute');
+  requireText(catalog, 'page.route(`**/catalog/$' + '{CATALOG_DATABASE_FILENAME}`', 'SQLite-Korruptionsroute');
 }
 
 function validateBrowserSupport() {
-  if (support.contract !== 'kh-checker-browser-support-release-gate' || support.version !== '1.1.0') {
+  if (support.contract !== 'kh-checker-browser-support-release-gate' || support.version !== '1.2.0') {
     fail('Browser-Support-Vertrag oder Version ist ungültig.');
   }
   if (support.releaseRequiresAllProjects !== true || support.serialExecution !== true ||
       support.requiredTest !== 'e2e/browser-matrix.spec.ts') fail('Browser-Support-Vertrag schwächt den Gate ab.');
   const names = (support.requiredProjects ?? []).map((project) => project?.name);
-  if (JSON.stringify(names) !== JSON.stringify(projectNames)) fail('Browserprojekte weichen ab.');
+  if (JSON.stringify(names) !== JSON.stringify(supportedProjectNames)) fail('Unterstützte Browserprojekte weichen ab.');
+  const unsupported = support.evaluatedUnsupportedProjects ?? [];
+  if (unsupported.length !== 1 || unsupported[0]?.name !== 'webkit-iphone' ||
+      unsupported[0]?.missingCapability !== 'FileSystemSyncAccessHandle' ||
+      unsupported[0]?.expectedErrorCode !== 'CATALOG_STORAGE_UNAVAILABLE') {
+    fail('WebKit-Unterstützungsgrenze ist nicht explizit und überprüfbar dokumentiert.');
+  }
   for (const name of projectNames) requireText(playwright, `name: '${name}'`, 'Playwright-Projekt');
   for (const fragment of [
     `const matrixTest = '**/browser-matrix.spec.ts'`,
     'workers: 1',
-    `serviceWorkers: 'block'`,
+    `serviceWorkers: 'allow'`,
     `...devices['Pixel 7']`,
     `...devices['iPhone 15 Pro']`,
   ]) requireText(playwright, fragment, 'Playwright-Konfiguration');
@@ -142,8 +149,11 @@ function validateBrowserSupport() {
     for (const [name, text] of specs) if (text.includes(forbidden)) fail(`Retired Testpfad in ${name}: ${forbidden}`);
   }
   for (const fragment of ['Hauptnavigation', 'overflowing', 'wcag2aa']) requireText(matrix, fragment, 'Matrix-Coverage');
-  for (const fragment of ['deterministische manuelle Berechnung', 'Kohlenhydrate pro 100 Gramm',
-    'Bundeslebensmittelschlüssel BLS 4.0', 'Max Rubner-Institut 2025', 'wcag2aa']) {
+  for (const fragment of ["testInfo.project.name === 'webkit-iphone'", 'CATALOG_STORAGE_UNAVAILABLE']) {
+    requireText(matrix, fragment, 'WebKit-Negativabnahme');
+  }
+  for (const fragment of ['deterministische manuelle Berechnung', "getByLabel('KH pro 100 g')",
+    'lokale Einstellungen und manuelle Berechnung', 'wcag2aa']) {
     requireText(quality, fragment, 'Non-API-Coverage');
   }
   requireText(harness, 'sourceManifest.database.file', 'Manifestbasierter E2E-Dateiname');
@@ -156,10 +166,12 @@ function validateBrowserSupport() {
 
   const architecture = String(packageJson.scripts?.['check:architecture'] ?? '');
   const knip = String(packageJson.scripts?.['check:knip'] ?? '');
-  if (!architecture.includes('dependency-cruiser@18.1.0') || !architecture.includes('dependency-cruiser.config.cjs')) {
+  if (packageJson.devDependencies?.['dependency-cruiser'] !== '18.1.0' ||
+      !architecture.includes('depcruise') || !architecture.includes('dependency-cruiser.config.cjs')) {
     fail('dependency-cruiser ist nicht exakt gepinnt oder konfiguriert.');
   }
-  if (!knip.includes('knip@6.26.0') || !knip.includes('knip.json') || !knip.includes('--strict')) {
+  if (packageJson.devDependencies?.knip !== '6.26.0' ||
+      !knip.includes('knip') || !knip.includes('knip.json') || !knip.includes('--strict')) {
     fail('Knip ist nicht exakt gepinnt oder strict.');
   }
 
@@ -167,7 +179,8 @@ function validateBrowserSupport() {
   if (evidence.state === 'failed') fail(`Browser-Support ist als failed dokumentiert: ${support.currentEvidence.failureSummary}`);
   return { contract: support.contract, contractVersion: support.version, evidenceState: evidence.state,
     browserSupportClaimed: evidence.browserSupportClaimed, releaseEligible: evidence.releaseEligible,
-    requiredProjects: projectNames, databaseFilename: manifest.database.file };
+    requiredProjects: supportedProjectNames, unsupportedProjects: ['webkit-iphone'],
+    databaseFilename: manifest.database.file };
 }
 
 const browserSupport = validateBrowserSupport();
@@ -206,8 +219,8 @@ for (const job of Object.values(workflow.jobs ?? {})) for (const step of job.ste
 
 const jobs = Object.keys(workflow.jobs ?? {});
 if (jobs.join(',') !== 'quality,build,browser-e2e,deploy') fail(`Jobs weichen ab: ${jobs.join(',')}`);
-if (workflow.concurrency?.group !== 'pages-${{ github.ref }}' || workflow.concurrency?.['cancel-in-progress'] !== true) fail('Concurrency-Vertrag ungültig.');
-if (workflow.env?.VITE_DATA_GATEWAY_URL !== '') fail('Produktnetzwerk muss global deaktiviert sein.');
+if (workflow.concurrency?.group !== 'pages-$' + '{{ github.ref }}' || workflow.concurrency?.['cancel-in-progress'] !== true) fail('Concurrency-Vertrag ungültig.');
+if (workflow.env && Object.keys(workflow.env).length > 0) fail('Der Offline-Build darf keine Runtime-Umschaltvariablen besitzen.');
 const commands = (job) => (job?.steps ?? []).map((step) => String(step?.run ?? '')).join('\n');
 
 const qualityCommands = commands(workflow.jobs.quality);

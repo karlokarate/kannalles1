@@ -1,48 +1,26 @@
-KH Checker v2.2.4 – Release Notes
-=================================
+KH Checker v2.2.4 – Offline-SQLite-Cutover
+==========================================
 
-Generatorgetriebene API-Schicht
--------------------------------
-- Hono 4.12.29, @hono/zod-openapi 1.4.0 und Zod 4.4.3 bilden die kanonische Vertragsquelle.
-- OpenAPI 3.1 wird direkt aus dem v2.2.4-Route-/Schema-Graph erzeugt.
-- Redocly CLI 2.38.0 lintet den Contract und erzeugt statische API-Dokumentation.
-- Orval 8.20.0 erzeugt Fetch-Client/URL-Builder, TypeScript-Modelle, Zod-Validatoren, MSW-Handler und Faker-Factories.
-- Generierte Contract-Tests und eine Hash-/Neu-Generierungsprüfung verhindern Drift.
-- Browser-App und Gateway konsumieren die erzeugten Typen und Validatoren; der kanonische Transport ist unter /api/v1 URL-versioniert.
+Dieses Release konsolidiert die Arbeiten von Atlas, Forge, Helix, Lumen und
+Sentinel auf einen einzigen produktiven Datenpfad:
 
-Integrations- und Workflow-Fix
-------------------------------
-- genau ein finaler, manuell startbarer Workflow ohne Eingaben
-- kein Workflow commitet, pusht oder installiert einen anderen Workflow
-- behebt den v2.2.3-Integrationsfehler durch fehlende GitHub-App-"workflows"-Berechtigung
-- Build/Validierung mit contents:read; separater Deploy-Job mit pages:write und OIDC
-- Actions: checkout v7, setup-node v6, upload-artifact v7, configure-pages v6, upload-pages-artifact v5, deploy-pages v5
-- Node.js 24 LTS im Workflow; lokale Entwicklungsuntergrenze Node.js 22.18
+- Atlas: verlustfreies, katalogeigenes Produkt- und Statusmodell
+- Forge: manifestgesteuerte SQLite-WASM-/OPFS-Runtime mit verifizierten A/B-Slots
+- Helix: deterministische Mengen- und Kohlenhydratberechnung auf Katalogprodukten
+- Lumen: Offline-UI, Katalogstatus, Suche, Verlauf, Favoriten und Einstellungen
+- Sentinel: harte Architektur-, Katalog-, Build- und Browsergates
 
-Release mit harter Sicherheitsgrenze
-------------------------------------
-- nur ein vollständig bestandener, aus aktuellem Source neu gebauter Kandidat darf veröffentlicht werden
-- Traversal, Symlinks, Verschlüsselung, Zip-Bomb-Muster, Checksummenlücken, Secrets, JAR/AAR/APK, Server- und Datenbankartefakte blockieren hart
-- Pages deployt direkt das vom Produktionsbuild erzeugte `dist/`; umfassende Tests und Releasevalidierung sind bewusst kein Bestandteil dieses schnellen Deploy-Workflows
+Der gebündelte Katalog enthält 317.579 Produkte und 60.682 Marken. Die Datei
+kh-checker-dach-v1.sqlite wird vor Aktivierung anhand von Name, Größe, SHA-256,
+SQLite application_id, user_version und Schema geprüft.
 
-Qualität
---------
-- vollständige Vitest-/Contract-Suite ohne hart codierte, schnell veraltende Testzahl
-- TypeScript, Biome, Server-/Script-Syntax und Vite/PWA-Build
-- Playwright Chromium Desktop/Android, Firefox Desktop und WebKit/iPhone, Offline-Service-Worker, sofortiger Retry und axe WCAG-A/AA
-- sichere, vollständig SHA-256-abgedeckte und reproduzierbare Release-ZIPs
-- öffentlich portable npm-Lockfile-URLs
-- gepinnter Secret-Scan, Container-Build/-Health-Smoke und statischer Search-a-licious-Overlay-Preflight im CI-Gate
-- alle verwendeten GitHub Actions sind unveränderlich auf volle Commit-SHAs gepinnt; Dependabot schlägt kontrollierte Actions-/npm-/Docker-Aktualisierungen vor
-- Node, Redis, Search-a-licious API/Updater und Elasticsearch sind per Tag und OCI-Digest fixiert; unnötige Such-/Admin-UIs laufen nicht im Produktionsdefault
-- getrennte Redis-Dienste: Koordination mit `noeviction`/fail-closed, Antwortcache mit `allkeys-lru`/fail-soft und ein eigener persistenter Search-a-licious-Eventstream
-- Search-a-licious-Updater nur im expliziten `search-updates`-Profil und erst nach Anbindung eines Product-Opener-Producers
-- Pages-main deployt ohne Gateway die direkte vollständige PWA; die optionale Repository-Variable `DATA_GATEWAY_URL` schaltet bewusst auf die getrennte Gateway-Lane
-- Im Settingsscreen kann ein persönliches OFF-Konto direkt geprüft, lokal gespeichert und wieder entfernt werden; es wird nur für world.openfoodfacts.org verwendet, nie für Search-a-licious oder den Gateway
-- Production verlangt einen separaten `GATEWAY_CLIENT_SALT`; pseudonyme IP-Budgets begrenzen standardmäßig 6 Suchen/10 Produktaufrufe je Minute und teilen sich bewusst hinter NAT/VPN
-- Paid-AI kombiniert Minutenlimits (global 30/Nutzer 6) mit rollierenden 24-h-Kostenbudgets (global 300/Nutzer 30), fail-closed in der Koordinations-Redis
+API-, Gateway-, Server-, Container- und generierte Online-Clientpfade wurden aus
+dem aktiven Produkt entfernt. Suche und Berechnung benötigen nach erfolgreicher
+Erstinstallation kein Netzwerk. Produktbilder sind optional und nicht Teil der
+Berechnungsautorität.
 
-Betriebsgrenze
---------------
-Das Release ist eine installierbare browserbasierte PWA, keine nativ signierte Android-APK. Lane A nutzt die offiziellen APIs direkt und benötigt keinen App-Server. Lane B bleibt als vollständiger Gateway-Ausweichpfad vorbereitet und wird bei reproduzierbaren CORS-/Limit-/Verfügbarkeitsgrenzen auf Vercel aktiviert. Es gibt keinen OFF-Export oder eigenen Produktindex.
-In Lane A erhalten die offiziellen Dienste Suchbegriffe, Barcodes und die öffentliche IP; in Lane B erhält sie der Gatewaybetreiber. Produktbilder kommen direkt vom OFF-Bild-CDN. Offline sind nur bereits gecachte Assets, Bilder und Daten verfügbar.
+Das Release-Gate umfasst Unit-/Contracttests, TypeScript, Lint, Katalogintegrität,
+Architektur- und Dead-Code-Prüfung, Produktionsbuild, Pages-Artefaktprüfung sowie
+echte SQLite-WASM-/OPFS-Journeys einschließlich Offline-Reload.
+
+Die App ist eine PWA und keine nativ signierte Android- oder iOS-App.

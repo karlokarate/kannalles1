@@ -10,49 +10,38 @@
 <body><main>
   <span class="badge">Version __KH_APP_VERSION__</span>
   <h1>KH Checker</h1>
-  <p class="lead">Die fertige PWA funktioniert auf einem HTTPS-Host ohne eigenen App-Server: Standardmäßig fragt der Browser die offiziellen OFF-Dienste direkt ab. Ein Daten-Gateway ist eine optionale zweite Lane.</p>
+  <p class="lead">Die installierbare Web-App durchsucht und berechnet Lebensmittel vollständig lokal. Der mitgelieferte SQLite-Katalog wird im Browser geprüft und persistent im Gerätespeicher bereitgestellt.</p>
 
-  <div class="notice"><strong>Aktuellen Source bauen:</strong> Alte Release-ZIPs sind keine Deployment-Fallbacks. Der Workflow erzeugt das Artefakt reproduzierbar aus dem eingecheckten Source- und Lockfile-Stand.</div>
-
-  <h2>Deployment über GitHub Actions</h2>
-  <ol>
-    <li>Den aktuellen Source-Stand inklusive Lockfile einchecken.</li>
-    <li>Unter <strong>Actions</strong> den Workflow <strong>Build and deploy KH Checker to Pages</strong> ohne Eingaben starten.</li>
-    <li>Der Workflow installiert das Lockfile, baut die PWA und veröffentlicht das neue Artefakt.</li>
-    <li>Nach erfolgreichem Lauf die vom Workflow ausgegebene Pages-Adresse öffnen.</li>
-  </ol>
-
-  <h2>Was auf dem Gerät läuft</h2>
-  <div class="grid">
-    <section class="card"><h3>Zwei API-Lanes</h3><p>Ohne Gateway nutzt der Browser Search-a-licious mit OFF Legacy als Reserve. Eine konfigurierte Gateway-URL übernimmt die gesamte Anfrage autoritativ.</p></section>
-    <section class="card"><h3>Lokaler Cache</h3><p>Fresh-/Stale-Cache, Request-Deduplizierung, Kalibrierungen, Verlauf und Berechnung laufen lokal in der PWA.</p></section>
-    <section class="card"><h3>Gezielte Details</h3><p>Nur das ausgewählte Barcode-Produkt wird über OFF API v3.6 geladen. v2 ergänzt nur weiterhin fehlende Nährwerte.</p></section>
-    <section class="card"><h3>Optionales OFF-Konto</h3><p>Unter Einstellungen kann ein persönliches OFF-Konto geprüft und lokal gespeichert werden. Es wird ausschließlich bei direkten OFF-Anfragen verwendet, nie bei Search-a-licious oder einem Gateway.</p></section>
-    <section class="card"><h3>Kontrollierte Fehler</h3><p>Kein lokaler Cooldown: technische Details bleiben sichtbar und ein manueller Retry ist sofort möglich.</p></section>
-  </div>
+  <div class="notice"><strong>Einmal online laden:</strong> Beim ersten Start werden App, SQLite-WASM und der rund 25 MB große Produktkatalog über HTTPS geladen. Danach funktionieren Suche, Berechnung, Verlauf und Favoriten ohne Netzwerk.</div>
 
   <h2>Installation</h2>
   <ul>
-    <li><strong>iPhone/iPad:</strong> Pages-Seite in Safari öffnen → Teilen → Zum Home-Bildschirm.</li>
-    <li><strong>Android:</strong> Pages-Seite in Chrome öffnen → App installieren.</li>
+    <li><strong>Android:</strong> Seite in Chrome öffnen → App installieren.</li>
+    <li><strong>iPhone/iPad:</strong> Seite in Safari öffnen → Teilen → Zum Home-Bildschirm.</li>
     <li><strong>Desktop:</strong> Installationssymbol eines PWA-fähigen Browsers verwenden.</li>
   </ul>
-  <div class="notice warn"><strong>Nicht per <code>file://</code> betreiben:</strong> Service Worker und PWA-Installation benötigen einen sicheren HTTP(S)-Kontext. GitHub Pages stellt ihn bereit.</div>
+  <div class="notice warn"><strong>Nicht per <code>file://</code> öffnen:</strong> Service Worker, OPFS und PWA-Installation benötigen einen sicheren HTTP(S)-Kontext. GitHub Pages stellt ihn bereit.</div>
 
-  <h2>API auf dem Zielgerät prüfen</h2>
-  <p><a href="./API-DIAGNOSE.html">API-DIAGNOSE.html</a> testet die aktive direkte oder Gateway-Lane sowie die einzelnen Such- und Produktpfade. Fehler, Endpunkt, Status und Laufzeit werden angezeigt.</p>
-
-  <h2>Datenschutzgrenze</h2>
-  <p>Im Direktbetrieb erhalten Search-a-licious beziehungsweise OFF den Suchbegriff oder Barcode und die öffentliche IP-Adresse. Bei ausdrücklich verbundenem OFF-Konto speichert das Browserprofil zusätzlich Benutzername und Passwort lokal und sendet sie nur an <code>world.openfoodfacts.org</code>. Produktbilder kommen von <code>images.openfoodfacts.org</code>. Offline verfügbar sind nur bereits gecachte App-Assets, Bilder und Daten.</p>
-
-  <h2>Validierung</h2>
-  <p>Der Release-Gate umfasst Vitest, TypeScript, Biome, Playwright auf Chromium, Firefox und WebKit, axe-core, npm audit, Service-Worker-/Manifest-Prüfung, mobile Unterpfade, sichere ZIP-Extraktion und vollständige SHA-256-Prüfsummen.</p>
-
-  <div class="notice warn"><strong>Gesundheitshinweis:</strong> Open-Food-Facts-Daten können unvollständig oder falsch sein. Etikett prüfen und das Ergebnis nicht ungeprüft für Therapie- oder Insulindosierungsentscheidungen verwenden.</div>
-
-  <div class="actions">
-    <a class="button" href="./index.html">App öffnen</a>
-    <a class="button" href="./API-DIAGNOSE.html">API-Diagnose öffnen</a>
+  <h2>Offline-Funktion</h2>
+  <div class="grid">
+    <section class="card"><h3>Lokaler Produktkatalog</h3><p>Produktsuche und Nährwerte kommen ausschließlich aus der versionierten SQLite-Datenbank. Es gibt keine API- oder Gateway-Abhängigkeit.</p></section>
+    <section class="card"><h3>Sichere Aktualisierung</h3><p>Der Katalog wird per SHA-256 und SQLite-Metadaten geprüft. A/B-Slots halten bei einer fehlgeschlagenen Aktualisierung die letzte funktionierende Version bereit.</p></section>
+    <section class="card"><h3>Lokale Daten</h3><p>Verlauf, Favoriten, Einstellungen und eigene Lebensmittel bleiben auf dem Gerät.</p></section>
+    <section class="card"><h3>Transparenter Status</h3><p>Unter Einstellungen zeigt die App Download, Prüfung, aktiven Katalog und Fehlerzustände an.</p></section>
   </div>
-  <p class="small">Enthalten: fertige PWA, Diagnose, maschinenlesbarer Vertrag, Dokumentation, Release Notes, Lizenz und Prüfsummen. Der Entwickler-Quellcode wird separat ausgegeben.</p>
+
+  <h2>Erster Funktionstest</h2>
+  <ol>
+    <li>App öffnen und warten, bis der Katalog als bereit angezeigt wird.</li>
+    <li>Ein Produkt suchen und eine Menge berechnen.</li>
+    <li>Das Gerät offline schalten und die installierte App neu laden.</li>
+    <li>Die Suche und Berechnung mit einem zweiten Produkt wiederholen.</li>
+  </ol>
+
+  <h2>Datenschutz</h2>
+  <p>Suchbegriffe, Berechnungen und persönliche Einträge verlassen die App nicht. Nach der Erstinstallation werden keine Produktdaten von externen Diensten abgefragt.</p>
+
+  <div class="notice warn"><strong>Gesundheitshinweis:</strong> Katalog- und Etikettendaten können unvollständig oder falsch sein. Etikett prüfen und das Ergebnis nicht ungeprüft für Therapie- oder Insulindosierungsentscheidungen verwenden.</div>
+
+  <div class="actions"><a class="button" href="./index.html">App öffnen</a></div>
 </main></body></html>

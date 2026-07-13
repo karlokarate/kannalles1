@@ -5,8 +5,6 @@
     "src/lib/catalog/catalog.worker.ts",
     "vite.config.ts",
     "playwright.config.ts",
-    "server/index.mjs",
-    "api/**/*.mjs",
     "scripts/**/*.mjs",
     "e2e/**/*.spec.ts",
     "e2e/start-real-preview.mjs"
@@ -14,8 +12,6 @@
   "project": [
     "src/**/*.{ts,tsx}",
     "Catalog/**/*.ts",
-    "server/**/*.{js,mjs,ts}",
-    "api/**/*.{js,mjs,ts}",
     "scripts/**/*.{js,mjs,ts}",
     "e2e/**/*.ts",
     "contracts/**/*.ts",

@@ -7,14 +7,17 @@ import { pathToFileURL } from 'node:url';
 
 const types = new Map([
   ['.css', 'text/css; charset=utf-8'], ['.html', 'text/html; charset=utf-8'],
-  ['.js', 'text/javascript; charset=utf-8'], ['.json', 'application/json; charset=utf-8'],
+  ['.ico', 'image/x-icon'], ['.js', 'text/javascript; charset=utf-8'],
+  ['.json', 'application/json; charset=utf-8'], ['.mjs', 'text/javascript; charset=utf-8'],
   ['.png', 'image/png'], ['.svg', 'image/svg+xml'], ['.txt', 'text/plain; charset=utf-8'],
+  ['.wasm', 'application/wasm'],
   ['.webmanifest', 'application/manifest+json; charset=utf-8']
 ]);
 
 export function startStaticServer(options = {}) {
   const root = path.resolve(options.root || process.env.SITE_DIR || process.argv[2] || 'dist');
   const port = Number(options.port || process.env.PORT || 4173);
+  const host = String(options.host || process.env.HOST || '127.0.0.1');
   const server = createServer(async (request, response) => {
     let pathname;
     try {
@@ -38,8 +41,8 @@ export function startStaticServer(options = {}) {
     response.setHeader('Cache-Control', 'no-store');
     createReadStream(target).pipe(response);
   });
-  server.listen(port, '127.0.0.1', () => {
-    console.log(`Static test server: http://127.0.0.1:${port} (${root})`);
+  server.listen(port, host, () => {
+    console.log(`Static server: http://${host}:${port} (${root})`);
   });
   return server;
 }

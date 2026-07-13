@@ -21,6 +21,13 @@ const sqliteWasmSourceDir = path.join(
   'dist'
 );
 const sqliteWasmTargetDir = path.join(targetDir, 'vendor', 'sqlite');
+const catalogManifest = JSON.parse(
+  await fs.readFile(path.join(catalogSourceDir, 'catalog-manifest.v1.json'), 'utf8')
+);
+const catalogDatabaseFile = catalogManifest?.database?.file;
+if (typeof catalogDatabaseFile !== 'string' || !/^[A-Za-z0-9._-]+\.sqlite$/u.test(catalogDatabaseFile)) {
+  throw new Error('Production-v1 manifest contains an invalid database.file.');
+}
 const textExtensions = new Set(['.html', '.js', '.css', '.txt', '.json', '.md', '.webmanifest', '.yaml', '.yml']);
 let versionTokenCount = 0;
 
@@ -35,14 +42,6 @@ async function exists(filePath) {
 
 await fs.rm(targetDir, { recursive: true, force: true });
 await fs.cp(sourceDir, targetDir, { recursive: true });
-
-// The retired API diagnosis page and generated gateway documentation must not
-// ship in an offline-catalog release because they describe a non-productive path.
-await Promise.all([
-  fs.rm(path.join(targetDir, 'API-DIAGNOSE.html'), { force: true }),
-  fs.rm(path.join(targetDir, 'api-diagnose.js'), { force: true }),
-  fs.rm(path.join(targetDir, 'api-docs'), { recursive: true, force: true })
-]);
 
 // Keep CSS as a real external asset. The legacy-only SystemJS graph would
 // otherwise inject it as an inline <style>, conflicting with the strict CSP.
@@ -71,10 +70,13 @@ for (const name of ['index.mjs', 'sqlite3.wasm']) {
   }
 }
 await fs.mkdir(sqliteWasmTargetDir, { recursive: true });
-await fs.cp(sqliteWasmSourceDir, sqliteWasmTargetDir, { recursive: true });
+await Promise.all(['index.mjs', 'sqlite3.wasm'].map((name) => fs.copyFile(
+  path.join(sqliteWasmSourceDir, name),
+  path.join(sqliteWasmTargetDir, name)
+)));
 
 const productionRuntimeFiles = [
-  'kh-checker-dach-v1.sqlite',
+  catalogDatabaseFile,
   'catalog-manifest.v1.json',
   'catalog-codecs.v1.json',
   'catalog-image-keys.v2.json',
@@ -91,8 +93,8 @@ if (missing.length) {
 await fs.mkdir(catalogTargetDir, { recursive: true });
 await Promise.all([
   fs.copyFile(
-    path.join(catalogSourceDir, 'kh-checker-dach-v1.sqlite'),
-    path.join(catalogTargetDir, 'kh-checker-dach.sqlite')
+    path.join(catalogSourceDir, catalogDatabaseFile),
+    path.join(catalogTargetDir, catalogDatabaseFile)
   ),
   fs.copyFile(
     path.join(catalogSourceDir, 'catalog-manifest.v1.json'),
@@ -119,7 +121,7 @@ async function replaceTokens(directory) {
     const original = await fs.readFile(absolute, 'utf8');
     versionTokenCount += original.split('__KH_APP_VERSION__').length - 1;
     const replaced = original.replaceAll('__KH_APP_VERSION__', version);
-    if (replaced.includes('__KH_APP_VERSION__') || replaced.includes('__KH_DATA_GATEWAY_URL_JSON__')) {
+    if (replaced.includes('__KH_APP_VERSION__')) {
       throw new Error(`Unresolved public-build token in ${path.relative(rootDir, absolute)}`);
     }
     await fs.writeFile(absolute, replaced);

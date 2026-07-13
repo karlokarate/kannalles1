@@ -10,9 +10,6 @@ on:
 permissions:
   contents: read
 
-env:
-  VITE_DATA_GATEWAY_URL: ""
-
 concurrency:
   group: pages-${{ github.ref }}
   cancel-in-progress: true

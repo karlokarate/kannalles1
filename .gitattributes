@@ -8,6 +8,9 @@
 *.tsx text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+Catalog/*.json text eol=lf
+Catalog/*.txt text eol=lf
+Catalog/*.sqlite binary
 Dockerfile text eol=lf
 *.cmd text eol=crlf
 

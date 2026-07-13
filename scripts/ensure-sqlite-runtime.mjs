@@ -9,10 +9,14 @@ const distDir = path.join(runtimeDir, 'node_modules', '@sqlite.org', 'sqlite-was
 const required = [path.join(distDir, 'index.mjs'), path.join(distDir, 'sqlite3.wasm')];
 
 if (!required.every(existsSync)) {
-  const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const npmCli = process.env.npm_execpath;
+  const npmCommand = npmCli ? process.execPath : process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const npmArguments = npmCli
+    ? [npmCli, 'ci', '--prefix', runtimeDir, '--no-audit', '--no-fund']
+    : ['ci', '--prefix', runtimeDir, '--no-audit', '--no-fund'];
   const result = spawnSync(
     npmCommand,
-    ['ci', '--prefix', runtimeDir, '--no-audit', '--no-fund'],
+    npmArguments,
     {
       cwd: rootDir,
       stdio: 'inherit',
@@ -20,7 +24,7 @@ if (!required.every(existsSync)) {
     }
   );
   if (result.status !== 0) {
-    throw new Error(`Locked SQLite-WASM installation failed with exit code ${result.status ?? 'unknown'}.`);
+    throw new Error(`Locked SQLite-WASM installation failed with exit code ${result.status ?? 'unknown'}${result.error ? `: ${result.error.message}` : ''}.`);
   }
 }
 

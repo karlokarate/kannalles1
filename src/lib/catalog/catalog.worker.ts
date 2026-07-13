@@ -39,10 +39,13 @@ let runtimeDatabase: CatalogDatabase | null = null;
 let initialization: Promise<CatalogStatus> | null = null;
 let lifecycleQueue: Promise<void> = Promise.resolve();
 let status: CatalogStatus = {
-  state: 'uninitialized',
+  state: 'idle',
   activeSlot: null,
+  rollbackSlot: null,
+  slotStates: { a: 'empty', b: 'empty' },
   catalogVersion: null,
   productCount: null,
+  persistent: false,
   progress: null,
   diagnostics: null,
   retryAllowedImmediately: true
@@ -228,8 +231,11 @@ workerScope.addEventListener('message', (event: MessageEvent<CatalogWorkerReques
           if (isCatalogFailure(error)) publishStatus({
             state: 'unavailable',
             activeSlot: error.diagnostics.activeSlot,
+            rollbackSlot: error.diagnostics.rollbackSlot ?? status.rollbackSlot,
+            slotStates: status.slotStates,
             catalogVersion: error.diagnostics.catalogVersion,
             productCount: null,
+            persistent: status.persistent && error.diagnostics.activeSlot !== null,
             progress: null,
             diagnostics: error.diagnostics,
             retryAllowedImmediately: true

@@ -5,10 +5,7 @@ import process from 'node:process';
 import { startStaticServer } from './serve-static.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
-const env = {
-  ...process.env,
-  VITE_DATA_GATEWAY_URL: process.env.VITE_DATA_GATEWAY_URL || '/'
-};
+const env = { ...process.env };
 
 function run(relative, args = []) {
   const result = spawnSync(process.execPath, [path.join(root, relative), ...args], {

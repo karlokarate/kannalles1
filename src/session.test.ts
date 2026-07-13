@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { parseCatalogQuery } from './app/queryParser';
-import {
-  autoSelectionEligibility,
-  toResolutionProduct
-} from './app/catalogViewModel';
+import { autoSelectionEligibility } from './app/catalogViewModel';
 import type { CatalogSearchHit } from './lib/catalog/catalogDomain';
+import { catalogProductEligibility } from './lib/resolution/catalogResolution';
 import {
   decodeSearchSession,
   encodeSearchSession,
@@ -16,22 +14,20 @@ const hit: CatalogSearchHit = {
   code: '4008400322728',
   displayName: 'Kinder Bueno',
   brand: 'Kinder',
-  carbohydratesPer100: 49.5,
-  nutritionBasis: 'mass',
-  nutritionSource: 'as_sold',
-  manufacturerServing: { value: 43, basis: 'mass' },
-  productQuantity: { value: 172, basis: 'mass' },
-  provenUnit: {
-    value: 21.5,
-    basis: 'mass',
-    kind: 'bar',
-    source: 'explicit_multipack_quantity',
-    countability: 'countable',
-    smallestEdibleUnit: true,
-    proven: true
+  nutrition: { carbohydratesPer100: 49.5, basis: 'mass', source: 'as_sold' },
+  unitEvidence: {
+    manufacturerServing: { baseValue: 43, basis: 'mass' },
+    productQuantity: { baseValue: 172, basis: 'mass' },
+    provenSmallestUnit: {
+      baseValue: 21.5,
+      basis: 'mass',
+      unitKind: 'bar',
+      source: 'explicit_multipack_quantity',
+      smallestEdibleUnit: true
+    },
+    defaultUnitKind: 'bar'
   },
-  defaultUnitKind: 'bar',
-  image: null,
+  imageReference: null,
   hasQualityErrors: false,
   rankOrdinal: 7,
   resultIndex: 0
@@ -54,14 +50,15 @@ describe('Lumen hard-cutover state', () => {
     });
   });
 
-  it('projects only structured catalog evidence into the resolver boundary', () => {
-    const projected = toResolutionProduct(hit);
-    expect(projected.unitEvidence).toEqual({
+  it('uses the frozen structured catalog evidence directly at the resolver boundary', () => {
+    expect(hit.unitEvidence.provenSmallestUnit).toEqual({
       baseValue: 21.5,
       basis: 'mass',
       unitKind: 'bar',
-      source: 'explicit-multipack-quantity'
+      source: 'explicit_multipack_quantity',
+      smallestEdibleUnit: true
     });
+    expect(catalogProductEligibility(hit).eligible).toBe(true);
   });
 
   it('keeps auto-selection eligibility separate from visible SQLite order', () => {

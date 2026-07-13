@@ -77,21 +77,43 @@ function clear(pool: CatalogPool): void {
   }
 }
 
-function ready(metadata: CatalogSlotMetadata, diagnostics: CatalogDiagnostics | null = null): CatalogStatus {
+function projectedSlotStates(
+  state: CatalogSlotState,
+  staging: CatalogSlotId | null = null
+): CatalogStatus['slotStates'] {
+  const project = (slot: CatalogSlotId): CatalogStatus['slotStates'][CatalogSlotId] => {
+    if (state.activeSlot === slot) return 'active';
+    if (staging === slot) return 'staging';
+    return state.slots[slot] ? 'verified' : 'empty';
+  };
+  return { a: project('a'), b: project('b') };
+}
+
+function ready(
+  metadata: CatalogSlotMetadata,
+  state: CatalogSlotState,
+  diagnostics: CatalogDiagnostics | null = null
+): CatalogStatus {
   return {
-    state: 'ready', activeSlot: metadata.slot, catalogVersion: metadata.catalogVersion,
-    productCount: metadata.productCount, progress: 1, diagnostics, retryAllowedImmediately: true
+    state: 'ready', activeSlot: metadata.slot, rollbackSlot: state.rollbackSlot,
+    slotStates: projectedSlotStates(state), catalogVersion: metadata.catalogVersion,
+    productCount: metadata.productCount, persistent: true, progress: 1, diagnostics,
+    retryAllowedImmediately: true
   };
 }
 
 function transient(
   state: 'checking' | 'downloading' | 'installing',
+  slotState: CatalogSlotState,
   metadata: CatalogSlotMetadata | null,
-  progress: number | null
+  progress: number | null,
+  staging: CatalogSlotId | null = null
 ): CatalogStatus {
   return {
-    state, activeSlot: metadata?.slot ?? null, catalogVersion: metadata?.catalogVersion ?? null,
-    productCount: metadata?.productCount ?? null, progress, diagnostics: null, retryAllowedImmediately: true
+    state, activeSlot: metadata?.slot ?? null, rollbackSlot: slotState.rollbackSlot,
+    slotStates: projectedSlotStates(slotState, staging), catalogVersion: metadata?.catalogVersion ?? null,
+    productCount: metadata?.productCount ?? null, persistent: metadata !== null, progress,
+    diagnostics: null, retryAllowedImmediately: true
   };
 }
 
@@ -218,13 +240,13 @@ export class CatalogInstaller {
   }
 
   async bootstrap(manifestUrl: string, catalogBaseUrl: string, publish: Publish = () => undefined): Promise<CatalogRuntimeHandle> {
-    publish(transient('checking', null, null));
     let state = await this.store.read();
+    publish(transient('checking', state, null, null));
     const recovered = await this.recover(state);
     state = recovered.state;
     let activeDatabase = recovered.opened?.database ?? null;
     const activeMetadata = recovered.opened?.metadata ?? null;
-    if (activeMetadata) publish(ready(activeMetadata, recovered.diagnostics));
+    if (activeMetadata) publish(ready(activeMetadata, state, recovered.diagnostics));
 
     let manifest: CatalogManifest;
     try {
@@ -234,7 +256,7 @@ export class CatalogInstaller {
         const failure = toCatalogFailure(error, 'CATALOG_MANIFEST_UNAVAILABLE', 'Das Katalogmanifest ist nicht verfügbar; der validierte Slot bleibt aktiv.', {
           operation: 'manifest', activeSlot: activeMetadata.slot, catalogVersion: activeMetadata.catalogVersion
         });
-        const status = ready(activeMetadata, failure.diagnostics);
+        const status = ready(activeMetadata, state, failure.diagnostics);
         publish(status);
         return { database: activeDatabase, status };
       }
@@ -245,21 +267,21 @@ export class CatalogInstaller {
       && activeMetadata.sha256 === manifest.sha256
       && activeMetadata.catalogVersion === manifest.catalogVersion
       && activeMetadata.filename === manifest.filename) {
-      const status = ready(activeMetadata, recovered.diagnostics);
+      const status = ready(activeMetadata, state, recovered.diagnostics);
       publish(status);
       return { database: activeDatabase, status };
     }
 
-    publish(transient('downloading', activeMetadata, 0));
+    publish(transient('downloading', state, activeMetadata, 0));
     let bytes: Uint8Array;
     try {
       bytes = await download(this.fetcher, manifest, catalogBaseUrl, state.activeSlot);
     } catch (error) {
-      return this.fallback(error, activeDatabase, activeMetadata, publish);
+      return this.fallback(error, activeDatabase, activeMetadata, state, publish);
     }
 
-    publish(transient('installing', activeMetadata, 0.5));
     const target = inactiveCatalogSlot(state.activeSlot);
+    publish(transient('installing', state, activeMetadata, 0.5, target));
     const pool = this.pools[target];
     const path = catalogSlotDatabasePath(manifest.filename);
     let checking: CatalogDatabase | null = null;
@@ -302,18 +324,19 @@ export class CatalogInstaller {
           }),
           activeDatabase,
           activeMetadata,
+          state,
           publish
         );
       }
       close(activeDatabase);
       activeDatabase = null;
-      const status = ready(metadata);
+      const status = ready(metadata, activated);
       publish(status);
       return { database: opened as CatalogDatabase, status };
     } catch (error) {
       close(checking);
       clear(pool);
-      return this.fallback(error, activeDatabase, activeMetadata, publish);
+      return this.fallback(error, activeDatabase, activeMetadata, state, publish);
     }
   }
 
@@ -386,6 +409,7 @@ export class CatalogInstaller {
     error: unknown,
     database: CatalogDatabase | null,
     metadata: CatalogSlotMetadata | null,
+    state: CatalogSlotState,
     publish: Publish
   ): CatalogRuntimeHandle {
     if (database && metadata) {
@@ -394,7 +418,7 @@ export class CatalogInstaller {
         : new CatalogFailure('CATALOG_UNKNOWN', 'Das Katalogupdate ist fehlgeschlagen; der vorherige Slot bleibt aktiv.', {
             operation: 'install', activeSlot: metadata.slot, catalogVersion: metadata.catalogVersion, cause: error
           });
-      const status = ready(metadata, failure.diagnostics);
+      const status = ready(metadata, state, failure.diagnostics);
       publish(status);
       return { database, status };
     }

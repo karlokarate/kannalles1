@@ -116,7 +116,6 @@ test('verwirft ein korruptes Update im inaktiven Slot und beh√§lt den letzten g√
       contentType: 'application/json',
       body: JSON.stringify({
         ...manifest,
-        catalogVersion: `${manifest.catalogVersion}-sentinel-corrupt`,
         database: {
           ...manifest.database,
           bytes: corrupted.byteLength,

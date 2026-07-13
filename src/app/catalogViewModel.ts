@@ -1,11 +1,8 @@
 import type {
   CatalogProduct,
-  CatalogSearchHit,
-  CatalogUnitEvidenceSource
+  CatalogSearchHit
 } from '../lib/catalog/catalogDomain';
 import type {
-  CatalogResolutionProduct,
-  CatalogUnitEvidenceSource as ResolutionEvidenceSource,
   RequestedUnit,
   ResolvedUnitOption
 } from '../lib/resolution/catalogResolution';
@@ -17,39 +14,16 @@ export interface AutoSelectionEligibility {
   reason: 'barcode' | 'exact-name' | 'single-eligible-result' | 'choice-required' | 'ineligible';
 }
 
-const COUNTED_KINDS = new Set(['piece', 'bar', 'slice', 'portion']);
-
-function evidenceSource(source: CatalogUnitEvidenceSource): ResolutionEvidenceSource {
-  if (source === 'explicit_serving_count') return 'explicit-serving-count';
-  if (source === 'explicit_multipack_quantity') return 'explicit-multipack-quantity';
-  return 'manufacturer-serving';
+function imageProductPath(code: string): string {
+  if (code.length <= 8) return code;
+  return [code.slice(0, 3), code.slice(3, 6), code.slice(6, 9), code.slice(9)].join('/');
 }
 
-export function toResolutionProduct(product: CatalogProduct): CatalogResolutionProduct {
-  const proven = product.provenUnit;
-  return {
-    id: product.productId,
-    displayName: product.displayName,
-    brand: product.brand,
-    carbohydratesPer100: product.carbohydratesPer100,
-    carbohydrateBasis: product.nutritionBasis,
-    defaultUnitKind: product.defaultUnitKind,
-    manufacturerServing: product.manufacturerServing
-      ? { baseValue: product.manufacturerServing.value, basis: product.manufacturerServing.basis }
-      : null,
-    productQuantity: product.productQuantity
-      ? { baseValue: product.productQuantity.value, basis: product.productQuantity.basis }
-      : null,
-    unitEvidence: proven && COUNTED_KINDS.has(proven.kind)
-      ? {
-          baseValue: proven.value,
-          basis: proven.basis,
-          unitKind: proven.kind as 'piece' | 'bar' | 'slice' | 'portion',
-          source: evidenceSource(proven.source)
-        }
-      : null,
-    hasQualityErrors: product.hasQualityErrors
-  };
+/** Optional network image composition stays above the SQLite projection boundary. */
+export function catalogProductImageUrl(product: CatalogProduct): string | null {
+  const image = product.imageReference;
+  if (!image) return null;
+  return `https://images.openfoodfacts.org/images/products/${imageProductPath(product.code)}/${image.key}.${image.revision}.${image.resolution}.jpg`;
 }
 
 export function normalizedIdentityText(value: string): string {
@@ -98,19 +72,19 @@ export function unitLabel(unit: RequestedUnit): string {
 
 export function semanticUnitProvenance(option: ResolvedUnitOption): string {
   switch (option.source) {
-    case 'user-calibration':
+    case 'user_calibration':
       return 'user-calibration';
-    case 'catalog-explicit-serving-count':
+    case 'explicit_serving_count':
       return 'explicit-single-unit';
-    case 'catalog-explicit-multipack':
+    case 'explicit_multipack_quantity':
       return 'explicit-multipack';
-    case 'manufacturer-serving':
+    case 'manufacturer_serving':
       return 'manufacturer-serving';
-    case 'product-quantity':
+    case 'product_quantity':
       return 'package-quantity';
-    case 'direct-mass':
+    case 'direct_mass':
       return 'direct-mass';
-    case 'direct-volume':
+    case 'direct_volume':
       return 'direct-volume';
     case 'unresolved':
       return 'missing-weight';

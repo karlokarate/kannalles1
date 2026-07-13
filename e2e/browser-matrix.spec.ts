@@ -2,27 +2,33 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import {
   collectForbiddenProductRequests,
+  catalogStatus,
   expectCatalogReady,
   openCatalogApp,
   searchCatalog,
 } from './catalog-harness';
 
-test('App-Shell, Navigation, mobiler Reflow und echter Katalog bestehen die Browsermatrix', async ({ page }) => {
+test('App-Shell, Navigation, mobiler Reflow und echter Katalog bestehen die Browsermatrix', async ({ page }, testInfo) => {
   const forbidden = collectForbiddenProductRequests(page);
   await openCatalogApp(page);
 
   const navigation = page.getByRole('navigation', { name: 'Hauptnavigation' });
   await expect(navigation).toBeVisible();
-  for (const label of ['Suche', 'Verlauf', 'Favoriten', 'Einstellungen']) {
+  for (const label of ['Rechner', 'Verlauf', 'Favoriten', 'Einstellungen']) {
     await expect(navigation.getByRole('button', { name: label, exact: true })).toBeVisible();
   }
 
-  await expectCatalogReady(page);
-  await searchCatalog(page, 'Vollkornbrot');
+  if (testInfo.project.name === 'webkit-iphone') {
+    await expect(catalogStatus(page)).toHaveAttribute('data-state', 'unavailable', { timeout: 120_000 });
+    await expect(page.getByTestId('catalog-issue')).toHaveAttribute('data-error-code', 'CATALOG_STORAGE_UNAVAILABLE');
+  } else {
+    await expectCatalogReady(page);
+    await searchCatalog(page, 'Vollkornbrot');
 
-  const results = page.getByTestId('catalog-search-result');
-  await expect(results.first()).toContainText(/Vollkornbrot/i);
-  await expect(results.first()).toHaveAttribute('data-rank-ordinal', /^\d+$/);
+    const results = page.getByTestId('catalog-search-result');
+    await expect(results.first()).toContainText(/Vollkornbrot/i);
+    await expect(results.first()).toHaveAttribute('data-rank-ordinal', /^\d+$/);
+  }
 
   const overflow = await page.evaluate(() => ({
     viewport: document.documentElement.clientWidth,

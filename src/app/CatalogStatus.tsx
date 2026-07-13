@@ -7,7 +7,7 @@ export interface CatalogStatusProps {
 }
 
 const STATE_LABELS: Record<CatalogStatusModel['state'], string> = {
-  uninitialized: 'Katalog wird vorbereitet',
+  idle: 'Katalog wird vorbereitet',
   checking: 'Lokaler Katalog wird geprüft',
   downloading: 'Lokaler Katalog wird geladen',
   installing: 'Lokaler Katalog wird installiert',
@@ -16,7 +16,7 @@ const STATE_LABELS: Record<CatalogStatusModel['state'], string> = {
 };
 
 export function CatalogStatus({ status, installedFromNetwork, onRetry }: CatalogStatusProps) {
-  const persistent = status.activeSlot !== null;
+  const persistent = status.persistent;
   const tone = status.state === 'unavailable'
     ? 'danger'
     : status.state === 'ready'
@@ -48,7 +48,7 @@ export function CatalogStatus({ status, installedFromNetwork, onRetry }: Catalog
           <span>{status.diagnostics?.message ?? 'Die verifizierte SQLite-Datenbank wird vorbereitet.'}</span>
         )}
         {progress !== null && status.state !== 'ready' && (
-          <span className="catalog-status__progress" aria-label={`${progress} Prozent`}>
+          <span className="catalog-status__progress" role="progressbar" aria-label="Katalogfortschritt" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
             <span style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
           </span>
         )}

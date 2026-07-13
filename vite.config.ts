@@ -3,7 +3,6 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import legacy from '@vitejs/plugin-legacy';
 import { VitePWA } from 'vite-plugin-pwa';
-import { offlineAppTransformPlugin } from './scripts/offline-app-transform.mjs';
 
 const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 const appVersion = packageJson.version;
@@ -15,7 +14,6 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(appVersion)
   },
   plugins: [
-    offlineAppTransformPlugin(),
     react(),
     legacy({
       // This explicit baseline is retained for the general UI. The offline
@@ -32,7 +30,11 @@ export default defineConfig({
         'core-js/proposals/global-this',
         'abortcontroller-polyfill/dist/polyfill-patch-fetch'
       ],
-      renderModernChunks: false
+      // The SQLite runtime is a module worker with a dynamic ESM import. A
+      // legacy-only graph can reference that worker while omitting its chunk.
+      // Keep the modern graph as the authoritative OPFS path; the legacy graph
+      // remains an explicit unsupported-browser shell.
+      renderModernChunks: true
     }),
     VitePWA({
       // Never reload an active calculation/search draft behind the user's
@@ -70,10 +72,10 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,json}'],
+        globPatterns: ['**/*.{js,mjs,wasm,css,html,ico,png,svg,webmanifest,json}'],
         // The catalog has its own manifest, checksum, installation and rollback
         // lifecycle. Workbox must never treat it as immutable app-shell data.
-        globIgnores: ['catalog/**', 'vendor/sqlite/**'],
+        globIgnores: ['catalog/**'],
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/\/[^/?]+\.[^/?]+$/],
         cleanupOutdatedCaches: true,

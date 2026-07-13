@@ -1,15 +1,15 @@
 import {
+  CATALOG_IMAGE_KEYS,
+  CATALOG_IMAGE_SIZE,
   CATALOG_UNIT_KINDS,
-  buildCatalogImageUrl,
   decodeCatalogCode,
   decodeCatalogMetadata
 } from '../../../Catalog/catalog-runtime.generated';
 import type {
-  CatalogCountability,
   CatalogNutritionBasis,
   CatalogProduct,
+  CatalogProvenUnitEvidence,
   CatalogSearchHit,
-  CatalogUnitEvidence,
   CatalogUnitEvidenceSource,
   CatalogUnitKind
 } from './catalogDomain';
@@ -27,14 +27,14 @@ export interface CatalogSqlRow extends Record<string, unknown> {
   readonly r: unknown;
 }
 
-const UNIT_KIND_BY_CODE = new Map<number, CatalogUnitKind | null>(
+const UNIT_KIND_BY_CODE = new Map<number, CatalogUnitKind>(
   Object.entries(CATALOG_UNIT_KINDS).map(([name, code]) => [
     Number(code),
-    name === 'none' ? null : (name as CatalogUnitKind)
+    name as CatalogUnitKind
   ])
 );
-const UNIT_SOURCE_BY_CODE = new Map<number, CatalogUnitEvidenceSource | null>([
-  [0, null],
+const UNIT_SOURCE_BY_CODE = new Map<number, CatalogUnitEvidenceSource>([
+  [0, 'none'],
   [1, 'manufacturer_serving'],
   [2, 'explicit_serving_count'],
   [3, 'explicit_multipack_quantity']
@@ -55,18 +55,12 @@ function basis(volume: boolean): CatalogNutritionBasis {
   return volume ? 'volume' : 'mass';
 }
 
-function unitKind(code: number): CatalogUnitKind | null {
-  return UNIT_KIND_BY_CODE.get(code) ?? null;
+function unitKind(code: number): CatalogUnitKind {
+  return UNIT_KIND_BY_CODE.get(code) ?? 'none';
 }
 
-function unitSource(code: number): CatalogUnitEvidenceSource | null {
-  return UNIT_SOURCE_BY_CODE.get(code) ?? null;
-}
-
-function countability(kind: CatalogUnitKind): CatalogCountability {
-  if (kind === 'piece' || kind === 'bar' || kind === 'slice' || kind === 'package') return 'countable';
-  if (kind === 'mass' || kind === 'volume') return 'non_countable';
-  return 'unknown';
+function unitSource(code: number): CatalogUnitEvidenceSource {
+  return UNIT_SOURCE_BY_CODE.get(code) ?? 'none';
 }
 
 export function projectCatalogProductRow(row: CatalogSqlRow): CatalogProduct {
@@ -90,40 +84,50 @@ export function projectCatalogProductRow(row: CatalogSqlRow): CatalogProduct {
   const productQuantityValue = metadata.hasProductQuantity ? nullablePositiveNumber(row.q) : null;
   const provenKind = unitKind(metadata.provenUnitKind);
   const provenSource = unitSource(metadata.provenUnitSource);
-  const provenValue = provenKind === null ? null : nullablePositiveNumber(row.u);
+  const provenValue = provenKind === 'none' ? null : nullablePositiveNumber(row.u);
 
-  let provenUnit: CatalogUnitEvidence | null = null;
-  if (provenKind !== null && provenSource !== null && provenValue !== null) {
-    provenUnit = {
-      value: provenValue,
+  let provenSmallestUnit: CatalogProvenUnitEvidence | null = null;
+  if (provenKind !== 'none' && provenSource !== 'none' && provenValue !== null) {
+    provenSmallestUnit = {
+      baseValue: provenValue,
       basis: basis(metadata.provenUnitBasisVolume),
-      kind: provenKind,
+      unitKind: provenKind,
       source: provenSource,
-      countability: countability(provenKind),
-      smallestEdibleUnit: provenKind !== 'package',
-      proven: true
+      smallestEdibleUnit: true
     };
   }
 
-  const defaultUnitKind = unitKind(metadata.defaultUnitKind) ?? 'mass';
-  const imageUrl = buildCatalogImageUrl(code, metadataValue);
+  const defaultUnitKind = unitKind(metadata.defaultUnitKind);
+  const imageKey = metadata.imageKeyId === null ? null : CATALOG_IMAGE_KEYS[metadata.imageKeyId];
+  const imageReference = imageKey && metadata.imageKeyId !== null && metadata.imageRevision !== null
+    ? {
+        keyId: metadata.imageKeyId,
+        key: imageKey,
+        revision: metadata.imageRevision,
+        resolution: CATALOG_IMAGE_SIZE
+      }
+    : null;
   return {
     productId,
     code,
     displayName,
     brand: typeof row.brand === 'string' && row.brand.trim() ? row.brand.trim() : null,
-    carbohydratesPer100,
-    nutritionBasis: basis(metadata.carbohydrateBasisVolume),
-    nutritionSource: metadata.carbohydrateSourcePrepared ? 'prepared' : 'as_sold',
-    manufacturerServing: manufacturerServingValue === null
-      ? null
-      : { value: manufacturerServingValue, basis: basis(metadata.servingBasisVolume) },
-    productQuantity: productQuantityValue === null
-      ? null
-      : { value: productQuantityValue, basis: basis(metadata.productQuantityBasisVolume) },
-    provenUnit,
-    defaultUnitKind,
-    image: imageUrl === null ? null : { url: imageUrl, optionalNetwork: true },
+    nutrition: {
+      carbohydratesPer100,
+      basis: basis(metadata.carbohydrateBasisVolume),
+      source: metadata.carbohydrateSourcePrepared ? 'prepared' : 'as_sold'
+    },
+    unitEvidence: {
+      manufacturerServing: manufacturerServingValue === null
+        ? null
+        : { baseValue: manufacturerServingValue, basis: basis(metadata.servingBasisVolume) },
+      productQuantity: productQuantityValue === null
+        ? null
+        : { baseValue: productQuantityValue, basis: basis(metadata.productQuantityBasisVolume) },
+      provenSmallestUnit,
+      defaultUnitKind
+    },
+    imageReference,
     hasQualityErrors: metadata.hasQualityErrors,
     rankOrdinal: requiredFiniteNumber(row.r, 'r')
   };

@@ -5,8 +5,11 @@ import type { CatalogWorkerRequest, CatalogWorkerResponse } from './catalogProto
 const ready: CatalogStatus = {
   state: 'ready',
   activeSlot: 'a',
+  rollbackSlot: null,
+  slotStates: { a: 'active', b: 'empty' },
   catalogVersion: '2026-07-13',
   productCount: 317579,
+  persistent: true,
   progress: 1,
   diagnostics: null,
   retryAllowedImmediately: true
@@ -17,14 +20,14 @@ const product: CatalogProduct = {
   code: '3017620422003',
   displayName: 'Kinder Bueno',
   brand: 'Ferrero',
-  carbohydratesPer100: 49,
-  nutritionBasis: 'mass',
-  nutritionSource: 'as_sold',
-  manufacturerServing: null,
-  productQuantity: null,
-  provenUnit: null,
-  defaultUnitKind: 'mass',
-  image: null,
+  nutrition: { carbohydratesPer100: 49, basis: 'mass', source: 'as_sold' },
+  unitEvidence: {
+    manufacturerServing: null,
+    productQuantity: null,
+    provenSmallestUnit: null,
+    defaultUnitKind: 'mass'
+  },
+  imageReference: null,
   hasQualityErrors: false,
   rankOrdinal: 1
 };

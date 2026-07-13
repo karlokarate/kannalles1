@@ -1,8 +1,8 @@
 {
   "contract": "kh-checker-browser-support-release-gate",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "claimPolicy": "A browser profile is supported only after its required Playwright project passes against the integrated production build with the real SQLite-WASM and OPFS runtime.",
-  "minimumVersionPolicy": "No minimum browser version is claimed until measured evidence is recorded from the integrated matrix.",
+  "minimumVersionPolicy": "No minimum browser version is claimed until measured evidence is recorded from the integrated matrix. WebKit is explicitly unsupported while FileSystemSyncAccessHandle is absent.",
   "requiredCapabilities": [
     "WebAssembly",
     "DedicatedWorker",
@@ -49,11 +49,15 @@
       "name": "firefox-desktop",
       "engine": "firefox",
       "profile": "Desktop Firefox"
-    },
+    }
+  ],
+  "evaluatedUnsupportedProjects": [
     {
       "name": "webkit-iphone",
       "engine": "webkit",
-      "profile": "iPhone 15 Pro"
+      "profile": "iPhone 15 Pro",
+      "missingCapability": "FileSystemSyncAccessHandle",
+      "expectedErrorCode": "CATALOG_STORAGE_UNAVAILABLE"
     }
   ],
   "currentEvidence": {

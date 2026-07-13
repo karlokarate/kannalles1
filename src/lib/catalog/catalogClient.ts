@@ -48,6 +48,7 @@ function reviveFailure(response: Extract<CatalogWorkerResponse, { ok: false }>):
     technical: diagnostics.technical,
     activeSlot: diagnostics.activeSlot,
     attemptedSlot: diagnostics.attemptedSlot,
+    rollbackSlot: diagnostics.rollbackSlot,
     catalogVersion: diagnostics.catalogVersion,
     details: diagnostics.details,
     occurredAt: diagnostics.occurredAt
@@ -176,6 +177,12 @@ export function disposeOfflineCatalog(): void {
   rejectAll(failure);
   worker?.terminate();
   worker = null;
+  initialization = null;
+}
+
+/** Cancels all in-flight requests without discarding the verified worker runtime. */
+export function cancelOfflineCatalogRequests(): void {
+  rejectAll(abortFailure());
   initialization = null;
 }
 

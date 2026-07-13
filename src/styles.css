@@ -42,7 +42,7 @@ img { display: block; max-width: 100%; }
 .brand-lockup > div { display: grid; gap: 1px; }
 .brand-lockup strong { font-size: 1.08rem; letter-spacing: -0.02em; }
 .brand-lockup span { color: var(--muted); font-size: 0.82rem; }
-.brand-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 14px; color: #fff !important; font-weight: 800; background: linear-gradient(135deg, var(--primary), #28a1a2); box-shadow: 0 8px 24px rgba(23, 107, 135, 0.24); }
+.brand-lockup .brand-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 14px; color: #fff; font-weight: 800; background: linear-gradient(135deg, var(--primary), #28a1a2); box-shadow: 0 8px 24px rgba(23, 107, 135, 0.24); }
 .version-badge { padding: 6px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: #fff; font-size: 0.76rem; }
 .catalog-status, .issue-banner, .notice { width: min(1120px, calc(100% - 28px)); margin: 14px auto 0; }
 .catalog-status { display: flex; align-items: center; gap: 12px; padding: 13px 15px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); box-shadow: 0 6px 22px rgba(30, 54, 76, 0.07); }
@@ -175,7 +175,7 @@ input:disabled, select:disabled { opacity: 0.6; }
 @media (max-width: 430px) {
   .app-header { min-height: 62px; padding-top: 9px; padding-bottom: 9px; }
   .brand-lockup > div > span { display: none; }
-  .brand-mark { width: 38px; height: 38px; }
+  .brand-lockup .brand-mark { width: 38px; height: 38px; }
   .catalog-status { align-items: flex-start; flex-wrap: wrap; }
   .catalog-status .button { width: 100%; }
   .product-card__header img { width: 74px; height: 74px; }
@@ -184,5 +184,6 @@ input:disabled, select:disabled { opacity: 0.6; }
   .bottom-nav button { min-height: 50px; font-size: 0.66rem; }
 }
 @media (prefers-reduced-motion: reduce) {
+  /* biome-ignore lint/complexity/noImportantStyles: User motion preferences must override component transitions. */
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }

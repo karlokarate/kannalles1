@@ -16,7 +16,7 @@ function row(name: string, rank: number, metadata = 0, unit: number | null = nul
     s: 21.5,
     q: null,
     u: unit,
-    m: metada,
+    m: metadata,
     r: rank
   };
 }
@@ -28,22 +28,25 @@ describe('Atlas-aligned catalog projection', () => {
     expect(product).toMatchObject({
       productId: packedGtin('3017620422003'),
       displayName: 'Kinder Bueno',
-      nutritionBasis: 'mass',
-      nutritionSource: 'as_sold',
-      provenUnit: {
-        value: 21.5,
+      nutrition: {
+        carbohydratesPer100: 49,
         basis: 'mass',
-        kind: 'bar',
-        source: 'explicit_serving_count',
-        countability: 'countable',
-        smallestEdibleUnit: true,
-        proven: true
+        source: 'as_sold'
+      },
+      unitEvidence: {
+        provenSmallestUnit: {
+          baseValue: 21.5,
+          basis: 'mass',
+          unitKind: 'bar',
+          source: 'explicit_serving_count',
+          smallestEdibleUnit: true
+        }
       }
     });
   });
 
   it('returns null when no countable-unit weight is proven', () => {
-    expect(projectCatalogProductRow(row('Ohne Stückbeweis', 1)).provenUnit).toBeNull();
+    expect(projectCatalogProductRow(row('Ohne Stückbeweis', 1)).unitEvidence.provenSmallestUnit).toBeNull();
   });
 
   it('preserves SQLite result order exactly and only adds resultIndex', () => {

@@ -1,61 +1,55 @@
 import { describe, expect, it } from 'vitest';
-import type { CalculationResult, ParsedFoodRequest } from '../types';
-import {
-  createSearchWorkflowState,
-  currentWorkflowIssue,
-  restoreSearchWorkflowState,
-  searchWorkflowReducer
-} from './searchState';
+import type { CatalogProduct, CatalogSearchHit } from './catalog/catalogDomain';
+import { catalogSearchReducer, createCatalogSearchState } from './searchState';
 
-const request = {
-  status: 'parsed',
-  rawInput: 'Test',
-  product: { name: 'Test', brand: null, variant: null },
-  amount: { value: 1, unit: 'piece' },
-  resolutionMode: 'exact_product',
-  barcode: null,
-  clarificationQuestion: null,
-  parser: 'local'
-} satisfies ParsedFoodRequest;
+const product: CatalogProduct = {
+  productId: 1,
+  code: '4008400322728',
+  displayName: 'Kinder Bueno',
+  brand: 'Kinder',
+  nutrition: { carbohydratesPer100: 49.5, basis: 'mass', source: 'as_sold' },
+  unitEvidence: {
+    manufacturerServing: null,
+    productQuantity: null,
+    provenSmallestUnit: null,
+    defaultUnitKind: 'mass'
+  },
+  imageReference: null,
+  hasQualityErrors: false,
+  rankOrdinal: 1
+};
 
-describe('typed search/result state machine', () => {
-  it('uses atomic candidate transitions with a non-empty tuple', () => {
-    let state = searchWorkflowReducer(createSearchWorkflowState(), { type: 'start', operation: 'search' });
-    state = searchWorkflowReducer(state, {
-      type: 'show-candidates',
-      request,
-      hits: [{ code: '1' }]
+const hit: CatalogSearchHit = { ...product, resultIndex: 0 };
+
+describe('catalog-native search state', () => {
+  it('moves atomically from search to visible SQLite candidates', () => {
+    let state = catalogSearchReducer(createCatalogSearchState(), { type: 'start', query: 'Bueno' });
+    state = catalogSearchReducer(state, { type: 'show-choice', query: 'Bueno', candidates: [hit] });
+    expect(state).toMatchObject({
+      phase: 'needs_product_choice',
+      query: 'Bueno',
+      candidates: [{ resultIndex: 0 }],
+      selectedProduct: null,
+      requestStartedAt: null
     });
-    state = searchWorkflowReducer(state, { type: 'finish' });
-    expect(state).toMatchObject({ screen: { view: 'candidates', hits: [{ code: '1' }] }, activity: { status: 'idle' } });
   });
 
-  it('never restores result/candidate views without their required payload', () => {
-    expect(restoreSearchWorkflowState({ view: 'result', result: null }).screen.view).toBe('home');
-    expect(restoreSearchWorkflowState({ view: 'candidates', request, hits: [] }).screen.view).toBe('home');
+  it('resolves only with a concrete catalog product', () => {
+    const state = catalogSearchReducer(createCatalogSearchState(), {
+      type: 'resolve',
+      query: '4008400322728',
+      product
+    });
+    expect(state.phase).toBe('resolved');
+    expect(state.selectedProduct?.code).toBe('4008400322728');
   });
 
-  it('updates a result only while the result screen exists', () => {
-    const fake = { id: 'result' } as CalculationResult;
-    const home = searchWorkflowReducer(createSearchWorkflowState(), { type: 'update-result', result: fake });
-    expect(home.screen.view).toBe('home');
-    const result = searchWorkflowReducer(home, { type: 'show-result', result: fake });
-    expect(result.screen.view).toBe('result');
-  });
-
-  it('represents configuration states explicitly and can recover', () => {
-    const issue = {
-      kind: 'configuration' as const,
-      title: 'Gateway fehlt',
-      message: 'Konfigurieren',
-      technical: 'missing',
-      attempts: [],
-      occurredAt: new Date().toISOString(),
-      retryLabel: 'Prüfen'
-    };
-    let state = searchWorkflowReducer(createSearchWorkflowState(), { type: 'issue', issue });
-    expect(currentWorkflowIssue(state)?.kind).toBe('configuration');
-    state = searchWorkflowReducer(state, { type: 'clear-issue' });
-    expect(state.activity.status).toBe('idle');
+  it('keeps validation failures local and resettable', () => {
+    const invalid = catalogSearchReducer(createCatalogSearchState(), {
+      type: 'validation',
+      message: 'Bitte Produktname oder Barcode eingeben.'
+    });
+    expect(invalid).toMatchObject({ phase: 'idle', validationMessage: expect.any(String) });
+    expect(catalogSearchReducer(invalid, { type: 'reset' })).toEqual(createCatalogSearchState());
   });
 });

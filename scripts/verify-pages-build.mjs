@@ -35,6 +35,7 @@ async function requireFile(relativePath) {
 function normalizeLocalReference(reference) {
   const clean = reference.split('#', 1)[0]?.split('?', 1)[0] ?? '';
   if (!clean || clean.startsWith('data:') || clean.startsWith('blob:')) return null;
+  if (clean === '.' || clean === './') return null;
   if (/^[a-z][a-z\d+.-]*:/i.test(clean) || clean.startsWith('//')) return null;
   if (clean.startsWith('/')) fail(`root-absoluter Pfad ist unter einem GitHub-Pages-Unterpfad unsicher: ${reference}`);
   return clean.replace(/^\.\//, '');
@@ -142,10 +143,10 @@ if (await sha256(path.join(pagesDir, imageDictionaryAsset)) !== sourceManifest.i
 }
 
 const serviceWorker = await fs.readFile(path.join(pagesDir, 'sw.js'), 'utf8');
-for (const precached of ['index.html', 'app.css', 'README-ERST-LESEN.html', 'package-info.css', 'icons/apple-touch-icon.png']) {
+for (const precached of ['index.html', 'app.css', 'README-ERST-LESEN.html', 'package-info.css', 'icons/apple-touch-icon.png', 'vendor/sqlite/index.mjs', 'vendor/sqlite/sqlite3.wasm']) {
   if (!serviceWorker.includes(precached)) fail(`Service Worker precacht ${precached} nicht.`);
 }
-for (const excluded of [deployedDatabase, deployedManifest, 'vendor/sqlite/sqlite3.wasm']) {
+for (const excluded of [deployedDatabase, deployedManifest]) {
   if (serviceWorker.includes(excluded)) fail(`Service Worker darf ${excluded} nicht als App-Shell precachen.`);
 }
 
@@ -157,7 +158,6 @@ if (!jsFiles.some((file) => /(?:^|-)legacy(?:-|\.)/.test(path.basename(file)))) 
 }
 const appJavaScript = (await Promise.all(jsFiles.map((file) => fs.readFile(path.join(pagesDir, file), 'utf8')))).join('\n');
 for (const required of [
-  databaseFilename,
   'catalog/manifest.json',
   appVersion,
 ]) {

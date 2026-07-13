@@ -14,7 +14,10 @@ const sourceManifest = JSON.parse(
 
 export const CATALOG_DATABASE_FILENAME = sourceManifest.database.file;
 export const EXPECTED_PRODUCT_COUNT = sourceManifest.database.products;
-export const BUENO_GTIN = '4008400322728';
+// This catalog record carries explicit multipack evidence for a 21.5 g bar.
+// 4008400322728 only carries a manufacturer-portion claim and must not be
+// relabelled as a bar by the resolver.
+export const BUENO_GTIN = '4008400321622';
 
 const forbiddenProductAuthority = [
   /search\.openfoodfacts\.org/i,
@@ -50,7 +53,7 @@ export async function openAppShell(page: Page): Promise<void> {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveTitle(/KH Checker/i);
   await expect(
-    page.getByRole('heading', { name: 'Welches Produkt oder Lebensmittel?' }),
+    page.getByRole('heading', { name: 'Kohlenhydrate berechnen' }),
   ).toBeVisible();
 }
 
@@ -62,7 +65,14 @@ export async function openCatalogApp(page: Page): Promise<void> {
 export async function expectCatalogReady(page: Page): Promise<Locator> {
   const status = catalogStatus(page);
   await expect(status).toBeVisible({ timeout: 120_000 });
-  await expect(status).toHaveAttribute('data-state', 'ready', { timeout: 120_000 });
+  await expect(status).toHaveAttribute('data-state', /^(?:ready|unavailable)$/, { timeout: 120_000 });
+  if (await status.getAttribute('data-state') === 'unavailable') {
+    const issue = page.getByTestId('catalog-issue');
+    const summary = await issue.locator('summary').textContent().catch(() => null);
+    if (summary) await issue.locator('summary').click();
+    const details = await issue.innerText().catch(() => 'Keine technischen Details gerendert.');
+    throw new Error(`Kataloginitialisierung fehlgeschlagen:\n${details}`);
+  }
   await expect(status).toHaveAttribute('data-persistent', 'true');
   await expect(status).toHaveAttribute('data-product-count', String(EXPECTED_PRODUCT_COUNT));
   await expect(status).toHaveAttribute('data-catalog-version', /\S+/);

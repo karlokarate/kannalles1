@@ -9,7 +9,6 @@ const root = path.resolve(import.meta.dirname, '..');
 const nodeFiles = readdirSync(path.join(root, 'scripts'))
   .filter((name) => name.endsWith('.mjs'))
   .map((name) => path.join('scripts', name));
-nodeFiles.push(path.join('contracts', 'source', 'search-api.contract.mjs'));
 
 for (const file of nodeFiles) {
   const result = spawnSync(process.execPath, ['--check', file], { cwd: root, stdio: 'inherit' });
@@ -17,12 +16,7 @@ for (const file of nodeFiles) {
 }
 
 const python = findPython();
-const pythonPaths = [
-  '.github/scripts/validate_release_bundle.py',
-  '.github/scripts/validate_source_bundle.py',
-  'scripts/reproducible-zip.py',
-  'scripts/validate-catalog-artifacts.py'
-];
+const pythonPaths = ['scripts/validate-catalog-artifacts.py'];
 const pythonCheck = spawnSync(
   python.command,
   [...python.prefix, '-c', [
@@ -54,13 +48,16 @@ if (bashProbe.status === 0) {
   console.log('Bash ist auf diesem Host nicht installiert; Shellsyntax bleibt ein verpflichtendes Linux-CI-Gate.');
 }
 
-const windowsStart = readFileSync(path.join(root, 'START-WINDOWS.cmd'), 'utf8');
-for (const required of ['22.18', 'dist\\index.html', 'npm run build']) {
-  if (!windowsStart.includes(required)) throw new Error(`START-WINDOWS.cmd runtime contract missing: ${required}`);
-}
-const termuxStart = readFileSync(path.join(root, 'START-ANDROID-TERMUX.sh'), 'utf8');
-for (const required of ['dist/index.html', 'npm run build', '22.18']) {
-  if (!termuxStart.includes(required)) throw new Error(`START-ANDROID-TERMUX.sh runtime contract missing: ${required}`);
+const launchers = [
+  ['START-WINDOWS.cmd', ['22.18', 'dist\\index.html', 'npm run build', 'scripts\\serve-static.mjs']],
+  ['START-LINUX-MAC.sh', ['22.18', 'dist/index.html', 'npm run build', 'scripts/serve-static.mjs']],
+  ['START-ANDROID-TERMUX.sh', ['22.18', 'dist/index.html', 'npm run build', 'scripts/serve-static.mjs']]
+];
+for (const [file, requiredFragments] of launchers) {
+  const source = readFileSync(path.join(root, file), 'utf8');
+  for (const fragment of requiredFragments) {
+    if (!source.includes(fragment)) throw new Error(`${file} runtime contract missing: ${fragment}`);
+  }
 }
 
 for (const required of [
@@ -73,33 +70,22 @@ for (const required of [
 ]) {
   if (!existsSync(path.join(root, required))) throw new Error(`Production catalog file missing: ${required}`);
 }
+
 for (const retired of [
   'Catalog/kh-checker-dach.sqlite',
   'Catalog/manifest.json',
-  'Catalog/Placeholder.txt'
+  'Catalog/Placeholder.txt',
+  'public-template/API-DIAGNOSE.html',
+  'public-template/api-diagnose.js',
+  'api',
+  'server',
+  'deploy/runtime',
+  'Dockerfile',
+  'compose.yml',
+  'compose.production.yml',
+  'vercel.json'
 ]) {
-  if (existsSync(path.join(root, retired))) throw new Error(`Benchmark catalog artifact still present: ${retired}`);
-}
-for (const retiredPublic of ['API-DIAGNOSE.html', 'api-diagnose.js']) {
-  const prepare = readFileSync(path.join(root, 'scripts/prepare-public.mjs'), 'utf8');
-  if (!prepare.includes(`fs.rm(path.join(targetDir, '${retiredPublic}')`)) {
-    throw new Error(`Public build does not remove retired API diagnostic asset: ${retiredPublic}`);
-  }
-}
-
-for (const forbidden of [
-  'vercel.json',
-  'api/health.js', 'api/search.js', 'api/ai/parse.js', 'api/product/[code].js',
-  'api/v1/health.js', 'api/v1/search.js', 'api/v1/ai/parse.js', 'api/v1/product/[code].js'
-]) {
-  if (existsSync(path.join(root, forbidden))) {
-    throw new Error(`Retired Vercel/serverless adapter returned: ${forbidden}`);
-  }
-}
-for (const activeFile of ['package.json', 'server/index.mjs', 'compose.yml', 'Dockerfile']) {
-  if (/\bvercel\b/iu.test(readFileSync(path.join(root, activeFile), 'utf8'))) {
-    throw new Error(`Active runtime file contains a retired Vercel dependency: ${activeFile}`);
-  }
+  if (existsSync(path.join(root, retired))) throw new Error(`Retired online runtime artifact still present: ${retired}`);
 }
 
 console.log(JSON.stringify({
