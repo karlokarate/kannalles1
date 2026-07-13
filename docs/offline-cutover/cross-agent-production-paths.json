@@ -27,9 +27,10 @@
   ],
   "ownerBlock": {
     "ownerId": "owner",
-    "lastIntegrationCommit": "30c434019bc9ea62b3e2f45c0be3e384f2b6be59",
+    "lastIntegrationCommit": "1f6aa59e41c7153784d4fed0fdc8c67d36dce2b3",
     "notices": [
-      {"eventId":"OWNER-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","summary":"Five-agent control plane initialized; no runtime changes on integration branch before branch creation and owner review."}
+      {"eventId":"OWNER-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","summary":"Five-agent control plane initialized; no runtime changes on integration branch before branch creation and owner review."},
+      {"eventId":"OWNER-BRANCHES-002","timestampUtc":"2026-07-13T17:46:38Z","summary":"All five isolated agent branches were created from the same planning head. First independent steps are released; integration branch remains owner-only.","branchPointCommit":"1f6aa59e41c7153784d4fed0fdc8c67d36dce2b3"}
     ]
   },
   "agentBlocks": {
@@ -37,7 +38,7 @@
       "agentName":"Atlas",
       "branch":"agent/offline-cutover-atlas-domain",
       "lastReadAtUtc":null,
-      "lastRebasedOn":null,
+      "lastRebasedOn":"1f6aa59e41c7153784d4fed0fdc8c67d36dce2b3",
       "events":[
         {"eventId":"ATLAS-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["ATLAS-100","ATLAS-110"],"summary":"Catalog-native domain types and contract overrides","affectedPaths":[],"consumers":["forge","helix","lumen","sentinel"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]}
       ]
@@ -46,7 +47,7 @@
       "agentName":"Forge",
       "branch":"agent/offline-cutover-forge-runtime",
       "lastReadAtUtc":null,
-      "lastRebasedOn":null,
+      "lastRebasedOn":"1f6aa59e41c7153784d4fed0fdc8c67d36dce2b3",
       "events":[
         {"eventId":"FORGE-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["FORGE-200","FORGE-210","FORGE-220"],"summary":"Manifest, projection, A/B OPFS installer, worker and client","affectedPaths":[],"consumers":["atlas","helix","lumen","sentinel"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]}
       ]
@@ -55,7 +56,7 @@
       "agentName":"Helix",
       "branch":"agent/offline-cutover-helix-resolution",
       "lastReadAtUtc":null,
-      "lastRebasedOn":null,
+      "lastRebasedOn":"1f6aa59e41c7153784d4fed0fdc8c67d36dce2b3",
       "events":[
         {"eventId":"HELIX-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["HELIX-300","HELIX-310","HELIX-320"],"summary":"Resolver extraction, unit evidence, eligibility and calibration semantics","affectedPaths":[],"consumers":["atlas","forge","lumen","sentinel"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]}
       ]
@@ -64,7 +65,7 @@
       "agentName":"Lumen",
       "branch":"agent/offline-cutover-lumen-ui",
       "lastReadAtUtc":null,
-      "lastRebasedOn":null,
+      "lastRebasedOn":"1f6aa59e41c7153784d4fed0fdc8c67d36dce2b3",
       "events":[
         {"eventId":"LUMEN-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["LUMEN-400","LUMEN-410","LUMEN-420"],"summary":"Offline App, catalog-native UI, settings and local user data","affectedPaths":[],"consumers":["atlas","forge","helix","sentinel"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]}
       ]
@@ -73,10 +74,11 @@
       "agentName":"Sentinel",
       "branch":"agent/offline-cutover-sentinel-quality",
       "lastReadAtUtc":null,
-      "lastRebasedOn":null,
+      "lastRebasedOn":"1f6aa59e41c7153784d4fed0fdc8c67d36dce2b3",
       "events":[
         {"eventId":"SENTINEL-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["SENTINEL-500","SENTINEL-510","SENTINEL-520"],"summary":"Real browser proof, CI, architecture gates and final legacy deletion proposal","affectedPaths":[],"consumers":["atlas","forge","helix","lumen"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]}
       ]
     }
-  }
+  },
+  "branchPointCommit": "1f6aa59e41c7153784d4fed0fdc8c67d36dce2b3"
 }
