@@ -8,75 +8,37 @@ import {
 } from '../../../Catalog/catalog-runtime.generated';
 import type { CatalogProduct, CatalogSearchHit, CatalogStatus } from './catalogDomain';
 import { CatalogFailure, isCatalogFailure, toCatalogFailure } from './catalogErrors';
-import {
-  type CatalogDatabase,
-  CatalogInstaller,
-  type CatalogOpenResult,
-  type CatalogSlotStorage
-} from './catalogInstaller';
+import { type CatalogDatabase, CatalogInstaller, type CatalogPool, type CatalogPools } from './catalogInstaller';
 import { type CatalogSqlRow, projectCatalogProductRow, projectCatalogSearchRows } from './catalogProjection';
-import type {
-  CatalogRuntimeFacts,
-  CatalogStatusEnvelope,
-  CatalogWorkerFailure,
-  CatalogWorkerRequest,
-  CatalogWorkerResponse
-} from './catalogProtocol';
-import {
-  CATALOG_SLOT_FILES,
-  type CatalogActivationStore,
-  IndexedDbCatalogActivationStore
-} from './catalogSlots';
-import type { CatalogSlotId } from './catalogDomain';
+import type { CatalogWorkerRequest, CatalogWorkerResponse } from './catalogProtocol';
 
+const workerScope: DedicatedWorkerGlobalScope = self as DedicatedWorkerGlobalScope;
 const PRODUCT_BY_ID_SQL = `
 SELECT p.id,p.g,p.n,d.v AS brand,p.c,p.s,p.q,p.u,p.m,p.r
 FROM p LEFT JOIN d ON d.id=p.b
 WHERE p.id=? LIMIT 1`;
 
-interface OpfsSahPool {
-  readonly OpfsSAHPoolDb: new (filename: string, flags?: string) => CatalogDatabase;
-  getFileNames(): string[];
-  importDb(filename: string, bytes: Uint8Array): Promise<number> | number;
-  exportFile(filename: string): Promise<Uint8Array> | Uint8Array;
-  unlink(filename: string): boolean;
-  reserveMinimumCapacity(capacity: number): Promise<void>;
-}
-
-interface SqliteRuntime {
+interface SqliteModule {
   installOpfsSAHPoolVfs(options: {
-    readonly name: string;
-    readonly directory: string;
-    readonly initialCapacity: number;
-  }): Promise<OpfsSahPool>;
+    name: string;
+    directory: string;
+    initialCapacity: number;
+  }): Promise<CatalogPool & { reserveMinimumCapacity(capacity: number): Promise<void> }>;
 }
 
-interface WorkerPort {
-  postMessage(message: CatalogWorkerResponse): void;
-}
-
-interface RuntimeUrls {
+interface RuntimeConfig {
   readonly sqliteModuleUrl: string;
   readonly manifestUrl: string;
   readonly catalogBaseUrl: string;
 }
 
-interface CatalogWorkerDependencies {
-  readonly port: WorkerPort;
-  readonly loadSqlite?: (moduleUrl: string) => Promise<SqliteRuntime>;
-  readonly activationStore?: CatalogActivationStore;
-  readonly fetch?: typeof fetch;
-  readonly urls?: RuntimeUrls;
-}
-
-const EMPTY_RUNTIME_FACTS: CatalogRuntimeFacts = {
-  persistent: false,
-  installedFromNetwork: false,
-  rollbackAvailable: false,
-  activeSlotFile: null
-};
-
-const INITIAL_STATUS: CatalogStatus = {
+let sqlite: SqliteModule | null = null;
+let pools: CatalogPools | null = null;
+let installer: CatalogInstaller | null = null;
+let runtimeDatabase: CatalogDatabase | null = null;
+let initialization: Promise<CatalogStatus> | null = null;
+let lifecycleQueue: Promise<void> = Promise.resolve();
+let status: CatalogStatus = {
   state: 'uninitialized',
   activeSlot: null,
   catalogVersion: null,
@@ -86,73 +48,9 @@ const INITIAL_STATUS: CatalogStatus = {
   retryAllowedImmediately: true
 };
 
-function deriveRuntimeUrls(workerUrl: string): RuntimeUrls {
-  const location = new URL(workerUrl);
-  const assetsMarker = '/assets/';
-  const markerIndex = location.pathname.lastIndexOf(assetsMarker);
-  const base = markerIndex >= 0
-    ? new URL(location.pathname.slice(0, markerIndex + 1), location.origin)
-    : new URL('./', location);
-  return {
-    sqliteModuleUrl: new URL('vendor/sqlite/index.mjs', base).href,
-    manifestUrl: new URL('catalog/manifest.json', base).href,
-    catalogBaseUrl: new URL('catalog/', base).href
-  };
-}
-
-async function defaultLoadSqlite(moduleUrl: string): Promise<SqliteRuntime> {
-  let imported: { default?: unknown };
-  try {
-    imported = await import(/* @vite-ignore */ moduleUrl) as { default?: unknown };
-  } catch (cause) {
-    throw new CatalogFailure('CATALOG_UNSUPPORTED', 'Das SQLite-WASM-Modul konnte nicht geladen werden.', {
-      operation: 'initialize',
-      cause
-    });
-  }
-  if (typeof imported.default !== 'function') {
-    throw new CatalogFailure('CATALOG_UNSUPPORTED', 'Das SQLite-WASM-Modul besitzt keinen gültigen Initialisierer.', {
-      operation: 'initialize'
-    });
-  }
-  const sqlite = await (imported.default as (options: Record<string, unknown>) => Promise<SqliteRuntime>)({
-    locateFile: (filename: string) => new URL(filename, moduleUrl).href,
-    print: () => undefined,
-    printErr: (...args: unknown[]) => console.warn('[sqlite-wasm]', ...args)
-  });
-  if (typeof sqlite.installOpfsSAHPoolVfs !== 'function') {
-    throw new CatalogFailure('CATALOG_UNSUPPORTED', 'Dieser Browser bietet keinen kompatiblen OPFS-SAH-Pool.', {
-      operation: 'initialize'
-    });
-  }
-  return sqlite;
-}
-
-class OpfsCatalogSlotStorage implements CatalogSlotStorage {
-  constructor(private readonly pool: OpfsSahPool) {}
-
-  hasSlot(slot: CatalogSlotId): boolean {
-    return this.pool.getFileNames().includes(CATALOG_SLOT_FILES[slot]);
-  }
-
-  async importSlot(slot: CatalogSlotId, bytes: Uint8Array): Promise<void> {
-    await this.pool.importDb(CATALOG_SLOT_FILES[slot], bytes);
-  }
-
-  removeSlot(slot: CatalogSlotId): void {
-    const filename = CATALOG_SLOT_FILES[slot];
-    if (this.pool.getFileNames().includes(filename)) this.pool.unlink(filename);
-  }
-
-  async readSlot(slot: CatalogSlotId): Promise<Uint8Array> {
-    return this.pool.exportFile(CATALOG_SLOT_FILES[slot]);
-  }
-
-  openSlot(slot: CatalogSlotId): CatalogDatabase {
-    const database = new this.pool.OpfsSAHPoolDb(CATALOG_SLOT_FILES[slot], 'r');
-    database.exec('PRAGMA query_only=ON; PRAGMA temp_store=MEMORY;');
-    return database;
-  }
+function publishStatus(next: CatalogStatus): void {
+  status = next;
+  workerScope.postMessage({ id: 0, ok: true, type: 'status-event', result: next } satisfies CatalogWorkerResponse);
 }
 
 function rows<T extends Record<string, unknown>>(
@@ -161,309 +59,196 @@ function rows<T extends Record<string, unknown>>(
   bind: readonly unknown[] = []
 ): T[] {
   const result: T[] = [];
-  database.exec({
-    sql,
-    bind,
-    rowMode: 'object',
-    callback: (row) => result.push(row as T)
-  });
+  database.exec({ sql, bind, rowMode: 'object', callback: (row: unknown) => result.push(row as T) });
   return result;
 }
 
-export function queryCatalogSearch(
-  database: CatalogDatabase,
-  query: string,
-  requestedLimit: number
-): readonly CatalogSearchHit[] {
+async function ensureRuntime(config: RuntimeConfig): Promise<void> {
+  if (!sqlite) {
+    let imported: { default?: unknown };
+    try {
+      imported = await import(/* @vite-ignore */ config.sqliteModuleUrl) as { default?: unknown };
+    } catch (error) {
+      throw new CatalogFailure('CATALOG_UNSUPPORTED', 'Das ausgelieferte SQLite-WASM-Modul konnte nicht geladen werden.', {
+        operation: 'initialize', cause: error
+      });
+    }
+    if (typeof imported.default !== 'function') {
+      throw new CatalogFailure('CATALOG_UNSUPPORTED', 'Das ausgelieferte SQLite-WASM-Modul ist ungültig.', {
+        operation: 'initialize'
+      });
+    }
+    sqlite = await (imported.default as (options: Record<string, unknown>) => Promise<SqliteModule>)({
+      locateFile: (filename: string) => new URL(filename, config.sqliteModuleUrl).href,
+      print: () => undefined,
+      printErr: (...args: unknown[]) => console.warn('[sqlite-wasm]', ...args)
+    });
+  }
+  if (!sqlite.installOpfsSAHPoolVfs) {
+    throw new CatalogFailure('CATALOG_UNSUPPORTED', 'Dieser Browser bietet keinen kompatiblen OPFS-SAH-Pool.', {
+      operation: 'initialize'
+    });
+  }
+  if (!pools) {
+    try {
+      const [a, b] = await Promise.all([
+        sqlite.installOpfsSAHPoolVfs({
+          name: 'kh-checker-catalog-slot-a-v1',
+          directory: '.kh-checker-catalog-slot-a-v1',
+          initialCapacity: 4
+        }),
+        sqlite.installOpfsSAHPoolVfs({
+          name: 'kh-checker-catalog-slot-b-v1',
+          directory: '.kh-checker-catalog-slot-b-v1',
+          initialCapacity: 4
+        })
+      ]);
+      await Promise.all([a.reserveMinimumCapacity(4), b.reserveMinimumCapacity(4)]);
+      pools = { a, b };
+      installer = new CatalogInstaller(pools);
+    } catch (error) {
+      throw new CatalogFailure('CATALOG_STORAGE_UNAVAILABLE', 'Die beiden persistenten OPFS-Katalogslots konnten nicht eingerichtet werden.', {
+        operation: 'initialize', cause: error
+      });
+    }
+  }
+}
+
+async function initialize(config: RuntimeConfig, force: boolean): Promise<CatalogStatus> {
+  if (!force && status.state === 'ready' && runtimeDatabase) return status;
+  if (force) {
+    try { runtimeDatabase?.close(); } catch { /* close only */ }
+    runtimeDatabase = null;
+  }
+  await ensureRuntime(config);
+  if (!installer) {
+    throw new CatalogFailure('CATALOG_STORAGE_UNAVAILABLE', 'Der Kataloginstaller ist nicht verfügbar.', {
+      operation: 'initialize'
+    });
+  }
+  const handle = await installer.bootstrap(config.manifestUrl, config.catalogBaseUrl, publishStatus);
+  runtimeDatabase = handle.database;
+  status = handle.status;
+  return status;
+}
+
+function scheduleInitialization(config: RuntimeConfig, force: boolean): Promise<CatalogStatus> {
+  if (!force && initialization) return initialization;
+  const task = lifecycleQueue.then(
+    () => initialize(config, force),
+    () => initialize(config, force)
+  );
+  lifecycleQueue = task.then(() => undefined, () => undefined);
+  initialization = task;
+  void task.catch(() => {
+    if (initialization === task) initialization = null;
+  });
+  return task;
+}
+
+function requireDatabase(operation: 'search' | 'product_lookup'): CatalogDatabase {
+  if (!runtimeDatabase || status.state !== 'ready') {
+    throw new CatalogFailure('CATALOG_NOT_READY', 'Der lokale Produktkatalog ist noch nicht einsatzbereit.', {
+      operation,
+      activeSlot: status.activeSlot,
+      catalogVersion: status.catalogVersion
+    });
+  }
+  return runtimeDatabase;
+}
+
+function searchCatalog(query: string, requestedLimit: number): readonly CatalogSearchHit[] {
+  const database = requireDatabase('search');
   const canonical = query.normalize('NFKC').trim();
   const ftsQuery = buildCatalogFtsQuery(canonical);
   if (!ftsQuery) return [];
   const limit = Math.max(1, Math.min(20, Math.trunc(requestedLimit) || 20));
-  const sqlRows = rows<CatalogSqlRow>(database, CATALOG_SEARCH_SQL, [
-    ftsQuery,
-    canonical,
-    canonical,
-    canonical,
-    limit
-  ]);
-  return projectCatalogSearchRows(sqlRows);
+  try {
+    const resultRows = rows<CatalogSqlRow>(
+      database,
+      CATALOG_SEARCH_SQL,
+      [ftsQuery, canonical, canonical, canonical, limit]
+    );
+    return projectCatalogSearchRows(resultRows);
+  } catch (error) {
+    throw toCatalogFailure(error, 'CATALOG_QUERY_FAILED', 'Die lokale Produktsuche ist fehlgeschlagen.', {
+      operation: 'search', activeSlot: status.activeSlot, catalogVersion: status.catalogVersion,
+      details: { resultLimit: limit }
+    });
+  }
 }
 
-export function queryCatalogProduct(database: CatalogDatabase, inputCode: string): CatalogProduct | null {
-  const code = inputCode.replace(/\D/g, '');
-  if (!code || code.length > 14) return null;
-  const packed = packStandardGtin(code);
-  const sqlRows = packed === null
-    ? rows<CatalogSqlRow>(database, CATALOG_RESCUE_BARCODE_SQL, [code])
-    : rows<CatalogSqlRow>(database, PRODUCT_BY_ID_SQL, [packed]);
-  return sqlRows.length ? projectCatalogProductRow(sqlRows[0]) : null;
+function findProduct(barcode: string): CatalogProduct | null {
+  const database = requireDatabase('product_lookup');
+  const normalized = barcode.replace(/\D/g, '');
+  if (!normalized || normalized.length > 14) return null;
+  try {
+    const packed = packStandardGtin(normalized);
+    const resultRows = packed === null
+      ? rows<CatalogSqlRow>(database, CATALOG_RESCUE_BARCODE_SQL, [normalized])
+      : rows<CatalogSqlRow>(database, PRODUCT_BY_ID_SQL, [packed]);
+    return resultRows.length ? projectCatalogProductRow(resultRows[0]) : null;
+  } catch (error) {
+    throw toCatalogFailure(error, 'CATALOG_QUERY_FAILED', 'Die lokale Barcode-Suche ist fehlgeschlagen.', {
+      operation: 'product_lookup', activeSlot: status.activeSlot, catalogVersion: status.catalogVersion
+    });
+  }
 }
 
-function runtimeFacts(result: CatalogOpenResult): CatalogRuntimeFacts {
+function failureResponse(id: number, error: unknown): CatalogWorkerResponse {
+  const failure = isCatalogFailure(error)
+    ? error
+    : new CatalogFailure('CATALOG_UNKNOWN', 'Der Katalogworker ist unerwartet fehlgeschlagen.', {
+        operation: 'initialize', activeSlot: status.activeSlot, catalogVersion: status.catalogVersion, cause: error
+      });
   return {
-    persistent: true,
-    installedFromNetwork: result.installedFromNetwork,
-    rollbackAvailable: result.activation.previousSlot !== null,
-    activeSlotFile: CATALOG_SLOT_FILES[result.activation.activeSlot]
+    id,
+    ok: false,
+    error: {
+      name: 'CatalogFailure',
+      message: failure.message,
+      code: failure.code,
+      diagnostics: failure.diagnostics
+    }
   };
 }
 
-export class CatalogWorkerRuntime {
-  private readonly loadSqlite: (moduleUrl: string) => Promise<SqliteRuntime>;
-  private readonly activationStore: CatalogActivationStore;
-  private readonly fetcher: typeof fetch;
-  private readonly urls: RuntimeUrls;
-  private sqlite: SqliteRuntime | null = null;
-  private installer: CatalogInstaller | null = null;
-  private database: CatalogDatabase | null = null;
-  private status: CatalogStatus = INITIAL_STATUS;
-  private facts: CatalogRuntimeFacts = EMPTY_RUNTIME_FACTS;
-  private initialization: Promise<CatalogStatusEnvelope> | null = null;
-  private lifecycleQueue: Promise<void> = Promise.resolve();
-
-  constructor(private readonly dependencies: CatalogWorkerDependencies) {
-    this.loadSqlite = dependencies.loadSqlite ?? defaultLoadSqlite;
-    this.activationStore = dependencies.activationStore ?? new IndexedDbCatalogActivationStore();
-    this.fetcher = dependencies.fetch ?? fetch;
-    const workerHref = typeof self !== 'undefined' && self.location ? self.location.href : import.meta.url;
-    this.urls = dependencies.urls ?? deriveRuntimeUrls(workerHref);
-  }
-
-  currentStatus(): CatalogStatusEnvelope {
-    return { status: this.status, runtime: this.facts };
-  }
-
-  private publish(status: CatalogStatus, facts = this.facts): CatalogStatusEnvelope {
-    this.status = status;
-    this.facts = facts;
-    const envelope = this.currentStatus();
-    this.dependencies.port.postMessage({
-      requestId: 'status-event',
-      ok: true,
-      type: 'status-event',
-      result: envelope
-    });
-    return envelope;
-  }
-
-  private async ensureInstaller(): Promise<CatalogInstaller> {
-    if (this.installer) return this.installer;
+workerScope.addEventListener('message', (event: MessageEvent<CatalogWorkerRequest>) => {
+  const request = event.data;
+  void (async () => {
     try {
-      this.sqlite ??= await this.loadSqlite(this.urls.sqliteModuleUrl);
-      const pool = await this.sqlite.installOpfsSAHPoolVfs({
-        name: 'kh-checker-catalog-ab-v1',
-        directory: '.kh-checker-catalog-ab-v1',
-        initialCapacity: 8
-      });
-      await pool.reserveMinimumCapacity(8);
-      this.installer = new CatalogInstaller({
-        storage: new OpfsCatalogSlotStorage(pool),
-        activations: this.activationStore,
-        fetch: this.fetcher
-      });
-      return this.installer;
-    } catch (error) {
-      throw toCatalogFailure(error, 'CATALOG_STORAGE_UNAVAILABLE', 'Der persistente A/B-Katalogspeicher konnte nicht initialisiert werden.', {
-        operation: 'initialize',
-        activeSlot: this.status.activeSlot,
-        catalogVersion: this.status.catalogVersion
-      });
-    }
-  }
-
-  private adopt(result: CatalogOpenResult): CatalogStatusEnvelope {
-    const previous = this.database;
-    this.database = result.database;
-    if (previous && previous !== result.database) {
-      try { previous.close(); } catch { /* replacement is already active */ }
-    }
-    return this.publish({
-      state: 'ready',
-      activeSlot: result.activation.activeSlot,
-      catalogVersion: result.activation.catalogVersion,
-      productCount: result.productCount,
-      progress: null,
-      diagnostics: result.diagnostics,
-      retryAllowedImmediately: true
-    }, runtimeFacts(result));
-  }
-
-  private unavailable(error: CatalogFailure): void {
-    this.publish({
-      state: 'unavailable',
-      activeSlot: error.diagnostics.activeSlot,
-      catalogVersion: error.diagnostics.catalogVersion,
-      productCount: null,
-      progress: null,
-      diagnostics: error.diagnostics,
-      retryAllowedImmediately: true
-    }, EMPTY_RUNTIME_FACTS);
-  }
-
-  private schedule<T>(work: () => Promise<T>): Promise<T> {
-    const task = this.lifecycleQueue.then(work, work);
-    this.lifecycleQueue = task.then(() => undefined, () => undefined);
-    return task;
-  }
-
-  initialize(): Promise<CatalogStatusEnvelope> {
-    if (this.status.state === 'ready' && this.database) return Promise.resolve(this.currentStatus());
-    if (this.initialization) return this.initialization;
-    const task = this.schedule(async () => {
-      this.publish({ ...this.status, state: 'checking', progress: null, diagnostics: null });
-      try {
-        const installer = await this.ensureInstaller();
-        this.publish({ ...this.status, state: 'installing', progress: null, diagnostics: null });
-        return this.adopt(await installer.initialize(this.urls.manifestUrl, this.urls.catalogBaseUrl));
-      } catch (error) {
-        const catalogFailure = isCatalogFailure(error)
-          ? error
-          : toCatalogFailure(error, 'CATALOG_UNKNOWN', 'Der lokale Produktkatalog konnte nicht initialisiert werden.', {
-              operation: 'initialize'
-            });
-        this.unavailable(catalogFailure);
-        throw catalogFailure;
-      }
-    });
-    this.initialization = task;
-    void task.finally(() => {
-      if (this.initialization === task) this.initialization = null;
-    }).catch(() => undefined);
-    return task;
-  }
-
-  retryUpdate(): Promise<CatalogStatusEnvelope> {
-    if (!this.database) return this.initialize();
-    return this.schedule(async () => {
-      const previousStatus = this.status;
-      const previousFacts = this.facts;
-      this.publish({ ...previousStatus, state: 'checking', progress: null, diagnostics: null }, previousFacts);
-      try {
-        const installer = await this.ensureInstaller();
-        return this.adopt(await installer.installUpdate(this.urls.manifestUrl, this.urls.catalogBaseUrl));
-      } catch (error) {
-        const catalogFailure = isCatalogFailure(error)
-          ? error
-          : toCatalogFailure(error, 'CATALOG_UNKNOWN', 'Die Katalogaktualisierung ist fehlgeschlagen.', {
-              operation: 'install',
-              activeSlot: previousStatus.activeSlot,
-              catalogVersion: previousStatus.catalogVersion
-            });
-        if (this.database && previousStatus.activeSlot) {
-          return this.publish({
-            ...previousStatus,
-            state: 'ready',
+      let response: CatalogWorkerResponse;
+      if (request.type === 'initialize' || request.type === 'retry') {
+        const config: RuntimeConfig = {
+          sqliteModuleUrl: request.sqliteModuleUrl,
+          manifestUrl: request.manifestUrl,
+          catalogBaseUrl: request.catalogBaseUrl
+        };
+        const task = scheduleInitialization(config, request.type === 'retry').catch((error) => {
+          if (isCatalogFailure(error)) publishStatus({
+            state: 'unavailable',
+            activeSlot: error.diagnostics.activeSlot,
+            catalogVersion: error.diagnostics.catalogVersion,
+            productCount: null,
             progress: null,
-            diagnostics: catalogFailure.diagnostics
-          }, previousFacts);
-        }
-        this.unavailable(catalogFailure);
-        throw catalogFailure;
-      }
-    });
-  }
-
-  search(query: string, limit: number): readonly CatalogSearchHit[] {
-    if (!this.database) {
-      throw new CatalogFailure('CATALOG_NOT_READY', 'Der lokale Produktkatalog ist noch nicht einsatzbereit.', {
-        operation: 'search',
-        activeSlot: this.status.activeSlot,
-        catalogVersion: this.status.catalogVersion
-      });
-    }
-    try {
-      return queryCatalogSearch(this.database, query, limit);
-    } catch (error) {
-      throw toCatalogFailure(error, 'CATALOG_QUERY_FAILED', 'Die lokale Produktsuche ist fehlgeschlagen.', {
-        operation: 'search',
-        activeSlot: this.status.activeSlot,
-        catalogVersion: this.status.catalogVersion,
-        details: { resultLimit: Math.max(1, Math.min(20, Math.trunc(limit) || 20)) }
-      });
-    }
-  }
-
-  product(code: string): CatalogProduct | null {
-    if (!this.database) {
-      throw new CatalogFailure('CATALOG_NOT_READY', 'Der lokale Produktkatalog ist noch nicht einsatzbereit.', {
-        operation: 'product_lookup',
-        activeSlot: this.status.activeSlot,
-        catalogVersion: this.status.catalogVersion
-      });
-    }
-    try {
-      return queryCatalogProduct(this.database, code);
-    } catch (error) {
-      throw toCatalogFailure(error, 'CATALOG_QUERY_FAILED', 'Die lokale Barcode-Suche ist fehlgeschlagen.', {
-        operation: 'product_lookup',
-        activeSlot: this.status.activeSlot,
-        catalogVersion: this.status.catalogVersion
-      });
-    }
-  }
-
-  async handle(request: CatalogWorkerRequest): Promise<CatalogWorkerResponse> {
-    try {
-      if (request.type === 'initialize') {
-        return { requestId: request.requestId, ok: true, type: 'status', result: await this.initialize() };
-      }
-      if (request.type === 'retry-update') {
-        return { requestId: request.requestId, ok: true, type: 'status', result: await this.retryUpdate() };
-      }
-      if (request.type === 'status') {
-        return { requestId: request.requestId, ok: true, type: 'status', result: this.currentStatus() };
-      }
-      if (request.type === 'search') {
-        return { requestId: request.requestId, ok: true, type: 'search', result: this.search(request.query, request.limit) };
-      }
-      return { requestId: request.requestId, ok: true, type: 'product', result: this.product(request.code) };
-    } catch (error) {
-      return this.failureResponse(request.requestId, error, request.type);
-    }
-  }
-
-  terminate(): void {
-    try { this.database?.close(); } catch { /* worker shutdown */ }
-    this.database = null;
-  }
-
-  private failureResponse(
-    requestId: string,
-    error: unknown,
-    requestType: CatalogWorkerRequest['type']
-  ): CatalogWorkerFailure {
-    const operation = requestType === 'search'
-      ? 'search'
-      : requestType === 'product'
-        ? 'product_lookup'
-        : requestType === 'retry-update'
-          ? 'install'
-          : 'initialize';
-    const catalogFailure = isCatalogFailure(error)
-      ? error
-      : toCatalogFailure(error, 'CATALOG_UNKNOWN', 'Der Katalogworker ist unerwartet fehlgeschlagen.', {
-          operation,
-          activeSlot: this.status.activeSlot,
-          catalogVersion: this.status.catalogVersion
+            diagnostics: error.diagnostics,
+            retryAllowedImmediately: true
+          });
+          throw error;
         });
-    return {
-      requestId,
-      ok: false,
-      error: {
-        name: 'CatalogFailure',
-        message: catalogFailure.message,
-        code: catalogFailure.code,
-        diagnostics: catalogFailure.diagnostics
+        response = { id: request.id, ok: true, type: 'status', result: await task };
+      } else if (request.type === 'status') {
+        response = { id: request.id, ok: true, type: 'status', result: status };
+      } else if (request.type === 'search') {
+        response = { id: request.id, ok: true, type: 'search', result: searchCatalog(request.query, request.limit) };
+      } else if (request.type === 'product') {
+        response = { id: request.id, ok: true, type: 'product', result: findProduct(request.barcode) };
+      } else {
+        throw new CatalogFailure('CATALOG_UNKNOWN', 'Unbekannter Katalogworker-Auftrag.', { operation: 'initialize' });
       }
-    };
-  }
-}
-
-const workerScope = typeof self !== 'undefined' ? self as DedicatedWorkerGlobalScope : null;
-if (workerScope) {
-  const runtime = new CatalogWorkerRuntime({ port: workerScope });
-  workerScope.addEventListener('message', (event: MessageEvent<CatalogWorkerRequest>) => {
-    void runtime.handle(event.data).then((response) => workerScope.postMessage(response));
-  });
-  workerScope.addEventListener('close', () => runtime.terminate());
-}
+      workerScope.postMessage(response);
+    } catch (error) {
+      workerScope.postMessage(failureResponse(request.id, error));
+    }
+  })();
+});

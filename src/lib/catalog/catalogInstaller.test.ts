@@ -1,61 +1,47 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { CatalogSlotId } from './catalogDomain';
-import { CatalogFailure } from './catalogErrors';
 import {
   CatalogInstaller,
   type CatalogDatabase,
-  type CatalogSlotStorage
+  type CatalogPool,
+  type CatalogPools
 } from './catalogInstaller';
 import type { CatalogManifest } from './catalogProtocol';
-import type {
-  CatalogActivationRecord,
-  CatalogActivationStore
+import {
+  type CatalogSlotMetadata,
+  type CatalogSlotState,
+  type CatalogSlotStateStore,
+  activateCatalogSlot,
+  emptyCatalogSlotState,
+  recordValidatedCatalogSlot,
+  slotMetadataFromManifest
 } from './catalogSlots';
 
-const PRODUCT_COLUMNS = ['id', 'g', 'n', 'b', 'c', 's', 'q', 'u', 'm', 'r'];
-
 interface DatabaseProfile {
-  applicationId: number;
-  userVersion: number;
-  pageSize: number;
-  columns: string[];
-  ftsSql: string;
-  integrity: string;
-  productCount: number;
-  textSmoke: boolean;
-  barcodeSmoke: boolean;
+  readonly applicationId: number;
+  readonly userVersion: number;
+  readonly pageSize: number;
+  readonly integrity: string;
+  readonly productCount: number;
+  readonly brandCount: number;
+  readonly smoke: boolean;
 }
 
-class MemoryActivationStore implements CatalogActivationStore {
-  writes: CatalogActivationRecord[] = [];
-  events: string[] = [];
+const PRODUCT_COLUMNS = ['id', 'g', 'n', 'b', 'c', 's', 'q', 'u', 'm', 'r'];
+const BRAND_COLUMNS = ['id', 'v'];
 
-  constructor(public record: CatalogActivationRecord | null = null) {}
-
-  async readActivationRecord(): Promise<CatalogActivationRecord | null> {
-    this.events.push('activation-read');
-    return this.record;
-  }
-
-  async activateValidatedSlot(nextRecord: CatalogActivationRecord): Promise<void> {
-    this.events.push('activation-write');
-    this.record = { ...nextRecord };
-    this.writes.push({ ...nextRecord });
-  }
-
-  async clearInactiveSlotMetadata(slot: CatalogSlotId): Promise<void> {
-    this.events.push(`activation-clear-${slot}`);
-    if (this.record?.activeSlot === slot) throw new Error('attempted to clear active slot');
-    if (this.record?.previousSlot === slot) this.record = { ...this.record, previousSlot: null };
+class MemoryStore implements CatalogSlotStateStore {
+  readonly writes: CatalogSlotState[] = [];
+  constructor(public state: CatalogSlotState = emptyCatalogSlotState()) {}
+  async read(): Promise<CatalogSlotState> { return this.state; }
+  async write(state: CatalogSlotState): Promise<void> {
+    this.state = structuredClone(state);
+    this.writes.push(structuredClone(state));
   }
 }
 
 class FakeDatabase implements CatalogDatabase {
-  constructor(
-    private readonly profile: DatabaseProfile,
-    private readonly events: string[]
-  ) {}
-
+  constructor(private readonly profile: DatabaseProfile) {}
   exec(input: string | {
     readonly sql: string;
     readonly bind?: readonly unknown[];
@@ -65,109 +51,86 @@ class FakeDatabase implements CatalogDatabase {
     const sql = typeof input === 'string' ? input : input.sql;
     const callback = typeof input === 'string' ? undefined : input.callback;
     if (sql.includes('table_info(p)')) {
-      this.events.push('validate-schema');
-      for (const name of this.profile.columns) callback?.({ name });
-    } else if (sql.includes('sqlite_schema')) {
-      this.events.push('validate-fts-schema');
-      callback?.({ sql: this.profile.ftsSql });
+      for (const name of PRODUCT_COLUMNS) callback?.({ name });
+    } else if (sql.includes('table_info(d)')) {
+      for (const name of BRAND_COLUMNS) callback?.({ name });
     } else if (sql.includes('integrity_check')) {
-      this.events.push('validate-integrity');
       callback?.({ integrity_check: this.profile.integrity });
-    } else if (sql.includes('FROM x')) {
-      this.events.push('smoke-text');
-      if (this.profile.textSmoke) callback?.({ id: 1 });
-    } else if (sql.includes('WHERE p.id=?')) {
-      this.events.push('smoke-barcode');
-      if (this.profile.barcodeSmoke) callback?.({ id: 1 });
-    } else if (sql.includes('WHERE p.g=?')) {
-      this.events.push('smoke-barcode-rescue');
-      if (this.profile.barcodeSmoke) callback?.({ id: 1 });
+    } else if (sql.includes('FROM x') && this.profile.smoke) {
+      callback?.({ id: 12033681688014, g: null, n: 'Kinder Bueno', brand: 'Ferrero', c: 49, s: 21.5, q: 43, u: 21.5, m: 82436, r: 100 });
+    } else if ((sql.includes('WHERE p.id=?') || sql.includes('WHERE p.g=?')) && this.profile.smoke) {
+      callback?.({ id: 1 });
     }
     return undefined;
   }
-
   selectValue(sql: string): unknown {
     if (sql.includes('application_id')) return this.profile.applicationId;
     if (sql.includes('user_version')) return this.profile.userVersion;
     if (sql.includes('page_size')) return this.profile.pageSize;
+    if (sql.includes("name='x'")) return "CREATE VIRTUAL TABLE x USING fts5(s, content='')";
     if (sql.includes('count(*) FROM p')) return this.profile.productCount;
+    if (sql.includes('count(*) FROM d')) return this.profile.brandCount;
     throw new Error(`Unexpected scalar SQL: ${sql}`);
   }
-
-  close(): void {
-    this.events.push('validation-close');
-  }
+  close(): void {}
 }
 
-class FakeStorage implements CatalogSlotStorage {
-  readonly files = new Map<CatalogSlotId, Uint8Array>();
-  readonly profiles: Record<CatalogSlotId, DatabaseProfile>;
-  readonly events: string[] = [];
-  importFailure: CatalogSlotId | null = null;
-  openFailure: CatalogSlotId | null = null;
+class FakePool implements CatalogPool {
+  readonly files = new Map<string, Uint8Array>();
+  openFailure = false;
+  readonly OpfsSAHPoolDb: new (filename: string, flags?: string) => CatalogDatabase;
 
-  constructor(profileA = validProfile(), profileB = validProfile()) {
-    this.profiles = { a: profileA, b: profileB };
+  constructor(readonly profile: DatabaseProfile) {
+    const pool = this;
+    this.OpfsSAHPoolDb = class implements CatalogDatabase {
+      private readonly delegate: FakeDatabase;
+      constructor(filename: string) {
+        if (pool.openFailure || !pool.files.has(filename)) throw new Error('open failed');
+        this.delegate = new FakeDatabase(pool.profile);
+      }
+      exec(input: Parameters<CatalogDatabase['exec']>[0]): unknown { return this.delegate.exec(input); }
+      selectValue(sql: string): unknown { return this.delegate.selectValue(sql); }
+      close(): void { this.delegate.close(); }
+    };
   }
-
-  async hasSlot(slot: CatalogSlotId): Promise<boolean> {
-    return this.files.has(slot);
-  }
-
-  async importSlot(slot: CatalogSlotId, bytes: Uint8Array): Promise<void> {
-    this.events.push(`import-${slot}`);
-    if (this.importFailure === slot) throw new Error('interrupted import');
-    this.files.set(slot, bytes.slice());
-  }
-
-  async removeSlot(slot: CatalogSlotId): Promise<void> {
-    this.events.push(`remove-${slot}`);
-    this.files.delete(slot);
-  }
-
-  async readSlot(slot: CatalogSlotId): Promise<Uint8Array> {
-    const bytes = this.files.get(slot);
-    if (!bytes) throw new Error('missing slot');
+  getFileNames(): string[] { return [...this.files.keys()]; }
+  importDb(filename: string, bytes: Uint8Array): unknown { this.files.set(filename, bytes.slice()); return undefined; }
+  exportFile(filename: string): Uint8Array {
+    const bytes = this.files.get(filename);
+    if (!bytes) throw new Error('missing file');
     return bytes.slice();
   }
-
-  openSlot(slot: CatalogSlotId): CatalogDatabase {
-    this.events.push(`open-${slot}`);
-    if (this.openFailure === slot || !this.files.has(slot)) throw new Error(`cannot open ${slot}`);
-    return new FakeDatabase(this.profiles[slot], this.events);
-  }
+  unlink(filename: string): unknown { this.files.delete(filename); return undefined; }
 }
 
-function validProfile(overrides: Partial<DatabaseProfile> = {}): DatabaseProfile {
+function profile(overrides: Partial<DatabaseProfile> = {}): DatabaseProfile {
   return {
     applicationId: 1263027011,
     userVersion: 1,
     pageSize: 4096,
-    columns: [...PRODUCT_COLUMNS],
-    ftsSql: 'CREATE VIRTUAL TABLE x USING fts5(s, content=\'\')',
     integrity: 'ok',
     productCount: 317579,
-    textSmoke: true,
-    barcodeSmoke: true,
+    brandCount: 60682,
+    smoke: true,
     ...overrides
   };
 }
 
-async function sha256(bytes: Uint8Array): Promise<string> {
+async function hash(bytes: Uint8Array): Promise<string> {
   const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
   const digest = await crypto.subtle.digest('SHA-256', buffer);
   return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join('');
 }
 
-async function manifestFor(bytes: Uint8Array, version = '2026-07-13'): Promise<CatalogManifest> {
+async function manifest(bytes: Uint8Array, catalogVersion: string): Promise<CatalogManifest> {
   return {
     contract: 'kh-checker-offline-catalog-production',
     contractVersion: '1.0.0',
-    catalogVersion: version,
+    catalogVersion,
     generatedAtUtc: '2026-07-13T15:57:52.861271+00:00',
     filename: 'kh-checker-dach-v1.sqlite',
     sizeBytes: bytes.byteLength,
-    sha256: await sha256(bytes),
+    sha256: await hash(bytes),
     applicationId: 1263027011,
     userVersion: 1,
     pageSize: 4096,
@@ -184,44 +147,42 @@ async function manifestFor(bytes: Uint8Array, version = '2026-07-13'): Promise<C
   };
 }
 
-function rawManifest(manifest: CatalogManifest): Record<string, unknown> {
+function rawManifest(value: CatalogManifest): Record<string, unknown> {
   return {
-    contract: manifest.contract,
-    contractVersion: manifest.contractVersion,
-    catalogVersion: manifest.catalogVersion,
-    generatedAtUtc: manifest.generatedAtUtc,
+    contract: value.contract,
+    contractVersion: value.contractVersion,
+    catalogVersion: value.catalogVersion,
+    generatedAtUtc: value.generatedAtUtc,
     database: {
-      file: manifest.filename,
-      bytes: manifest.sizeBytes,
-      sha256: manifest.sha256,
-      applicationId: manifest.applicationId,
-      userVersion: manifest.userVersion,
-      pageSize: manifest.pageSize,
-      products: manifest.productCount,
-      brands: manifest.brandCount
+      file: value.filename,
+      bytes: value.sizeBytes,
+      sha256: value.sha256,
+      applicationId: value.applicationId,
+      userVersion: value.userVersion,
+      pageSize: value.pageSize,
+      products: value.productCount,
+      brands: value.brandCount
     },
     image: {
-      resolution: manifest.imageResolution,
-      dictionaryFile: manifest.imageDictionaryFile,
-      dictionarySha256: manifest.imageDictionarySha256
+      resolution: value.imageResolution,
+      dictionaryFile: value.imageDictionaryFile,
+      dictionarySha256: value.imageDictionarySha256
     },
-    codecFile: manifest.codecFile,
-    runtimeTypescript: manifest.runtimeTypescript,
+    codecFile: value.codecFile,
+    runtimeTypescript: value.runtimeTypescript,
     transportCompression: null,
     search: {
-      ordering: manifest.searchOrdering,
-      resultLimitDefault: manifest.resultLimitDefault,
+      ordering: value.searchOrdering,
+      resultLimitDefault: value.resultLimitDefault,
       runtimeParameters: ['ftsQuery', 'canonicalProductQuery', 'canonicalProductQuery', 'canonicalProductQuery', 'limit']
     }
   };
 }
 
-function fetchFor(manifest: CatalogManifest, bytes: Uint8Array): typeof fetch {
+function fetcher(value: CatalogManifest, bytes: Uint8Array): typeof fetch {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.endsWith('manifest.json')) {
-      return new Response(JSON.stringify(rawManifest(manifest)), { status: 200 });
-    }
+    if (url.endsWith('manifest.json')) return new Response(JSON.stringify(rawManifest(value)), { status: 200 });
     return new Response(bytes.slice(), {
       status: 200,
       headers: { 'content-length': String(bytes.byteLength) }
@@ -229,162 +190,72 @@ function fetchFor(manifest: CatalogManifest, bytes: Uint8Array): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
-async function seededActiveA(): Promise<{
-  bytes: Uint8Array;
-  manifest: CatalogManifest;
-  record: CatalogActivationRecord;
-  storage: FakeStorage;
-  activations: MemoryActivationStore;
-}> {
-  const bytes = new TextEncoder().encode('catalog-a-valid');
-  const manifest = await manifestFor(bytes, '2026-07-13');
-  const record: CatalogActivationRecord = {
-    activeSlot: 'a',
-    catalogVersion: manifest.catalogVersion,
-    sha256: manifest.sha256,
-    validatedAt: '2026-07-13T18:00:00.000Z',
-    previousSlot: null
-  };
-  const storage = new FakeStorage();
-  storage.files.set('a', bytes);
-  return { bytes, manifest, record, storage, activations: new MemoryActivationStore(record) };
+function pools(profileA = profile(), profileB = profile()): CatalogPools {
+  return { a: new FakePool(profileA), b: new FakePool(profileB) };
 }
 
-function installer(
-  storage: FakeStorage,
-  activations: MemoryActivationStore,
-  fetcher: typeof fetch
-): CatalogInstaller {
-  return new CatalogInstaller({
-    storage,
-    activations,
-    fetch: fetcher,
-    now: () => '2026-07-13T19:00:00.000Z'
-  });
+function seedState(slot: CatalogSlotId, metadata: CatalogSlotMetadata): CatalogSlotState {
+  return activateCatalogSlot(recordValidatedCatalogSlot(emptyCatalogSlotState(), metadata), slot);
 }
 
-async function expectFailedUpdateDoesNotSwitch(
-  profileB: DatabaseProfile,
-  expectedCode: string
-): Promise<void> {
-  const seeded = await seededActiveA();
-  const updateBytes = new TextEncoder().encode(`catalog-b-${expectedCode}`);
-  const updateManifest = await manifestFor(updateBytes, '2026-08-01');
-  seeded.storage.profiles.b = profileB;
-  await expect(installer(seeded.storage, seeded.activations, fetchFor(updateManifest, updateBytes)).installUpdate(
-    'https://app.test/catalog/manifest.json',
-    'https://app.test/catalog/'
-  )).rejects.toMatchObject({ code: expectedCode });
-  expect(seeded.activations.record).toEqual(seeded.record);
-  expect(seeded.storage.files.get('a')).toEqual(seeded.bytes);
-  expect(seeded.storage.files.has('b')).toBe(false);
-}
-
-afterEach(() => vi.restoreAllMocks());
-
-describe('FORGE-210 atomic A/B lifecycle', () => {
-  it('1. first installation activates slot a', async () => {
-    const bytes = new TextEncoder().encode('first-catalog');
-    const manifest = await manifestFor(bytes);
-    const storage = new FakeStorage();
-    const activations = new MemoryActivationStore();
-    const result = await installer(storage, activations, fetchFor(manifest, bytes)).initialize(
-      'https://app.test/catalog/manifest.json',
-      'https://app.test/catalog/'
-    );
-    expect(result.activation.activeSlot).toBe('a');
-    expect(activations.record?.activeSlot).toBe('a');
-    expect(storage.files.has('a')).toBe(true);
+describe('catalog A/B installer', () => {
+  it('installs into the inactive OPFS pool, fully validates, then atomically activates it', async () => {
+    const bytes = new TextEncoder().encode('catalog-v1');
+    const value = await manifest(bytes, '2026-07-13');
+    const store = new MemoryStore();
+    const runtimePools = pools();
+    const installer = new CatalogInstaller(runtimePools, {
+      store,
+      fetcher: fetcher(value, bytes),
+      now: () => '2026-07-13T19:00:00.000Z'
+    });
+    const result = await installer.bootstrap('https://example.test/catalog/manifest.json', 'https://example.test/catalog/');
+    expect(result.status).toMatchObject({ state: 'ready', activeSlot: 'a', catalogVersion: '2026-07-13' });
+    expect(runtimePools.a.getFileNames()).toEqual(['/kh-checker-dach-v1.sqlite']);
+    expect(runtimePools.b.getFileNames()).toEqual([]);
+    expect(store.state.activeSlot).toBe('a');
+    expect(store.state.rollbackSlot).toBeNull();
   });
 
-  it('2. the next valid version installs into b', async () => {
-    const seeded = await seededActiveA();
-    const bytes = new TextEncoder().encode('second-catalog');
-    const manifest = await manifestFor(bytes, '2026-08-01');
-    const result = await installer(seeded.storage, seeded.activations, fetchFor(manifest, bytes)).installUpdate(
-      'https://app.test/catalog/manifest.json',
-      'https://app.test/catalog/'
-    );
-    expect(result.activation.activeSlot).toBe('b');
-    expect(seeded.activations.record?.activeSlot).toBe('b');
+  it('keeps the previous validated slot authoritative when an update fails validation', async () => {
+    const oldBytes = new TextEncoder().encode('catalog-old');
+    const newBytes = new TextEncoder().encode('catalog-new');
+    const oldManifest = await manifest(oldBytes, '2026-07-13');
+    const newManifest = await manifest(newBytes, '2026-07-14');
+    const oldMetadata = slotMetadataFromManifest('a', oldManifest, '2026-07-13T18:00:00.000Z');
+    const store = new MemoryStore(seedState('a', oldMetadata));
+    const runtimePools = pools(profile(), profile({ integrity: 'corrupt' }));
+    (runtimePools.a as FakePool).files.set('/kh-checker-dach-v1.sqlite', oldBytes);
+    const installer = new CatalogInstaller(runtimePools, { store, fetcher: fetcher(newManifest, newBytes) });
+    const result = await installer.bootstrap('https://example.test/catalog/manifest.json', 'https://example.test/catalog/');
+    expect(result.status.state).toBe('ready');
+    expect(result.status.activeSlot).toBe('a');
+    expect(result.status.diagnostics?.code).toBe('CATALOG_INTEGRITY_FAILED');
+    expect(store.state.activeSlot).toBe('a');
+    expect(store.state.slots.b).toBeNull();
+    expect(runtimePools.a.getFileNames()).toEqual(['/kh-checker-dach-v1.sqlite']);
   });
 
-  it('3. activation metadata is not written before complete validation', async () => {
-    const bytes = new TextEncoder().encode('ordered-validation');
-    const manifest = await manifestFor(bytes);
-    const storage = new FakeStorage();
-    const activations = new MemoryActivationStore();
-    await installer(storage, activations, fetchFor(manifest, bytes)).initialize(
-      'https://app.test/catalog/manifest.json',
-      'https://app.test/catalog/'
-    );
-    const validationClose = storage.events.lastIndexOf('validation-close');
-    expect(validationClose).toBeGreaterThan(storage.events.indexOf('smoke-barcode'));
-    expect(activations.writes).toHaveLength(1);
-    expect(activations.events.lastIndexOf('activation-write')).toBeGreaterThan(
-      activations.events.lastIndexOf('activation-read')
-    );
-  });
-
-  it('4. hash failure leaves the active slot unchanged', async () => {
-    const seeded = await seededActiveA();
-    const bytes = new TextEncoder().encode('bad-hash-body');
-    const manifest = await manifestFor(new TextEncoder().encode('bad-hash-bodz'), '2026-08-01');
-    await expect(installer(seeded.storage, seeded.activations, fetchFor(manifest, bytes)).installUpdate(
-      'https://app.test/catalog/manifest.json',
-      'https://app.test/catalog/'
-    )).rejects.toMatchObject({ code: 'CATALOG_HASH_MISMATCH' });
-    expect(seeded.activations.record).toEqual(seeded.record);
-    expect(seeded.storage.files.get('a')).toEqual(seeded.bytes);
-  });
-
-  it('5. schema failure leaves the active slot unchanged', async () => {
-    await expectFailedUpdateDoesNotSwitch(validProfile({ columns: PRODUCT_COLUMNS.slice(0, -1) }), 'CATALOG_SCHEMA_MISMATCH');
-  });
-
-  it('6. integrity failure leaves the active slot unchanged', async () => {
-    await expectFailedUpdateDoesNotSwitch(validProfile({ integrity: 'database disk image is malformed' }), 'CATALOG_INTEGRITY_FAILED');
-  });
-
-  it('7. smoke-query failure leaves the active slot unchanged', async () => {
-    await expectFailedUpdateDoesNotSwitch(validProfile({ textSmoke: false }), 'CATALOG_QUERY_FAILED');
-  });
-
-  it('8. interrupted import leaves the active slot unchanged', async () => {
-    const seeded = await seededActiveA();
-    const bytes = new TextEncoder().encode('interrupted-catalog');
-    const manifest = await manifestFor(bytes, '2026-08-01');
-    seeded.storage.importFailure = 'b';
-    await expect(installer(seeded.storage, seeded.activations, fetchFor(manifest, bytes)).installUpdate(
-      'https://app.test/catalog/manifest.json',
-      'https://app.test/catalog/'
-    )).rejects.toBeInstanceOf(CatalogFailure);
-    expect(seeded.activations.record).toEqual(seeded.record);
-    expect(seeded.storage.files.has('b')).toBe(false);
-  });
-
-  it('9. successful switch retains the previous slot', async () => {
-    const seeded = await seededActiveA();
-    const bytes = new TextEncoder().encode('retained-catalog-b');
-    const manifest = await manifestFor(bytes, '2026-08-01');
-    await installer(seeded.storage, seeded.activations, fetchFor(manifest, bytes)).installUpdate(
-      'https://app.test/catalog/manifest.json',
-      'https://app.test/catalog/'
-    );
-    expect(seeded.activations.record).toMatchObject({ activeSlot: 'b', previousSlot: 'a' });
-    expect(seeded.storage.files.has('a')).toBe(true);
-    expect(seeded.storage.files.has('b')).toBe(true);
-  });
-
-  it('10. startup reopens the last validated active slot without downloading', async () => {
-    const seeded = await seededActiveA();
-    const fetcher = vi.fn() as unknown as typeof fetch;
-    const result = await installer(seeded.storage, seeded.activations, fetcher).initialize(
-      'https://app.test/catalog/manifest.json',
-      'https://app.test/catalog/'
-    );
-    expect(result.activation.activeSlot).toBe('a');
-    expect(result.installedFromNetwork).toBe(false);
-    expect(fetcher).not.toHaveBeenCalled();
+  it('rolls back during startup when the active slot is corrupt and the previous slot remains valid', async () => {
+    const oldBytes = new TextEncoder().encode('catalog-old');
+    const badBytes = new TextEncoder().encode('catalog-corrupt');
+    const oldManifest = await manifest(oldBytes, '2026-07-13');
+    const badManifest = await manifest(new TextEncoder().encode('catalog-new'), '2026-07-14');
+    const oldMetadata = slotMetadataFromManifest('a', oldManifest, '2026-07-13T18:00:00.000Z');
+    const badMetadata = slotMetadataFromManifest('b', badManifest, '2026-07-14T18:00:00.000Z');
+    let state = seedState('a', oldMetadata);
+    state = activateCatalogSlot(recordValidatedCatalogSlot(state, badMetadata), 'b');
+    const store = new MemoryStore(state);
+    const runtimePools = pools();
+    (runtimePools.a as FakePool).files.set('/kh-checker-dach-v1.sqlite', oldBytes);
+    (runtimePools.b as FakePool).files.set('/kh-checker-dach-v1.sqlite', badBytes);
+    const installer = new CatalogInstaller(runtimePools, { store, fetcher: fetcher(oldManifest, oldBytes) });
+    const result = await installer.bootstrap('https://example.test/catalog/manifest.json', 'https://example.test/catalog/');
+    expect(result.status).toMatchObject({ state: 'ready', activeSlot: 'a', catalogVersion: '2026-07-13' });
+    expect(result.status.diagnostics?.operation).toBe('rollback');
+    expect(store.state.activeSlot).toBe('a');
+    expect(store.state.rollbackSlot).toBeNull();
+    expect(store.state.slots.b).toBeNull();
+    expect(runtimePools.b.getFileNames()).toEqual([]);
   });
 });

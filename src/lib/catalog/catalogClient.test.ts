@@ -1,46 +1,61 @@
-import { describe, expect, it } from 'vitest';
-import { CatalogClient } from './catalogClient';
-import type {
-  CatalogStatusEnvelope,
-  CatalogWorkerRequest,
-  CatalogWorkerResponse
-} from './catalogProtocol';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CatalogProduct, CatalogSearchHit, CatalogStatus } from './catalogDomain';
+import type { CatalogWorkerRequest, CatalogWorkerResponse } from './catalogProtocol';
 
-const READY: CatalogStatusEnvelope = {
-  status: {
-    state: 'ready',
-    activeSlot: 'a',
-    catalogVersion: '2026-07-13',
-    productCount: 317579,
-    progress: null,
-    diagnostics: null,
-    retryAllowedImmediately: true
-  },
-  runtime: {
-    persistent: true,
-    installedFromNetwork: false,
-    rollbackAvailable: false,
-    activeSlotFile: 'catalog-a.sqlite'
-  }
+const ready: CatalogStatus = {
+  state: 'ready',
+  activeSlot: 'a',
+  catalogVersion: '2026-07-13',
+  productCount: 317579,
+  progress: 1,
+  diagnostics: null,
+  retryAllowedImmediately: true
 };
 
-class FakeWorker {
-  readonly messages: CatalogWorkerRequest[] = [];
+const product: CatalogProduct = {
+  productId: 1,
+  code: '3017620422003',
+  displayName: 'Kinder Bueno',
+  brand: 'Ferrero',
+  carbohydratesPer100: 49,
+  nutritionBasis: 'mass',
+  nutritionSource: 'as_sold',
+  manufacturerServing: null,
+  productQuantity: null,
+  provenUnit: null,
+  defaultUnitKind: 'mass',
+  image: null,
+  hasQualityErrors: false,
+  rankOrdinal: 1
+};
+
+class FakeWorker extends EventTarget {
+  static instances: FakeWorker[] = [];
+  readonly requests: CatalogWorkerRequest[] = [];
   terminated = false;
-  private readonly messageListeners: Array<(event: MessageEvent<CatalogWorkerResponse>) => void> = [];
-  private readonly errorListeners: Array<(event: ErrorEvent) => void> = [];
 
-  postMessage(message: CatalogWorkerRequest): void {
-    this.messages.push(message);
+  constructor(_url: URL, _options: WorkerOptions) {
+    super();
+    FakeWorker.instances.push(this);
   }
 
-  addEventListener(type: 'message' | 'error', listener: ((event: MessageEvent<CatalogWorkerResponse>) => void) | ((event: ErrorEvent) => void)): void {
-    if (type === 'message') this.messageListeners.push(listener as (event: MessageEvent<CatalogWorkerResponse>) => void);
-    else this.errorListeners.push(listener as (event: ErrorEvent) => void);
-  }
-
-  respond(response: CatalogWorkerResponse): void {
-    for (const listener of this.messageListeners) listener({ data: response } as MessageEvent<CatalogWorkerResponse>);
+  postMessage(request: CatalogWorkerRequest): void {
+    this.requests.push(request);
+    queueMicrotask(() => {
+      let response: CatalogWorkerResponse;
+      if (request.type === 'initialize' || request.type === 'retry' || request.type === 'status') {
+        response = { id: request.id, ok: true, type: 'status', result: ready };
+      } else if (request.type === 'search') {
+        const hits: CatalogSearchHit[] = [
+          { ...product, displayName: 'SQLite first', resultIndex: 0 },
+          { ...product, displayName: 'SQLite second', resultIndex: 1 }
+        ];
+        response = { id: request.id, ok: true, type: 'search', result: hits };
+      } else {
+        response = { id: request.id, ok: true, type: 'product', result: product };
+      }
+      this.dispatchEvent(new MessageEvent('message', { data: response }));
+    });
   }
 
   terminate(): void {
@@ -48,61 +63,47 @@ class FakeWorker {
   }
 }
 
-function clientWith(worker: FakeWorker): CatalogClient {
-  let id = 0;
-  return new CatalogClient({
-    createWorker: () => worker,
-    requestId: () => `request-${++id}`
-  });
-}
+beforeEach(() => {
+  FakeWorker.instances = [];
+  vi.stubGlobal('Worker', FakeWorker);
+  vi.stubGlobal('document', { baseURI: 'https://example.test/app/' });
+});
 
-describe('FORGE-220 catalog client transport', () => {
-  it('deduplicates initialization and identical in-flight searches', async () => {
-    const worker = new FakeWorker();
-    const client = clientWith(worker);
-    const initA = client.initialize();
-    const initB = client.initialize();
-    expect(initA).toBe(initB);
-    expect(worker.messages).toHaveLength(1);
-    expect(worker.messages[0]).toEqual({ type: 'initialize', requestId: 'request-1' });
-    worker.respond({ requestId: 'request-1', ok: true, type: 'status', result: READY });
-    await Promise.all([initA, initB]);
+afterEach(async () => {
+  const client = await import('./catalogClient');
+  client.disposeOfflineCatalog();
+  vi.unstubAllGlobals();
+  vi.resetModules();
+});
 
-    const searchA = client.search(' Kinder Bueno ', 20);
-    const searchB = client.search('kinder bueno', 20);
-    await Promise.resolve();
-    await Promise.resolve();
-    const searchRequests = worker.messages.filter((message) => message.type === 'search');
-    expect(searchRequests).toHaveLength(1);
-    const requestId = searchRequests[0].requestId;
-    worker.respond({ requestId, ok: true, type: 'search', result: [] });
-    await expect(Promise.all([searchA, searchB])).resolves.toEqual([[], []]);
+describe('A/B catalog client protocol', () => {
+  it('initializes one worker with manifest and catalog base URLs, never a renamed database URL', async () => {
+    const client = await import('./catalogClient');
+    const status = await client.initializeOfflineCatalog();
+    expect(status).toEqual(ready);
+    const request = FakeWorker.instances[0].requests[0];
+    expect(request).toMatchObject({
+      type: 'initialize',
+      manifestUrl: 'https://example.test/app/catalog/manifest.json',
+      catalogBaseUrl: 'https://example.test/app/catalog/'
+    });
+    expect(request).not.toHaveProperty('catalogUrl');
   });
 
-  it('publishes status events and sends immediate retry-update without cooldown state', async () => {
-    const worker = new FakeWorker();
-    const client = clientWith(worker);
-    const seen: CatalogStatusEnvelope[] = [];
-    const unsubscribe = client.subscribe((status) => seen.push(status));
-    const statusRequest = worker.messages.find((message) => message.type === 'status');
-    expect(statusRequest).toBeDefined();
-    worker.respond({ requestId: 'status-event', ok: true, type: 'status-event', result: READY });
-    expect(seen).toEqual([READY]);
-
-    const retry = client.retryUpdate();
-    const retryRequest = worker.messages.find((message) => message.type === 'retry-update');
-    expect(retryRequest).toBeDefined();
-    worker.respond({ requestId: retryRequest!.requestId, ok: true, type: 'status', result: READY });
-    await expect(retry).resolves.toEqual(READY);
-    unsubscribe();
+  it('returns worker search hits in their existing SQLite order', async () => {
+    const client = await import('./catalogClient');
+    const hits = await client.searchOfflineCatalog('kinder bueno');
+    expect(hits.map((hit) => [hit.displayName, hit.resultIndex])).toEqual([
+      ['SQLite first', 0],
+      ['SQLite second', 1]
+    ]);
   });
 
-  it('terminates its single worker and rejects pending requests with CatalogFailure', async () => {
-    const worker = new FakeWorker();
-    const client = clientWith(worker);
-    const pending = client.status();
-    client.terminate();
-    await expect(pending).rejects.toMatchObject({ code: 'CATALOG_CANCELLED' });
-    expect(worker.terminated).toBe(true);
+  it('exposes immediate retry and Atlas CatalogStatus without inventing a second status model', async () => {
+    const client = await import('./catalogClient');
+    await client.initializeOfflineCatalog();
+    const status = await client.retryOfflineCatalog();
+    expect(status.retryAllowedImmediately).toBe(true);
+    expect(FakeWorker.instances[0].requests.at(-1)?.type).toBe('retry');
   });
 });

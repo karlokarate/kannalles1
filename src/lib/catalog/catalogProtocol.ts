@@ -6,7 +6,7 @@ import type {
   CatalogStatus
 } from './catalogDomain';
 
-/** Transport-normalized form of Catalog/catalog-manifest.v1.json. */
+/** Transport-only projection of the immutable production manifest. */
 export interface CatalogManifest {
   readonly contract: 'kh-checker-offline-catalog-production';
   readonly contractVersion: string;
@@ -31,32 +31,36 @@ export interface CatalogManifest {
 }
 
 export type CatalogWorkerRequest =
-  | { readonly type: 'initialize'; readonly requestId: string }
-  | { readonly type: 'status'; readonly requestId: string }
-  | { readonly type: 'search'; readonly requestId: string; readonly query: string; readonly limit: number }
-  | { readonly type: 'product'; readonly requestId: string; readonly code: string }
-  | { readonly type: 'retry-update'; readonly requestId: string };
-
-/** Runtime-only facts supplement Atlas CatalogStatus without redefining it. */
-export interface CatalogRuntimeFacts {
-  readonly persistent: boolean;
-  readonly installedFromNetwork: boolean;
-  readonly rollbackAvailable: boolean;
-  readonly activeSlotFile: string | null;
-}
-
-export interface CatalogStatusEnvelope {
-  readonly status: CatalogStatus;
-  readonly runtime: CatalogRuntimeFacts;
-}
+  | {
+      readonly id: number;
+      readonly type: 'initialize' | 'retry';
+      readonly sqliteModuleUrl: string;
+      readonly manifestUrl: string;
+      readonly catalogBaseUrl: string;
+    }
+  | {
+      readonly id: number;
+      readonly type: 'search';
+      readonly query: string;
+      readonly limit: number;
+    }
+  | {
+      readonly id: number;
+      readonly type: 'product';
+      readonly barcode: string;
+    }
+  | {
+      readonly id: number;
+      readonly type: 'status';
+    };
 
 export type CatalogWorkerSuccess =
-  | { readonly requestId: string; readonly ok: true; readonly type: 'status'; readonly result: CatalogStatusEnvelope }
-  | { readonly requestId: string; readonly ok: true; readonly type: 'search'; readonly result: readonly CatalogSearchHit[] }
-  | { readonly requestId: string; readonly ok: true; readonly type: 'product'; readonly result: CatalogProduct | null };
+  | { readonly id: number; readonly ok: true; readonly type: 'status'; readonly result: CatalogStatus }
+  | { readonly id: number; readonly ok: true; readonly type: 'search'; readonly result: readonly CatalogSearchHit[] }
+  | { readonly id: number; readonly ok: true; readonly type: 'product'; readonly result: CatalogProduct | null };
 
 export interface CatalogWorkerFailure {
-  readonly requestId: string;
+  readonly id: number;
   readonly ok: false;
   readonly error: {
     readonly name: 'CatalogFailure';
@@ -67,10 +71,10 @@ export interface CatalogWorkerFailure {
 }
 
 export interface CatalogWorkerStatusEvent {
-  readonly requestId: 'status-event';
+  readonly id: 0;
   readonly ok: true;
   readonly type: 'status-event';
-  readonly result: CatalogStatusEnvelope;
+  readonly result: CatalogStatus;
 }
 
 export type CatalogWorkerResponse = CatalogWorkerSuccess | CatalogWorkerFailure | CatalogWorkerStatusEvent;

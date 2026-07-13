@@ -1,29 +1,27 @@
 import {
-  CATALOG_APPLICATION_ID,
   CATALOG_RESCUE_BARCODE_SQL,
   CATALOG_SEARCH_SQL,
-  CATALOG_USER_VERSION,
   buildCatalogFtsQuery,
   packStandardGtin
 } from '../../../Catalog/catalog-runtime.generated';
+import type { CatalogDiagnostics, CatalogSlotId, CatalogStatus } from './catalogDomain';
 import { CatalogFailure, isCatalogFailure, toCatalogFailure } from './catalogErrors';
-import type { CatalogDiagnostics, CatalogSlotId } from './catalogDomain';
 import { fetchCatalogManifest, resolveCatalogArtifactUrl } from './catalogManifest';
+import type { CatalogSqlRow } from './catalogProjection';
 import type { CatalogManifest } from './catalogProtocol';
 import {
-  CATALOG_SLOT_FILES,
-  type CatalogActivationRecord,
-  type CatalogActivationStore,
-  inactiveSlot
+  type CatalogSlotMetadata,
+  type CatalogSlotState,
+  type CatalogSlotStateStore,
+  CatalogSlotStore,
+  activateCatalogSlot,
+  catalogSlotDatabasePath,
+  discardCatalogSlot,
+  inactiveCatalogSlot,
+  recordValidatedCatalogSlot,
+  rollbackCatalogSlot,
+  slotMetadataFromManifest
 } from './catalogSlots';
-
-const PRODUCT_COLUMNS = ['id', 'g', 'n', 'b', 'c', 's', 'q', 'u', 'm', 'r'] as const;
-const SMOKE_TEXT_QUERY = 'kinder bueno';
-const SMOKE_BARCODE = '4008400322728';
-const PRODUCT_BY_ID_SQL = `
-SELECT p.id,p.g,p.n,d.v AS brand,p.c,p.s,p.q,p.u,p.m,p.r
-FROM p LEFT JOIN d ON d.id=p.b
-WHERE p.id=? LIMIT 1`;
 
 export interface CatalogDatabase {
   exec(input: string | {
@@ -36,490 +34,373 @@ export interface CatalogDatabase {
   close(): void;
 }
 
-export interface CatalogSlotStorage {
-  hasSlot(slot: CatalogSlotId): boolean | Promise<boolean>;
-  importSlot(slot: CatalogSlotId, bytes: Uint8Array): void | Promise<void>;
-  removeSlot(slot: CatalogSlotId): void | Promise<void>;
-  readSlot(slot: CatalogSlotId): Uint8Array | Promise<Uint8Array>;
-  openSlot(slot: CatalogSlotId): CatalogDatabase;
+export interface CatalogPool {
+  readonly OpfsSAHPoolDb: new (filename: string, flags?: string) => CatalogDatabase;
+  getFileNames(): string[];
+  importDb(filename: string, bytes: Uint8Array): unknown;
+  exportFile(filename: string): Uint8Array;
+  unlink(filename: string): unknown;
 }
 
-export interface CatalogInstallerDependencies {
-  readonly storage: CatalogSlotStorage;
-  readonly activations: CatalogActivationStore;
-  readonly fetch: typeof fetch;
-  readonly now?: () => string;
-}
+export type CatalogPools = Readonly<Record<CatalogSlotId, CatalogPool>>;
+export interface CatalogRuntimeHandle { readonly database: CatalogDatabase; readonly status: CatalogStatus }
+interface Options { readonly store?: CatalogSlotStateStore; readonly fetcher?: typeof fetch; readonly now?: () => string }
+interface Opened { readonly database: CatalogDatabase; readonly metadata: CatalogSlotMetadata }
+type Publish = (status: CatalogStatus) => void;
 
-export interface CatalogOpenResult {
-  readonly database: CatalogDatabase;
-  readonly activation: CatalogActivationRecord;
-  readonly productCount: number;
-  readonly installedFromNetwork: boolean;
-  readonly diagnostics: CatalogDiagnostics | null;
-}
+const PRODUCT_COLUMNS = ['id', 'g', 'n', 'b', 'c', 's', 'q', 'u', 'm', 'r'];
+const BRAND_COLUMNS = ['id', 'v'];
+const SMOKE_QUERY = 'kinder bueno';
+const SMOKE_BARCODE = '4008400322728';
+const PRODUCT_BY_ID_SQL = `
+SELECT p.id,p.g,p.n,d.v AS brand,p.c,p.s,p.q,p.u,p.m,p.r
+FROM p LEFT JOIN d ON d.id=p.b
+WHERE p.id=? LIMIT 1`;
 
-interface ValidationContext {
-  readonly slot: CatalogSlotId;
-  readonly activeSlot: CatalogSlotId | null;
-  readonly catalogVersion: string | null;
-  readonly manifest: CatalogManifest | null;
-}
-
-function failure(
-  code: ConstructorParameters<typeof CatalogFailure>[0],
-  message: string,
-  context: ValidationContext,
-  cause?: unknown,
-  details: Readonly<Record<string, string | number | boolean | null>> = {}
-): CatalogFailure {
-  return new CatalogFailure(code, message, {
-    operation: 'validate',
-    activeSlot: context.activeSlot,
-    attemptedSlot: context.slot,
-    catalogVersion: context.catalogVersion,
-    cause,
-    details
-  });
-}
-
-function queryRows(
+function queryRows<T extends Record<string, unknown>>(
   database: CatalogDatabase,
   sql: string,
   bind: readonly unknown[] = []
-): Record<string, unknown>[] {
-  const rows: Record<string, unknown>[] = [];
-  database.exec({
-    sql,
-    bind,
-    rowMode: 'object',
-    callback: (row) => rows.push(row)
-  });
-  return rows;
+): T[] {
+  const result: T[] = [];
+  database.exec({ sql, bind, rowMode: 'object', callback: (row) => result.push(row as T) });
+  return result;
 }
 
-function firstValue(row: Record<string, unknown> | undefined): unknown {
-  return row ? Object.values(row)[0] : undefined;
+function close(database: CatalogDatabase | null): void {
+  try { database?.close(); } catch { /* validation authority already decided */ }
 }
 
-function exactColumns(rows: readonly Record<string, unknown>[]): readonly string[] {
-  return rows.map((row) => String(row.name ?? ''));
-}
-
-export function validateCatalogDatabase(
-  database: CatalogDatabase,
-  context: ValidationContext
-): { readonly productCount: number } {
-  const manifest = context.manifest;
-  const expectedApplicationId = manifest?.applicationId ?? CATALOG_APPLICATION_ID;
-  const expectedUserVersion = manifest?.userVersion ?? CATALOG_USER_VERSION;
-  const expectedPageSize = manifest?.pageSize ?? 4096;
-
-  try {
-    const applicationId = Number(database.selectValue('PRAGMA application_id'));
-    if (applicationId !== expectedApplicationId) {
-      throw failure(
-        'CATALOG_APPLICATION_ID_MISMATCH',
-        'Die SQLite application_id passt nicht zur Katalogauthority.',
-        context,
-        undefined,
-        { expectedApplicationId, applicationId }
-      );
-    }
-
-    const userVersion = Number(database.selectValue('PRAGMA user_version'));
-    if (userVersion !== expectedUserVersion) {
-      throw failure(
-        'CATALOG_USER_VERSION_MISMATCH',
-        'Die SQLite user_version passt nicht zur Katalogauthority.',
-        context,
-        undefined,
-        { expectedUserVersion, userVersion }
-      );
-    }
-
-    const pageSize = Number(database.selectValue('PRAGMA page_size'));
-    if (pageSize !== expectedPageSize) {
-      throw failure(
-        'CATALOG_SCHEMA_MISMATCH',
-        'Die SQLite-Seitengröße passt nicht zum Manifest.',
-        context,
-        undefined,
-        { expectedPageSize, pageSize }
-      );
-    }
-
-    const columns = exactColumns(queryRows(database, 'PRAGMA table_info(p)'));
-    if (columns.length !== PRODUCT_COLUMNS.length || columns.some((column, index) => column !== PRODUCT_COLUMNS[index])) {
-      throw failure(
-        'CATALOG_SCHEMA_MISMATCH',
-        'Die Produkttabelle besitzt nicht das Production-v1-Schema.',
-        context,
-        undefined,
-        { expectedColumns: PRODUCT_COLUMNS.join(','), actualColumns: columns.join(',') }
-      );
-    }
-
-    const ftsDefinition = firstValue(queryRows(
-      database,
-      "SELECT sql FROM sqlite_schema WHERE type='table' AND name='x' LIMIT 1"
-    )[0]);
-    if (typeof ftsDefinition !== 'string' || !/\bfts5\b/i.test(ftsDefinition)) {
-      throw failure('CATALOG_SCHEMA_MISMATCH', 'Der erforderliche FTS5-Suchindex x fehlt.', context);
-    }
-
-    const integrityRows = queryRows(database, 'PRAGMA integrity_check');
-    const integrityValues = integrityRows.map((row) => String(firstValue(row) ?? ''));
-    if (integrityValues.length !== 1 || integrityValues[0] !== 'ok') {
-      throw failure(
-        'CATALOG_INTEGRITY_FAILED',
-        'SQLite integrity_check ist fehlgeschlagen.',
-        context,
-        undefined,
-        { integrity: integrityValues.join('; ') || 'empty' }
-      );
-    }
-
-    const productCount = Number(database.selectValue('SELECT count(*) FROM p'));
-    if (!Number.isSafeInteger(productCount) || productCount <= 0) {
-      throw failure('CATALOG_PRODUCT_COUNT_MISMATCH', 'Die Produkttabelle ist leer oder unlesbar.', context);
-    }
-    if (manifest && productCount !== manifest.productCount) {
-      throw failure(
-        'CATALOG_PRODUCT_COUNT_MISMATCH',
-        'Die Produktanzahl passt nicht zum Manifest.',
-        context,
-        undefined,
-        { expectedProductCount: manifest.productCount, productCount }
-      );
-    }
-
-    const ftsQuery = buildCatalogFtsQuery(SMOKE_TEXT_QUERY);
-    if (!ftsQuery) {
-      throw failure('CATALOG_QUERY_FAILED', 'Die Runtime konnte die Smoke-Suchanfrage nicht kanonisieren.', context);
-    }
-    const textSmoke = queryRows(database, CATALOG_SEARCH_SQL, [
-      ftsQuery,
-      SMOKE_TEXT_QUERY,
-      SMOKE_TEXT_QUERY,
-      SMOKE_TEXT_QUERY,
-      1
-    ]);
-    if (textSmoke.length !== 1) {
-      throw failure(
-        'CATALOG_QUERY_FAILED',
-        'Die reale Text-Smoke-Query lieferte kein Ergebnis.',
-        context,
-        undefined,
-        { smokeQuery: SMOKE_TEXT_QUERY, hits: textSmoke.length }
-      );
-    }
-
-    const packedBarcode = packStandardGtin(SMOKE_BARCODE);
-    if (packedBarcode === null) {
-      throw failure('CATALOG_QUERY_FAILED', 'Die Runtime konnte den Smoke-Barcode nicht codieren.', context);
-    }
-    const barcodeSmoke = queryRows(database, PRODUCT_BY_ID_SQL, [packedBarcode]);
-    if (barcodeSmoke.length !== 1) {
-      const rescueSmoke = queryRows(database, CATALOG_RESCUE_BARCODE_SQL, [SMOKE_BARCODE]);
-      if (rescueSmoke.length !== 1) {
-        throw failure(
-          'CATALOG_QUERY_FAILED',
-          'Die reale Barcode-Smoke-Query lieferte kein Ergebnis.',
-          context,
-          undefined,
-          { smokeBarcode: SMOKE_BARCODE }
-        );
-      }
-    }
-
-    return { productCount };
-  } catch (error) {
-    if (isCatalogFailure(error)) throw error;
-    throw failure('CATALOG_QUERY_FAILED', 'Die Katalogvalidierung konnte nicht abgeschlossen werden.', context, error);
+function clear(pool: CatalogPool): void {
+  for (const file of pool.getFileNames()) {
+    try { pool.unlink(file); } catch { /* inactive cleanup is best effort */ }
   }
 }
 
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join('');
+function ready(metadata: CatalogSlotMetadata, diagnostics: CatalogDiagnostics | null = null): CatalogStatus {
+  return {
+    state: 'ready', activeSlot: metadata.slot, catalogVersion: metadata.catalogVersion,
+    productCount: metadata.productCount, progress: 1, diagnostics, retryAllowedImmediately: true
+  };
 }
 
-async function downloadCatalog(
+function transient(
+  state: 'checking' | 'downloading' | 'installing',
+  metadata: CatalogSlotMetadata | null,
+  progress: number | null
+): CatalogStatus {
+  return {
+    state, activeSlot: metadata?.slot ?? null, catalogVersion: metadata?.catalogVersion ?? null,
+    productCount: metadata?.productCount ?? null, progress, diagnostics: null, retryAllowedImmediately: true
+  };
+}
+
+async function hash(bytes: Uint8Array): Promise<string> {
+  const data = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+function exactColumns(database: CatalogDatabase, table: string, expected: readonly string[]): boolean {
+  const actual = queryRows(database, `PRAGMA table_info(${table})`).map((row) => String(row.name ?? ''));
+  return actual.length === expected.length && actual.every((name, index) => name === expected[index]);
+}
+
+function validate(database: CatalogDatabase, expected: CatalogManifest | CatalogSlotMetadata): void {
+  const slot = 'slot' in expected ? expected.slot : null;
+  const common = { operation: 'validate' as const, activeSlot: slot, catalogVersion: expected.catalogVersion };
+  const applicationId = Number(database.selectValue('PRAGMA application_id'));
+  if (applicationId !== expected.applicationId) {
+    throw new CatalogFailure('CATALOG_APPLICATION_ID_MISMATCH', 'SQLite application_id passt nicht zum Manifest.', {
+      ...common, details: { expectedApplicationId: expected.applicationId, applicationId }
+    });
+  }
+  const userVersion = Number(database.selectValue('PRAGMA user_version'));
+  if (userVersion !== expected.userVersion) {
+    throw new CatalogFailure('CATALOG_USER_VERSION_MISMATCH', 'SQLite user_version passt nicht zum Manifest.', {
+      ...common, details: { expectedUserVersion: expected.userVersion, userVersion }
+    });
+  }
+  const pageSize = Number(database.selectValue('PRAGMA page_size'));
+  if (pageSize !== expected.pageSize) {
+    throw new CatalogFailure('CATALOG_SCHEMA_MISMATCH', 'SQLite page_size passt nicht zum Manifest.', {
+      ...common, details: { expectedPageSize: expected.pageSize, pageSize }
+    });
+  }
+  if (!exactColumns(database, 'p', PRODUCT_COLUMNS) || !exactColumns(database, 'd', BRAND_COLUMNS)) {
+    throw new CatalogFailure('CATALOG_SCHEMA_MISMATCH', 'Die Production-v1-Tabellenspalten stimmen nicht exakt.', common);
+  }
+  const fts = String(database.selectValue("SELECT sql FROM sqlite_schema WHERE type='table' AND name='x'") ?? '');
+  if (!/\bfts5\s*\(/i.test(fts) || !/content\s*=\s*''/i.test(fts)) {
+    throw new CatalogFailure('CATALOG_SCHEMA_MISMATCH', 'Der contentless FTS5-Suchindex x fehlt.', common);
+  }
+  const integrity = queryRows(database, 'PRAGMA integrity_check').map((row) => String(Object.values(row)[0] ?? ''));
+  if (integrity.length !== 1 || integrity[0] !== 'ok') {
+    throw new CatalogFailure('CATALOG_INTEGRITY_FAILED', 'SQLite integrity_check ist fehlgeschlagen.', {
+      ...common, details: { integrity: integrity.join('; ') || 'empty' }
+    });
+  }
+  const productCount = Number(database.selectValue('SELECT count(*) FROM p'));
+  if (productCount !== expected.productCount) {
+    throw new CatalogFailure('CATALOG_PRODUCT_COUNT_MISMATCH', 'Die Produktanzahl passt nicht zum Manifest.', {
+      ...common, details: { expectedProductCount: expected.productCount, productCount }
+    });
+  }
+  const brandCount = Number(database.selectValue('SELECT count(*) FROM d'));
+  if (brandCount !== expected.brandCount) {
+    throw new CatalogFailure('CATALOG_SCHEMA_MISMATCH', 'Die Markenanzahl passt nicht zum Manifest.', {
+      ...common, details: { expectedBrandCount: expected.brandCount, brandCount }
+    });
+  }
+  const ftsQuery = buildCatalogFtsQuery(SMOKE_QUERY);
+  const textHits = ftsQuery
+    ? queryRows<CatalogSqlRow>(database, CATALOG_SEARCH_SQL, [ftsQuery, SMOKE_QUERY, SMOKE_QUERY, SMOKE_QUERY, 1])
+    : [];
+  if (textHits.length !== 1) {
+    throw new CatalogFailure('CATALOG_QUERY_FAILED', 'Die reale Text-Smoke-Query lieferte kein Ergebnis.', common);
+  }
+  const packed = packStandardGtin(SMOKE_BARCODE);
+  const barcodeHits = packed === null ? [] : queryRows(database, PRODUCT_BY_ID_SQL, [packed]);
+  const rescueHits = barcodeHits.length ? [] : queryRows(database, CATALOG_RESCUE_BARCODE_SQL, [SMOKE_BARCODE]);
+  if (barcodeHits.length !== 1 && rescueHits.length !== 1) {
+    throw new CatalogFailure('CATALOG_QUERY_FAILED', 'Die reale Barcode-Smoke-Query lieferte kein Ergebnis.', common);
+  }
+}
+
+async function download(
   fetcher: typeof fetch,
   manifest: CatalogManifest,
-  catalogBaseUrl: string,
+  baseUrl: string,
   activeSlot: CatalogSlotId | null
 ): Promise<Uint8Array> {
-  const artifactUrl = resolveCatalogArtifactUrl(manifest, catalogBaseUrl);
   let response: Response;
   try {
-    response = await fetcher(artifactUrl, { cache: 'no-store', credentials: 'same-origin' });
+    response = await fetcher(resolveCatalogArtifactUrl(manifest, baseUrl), {
+      cache: 'no-store', credentials: 'same-origin'
+    });
   } catch (cause) {
     throw new CatalogFailure('CATALOG_DOWNLOAD_FAILED', 'Der SQLite-Katalog konnte nicht geladen werden.', {
-      operation: 'download',
-      activeSlot,
-      catalogVersion: manifest.catalogVersion,
-      cause,
-      details: { filename: manifest.filename }
+      operation: 'download', activeSlot, catalogVersion: manifest.catalogVersion, cause
     });
   }
   if (!response.ok) {
     throw new CatalogFailure('CATALOG_DOWNLOAD_FAILED', `SQLite-Katalog nicht erreichbar (HTTP ${response.status}).`, {
-      operation: 'download',
-      activeSlot,
-      catalogVersion: manifest.catalogVersion,
-      details: { filename: manifest.filename, status: response.status }
+      operation: 'download', activeSlot, catalogVersion: manifest.catalogVersion, details: { status: response.status }
     });
   }
-  const declaredLength = response.headers.get('content-length');
-  if (declaredLength !== null && Number(declaredLength) !== manifest.sizeBytes) {
-    throw new CatalogFailure('CATALOG_SIZE_MISMATCH', 'Die HTTP-Länge des SQLite-Katalogs passt nicht zum Manifest.', {
-      operation: 'download',
-      activeSlot,
-      catalogVersion: manifest.catalogVersion,
-      details: { expectedBytes: manifest.sizeBytes, responseBytes: Number(declaredLength) }
-    });
-  }
+  const declared = response.headers.get('content-length');
   const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength !== manifest.sizeBytes) {
+  if ((declared !== null && Number(declared) !== manifest.sizeBytes) || bytes.byteLength !== manifest.sizeBytes) {
     throw new CatalogFailure('CATALOG_SIZE_MISMATCH', 'Die Byte-Länge des SQLite-Katalogs passt nicht zum Manifest.', {
-      operation: 'download',
-      activeSlot,
-      catalogVersion: manifest.catalogVersion,
+      operation: 'download', activeSlot, catalogVersion: manifest.catalogVersion,
       details: { expectedBytes: manifest.sizeBytes, actualBytes: bytes.byteLength }
     });
   }
-  const actualHash = await sha256Hex(bytes);
-  if (actualHash !== manifest.sha256.toLowerCase()) {
+  const actual = await hash(bytes);
+  if (actual !== manifest.sha256) {
     throw new CatalogFailure('CATALOG_HASH_MISMATCH', 'Die SHA-256-Prüfung des SQLite-Katalogs ist fehlgeschlagen.', {
-      operation: 'download',
-      activeSlot,
-      catalogVersion: manifest.catalogVersion,
-      details: { expectedSha256: manifest.sha256, actualSha256: actualHash }
+      operation: 'download', activeSlot, catalogVersion: manifest.catalogVersion,
+      details: { expectedSha256: manifest.sha256, actualSha256: actual }
     });
   }
   return bytes;
 }
 
 export class CatalogInstaller {
+  private readonly store: CatalogSlotStateStore;
+  private readonly fetcher: typeof fetch;
   private readonly now: () => string;
 
-  constructor(private readonly dependencies: CatalogInstallerDependencies) {
-    this.now = dependencies.now ?? (() => new Date().toISOString());
+  constructor(private readonly pools: CatalogPools, options: Options = {}) {
+    this.store = options.store ?? new CatalogSlotStore();
+    this.fetcher = options.fetcher ?? fetch;
+    this.now = options.now ?? (() => new Date().toISOString());
   }
 
-  async initialize(manifestUrl: string, catalogBaseUrl: string): Promise<CatalogOpenResult> {
-    const activation = await this.dependencies.activations.readActivationRecord();
-    if (!activation) return this.installUpdate(manifestUrl, catalogBaseUrl);
-    return this.openPersistedActivation(activation);
-  }
+  async bootstrap(manifestUrl: string, catalogBaseUrl: string, publish: Publish = () => undefined): Promise<CatalogRuntimeHandle> {
+    publish(transient('checking', null, null));
+    let state = await this.store.read();
+    const recovered = await this.recover(state);
+    state = recovered.state;
+    let activeDatabase = recovered.opened?.database ?? null;
+    const activeMetadata = recovered.opened?.metadata ?? null;
+    if (activeMetadata) publish(ready(activeMetadata, recovered.diagnostics));
 
-  async installUpdate(manifestUrl: string, catalogBaseUrl: string): Promise<CatalogOpenResult> {
-    const current = await this.dependencies.activations.readActivationRecord();
-    const activeSlot = current?.activeSlot ?? null;
     let manifest: CatalogManifest;
     try {
-      manifest = await fetchCatalogManifestWith(this.dependencies.fetch, manifestUrl);
+      manifest = await fetchCatalogManifest(manifestUrl, undefined, this.fetcher);
     } catch (error) {
-      throw toCatalogFailure(error, 'CATALOG_MANIFEST_UNAVAILABLE', 'Das Produktions-Katalogmanifest ist nicht verfügbar.', {
-        operation: 'manifest',
-        activeSlot,
-        catalogVersion: current?.catalogVersion ?? null
-      });
+      if (activeDatabase && activeMetadata) {
+        const failure = toCatalogFailure(error, 'CATALOG_MANIFEST_UNAVAILABLE', 'Das Katalogmanifest ist nicht verfügbar; der validierte Slot bleibt aktiv.', {
+          operation: 'manifest', activeSlot: activeMetadata.slot, catalogVersion: activeMetadata.catalogVersion
+        });
+        const status = ready(activeMetadata, failure.diagnostics);
+        publish(status);
+        return { database: activeDatabase, status };
+      }
+      throw error;
     }
 
-    if (current && current.sha256 === manifest.sha256 && current.catalogVersion === manifest.catalogVersion) {
-      return this.openPersistedActivation(current);
+    if (activeDatabase && activeMetadata
+      && activeMetadata.sha256 === manifest.sha256
+      && activeMetadata.catalogVersion === manifest.catalogVersion
+      && activeMetadata.filename === manifest.filename) {
+      const status = ready(activeMetadata, recovered.diagnostics);
+      publish(status);
+      return { database: activeDatabase, status };
     }
 
-    const targetSlot = inactiveSlot(activeSlot);
-    const bytes = await downloadCatalog(this.dependencies.fetch, manifest, catalogBaseUrl, activeSlot);
-    let validationDatabase: CatalogDatabase | null = null;
-    let runtimeDatabase: CatalogDatabase | null = null;
+    publish(transient('downloading', activeMetadata, 0));
+    let bytes: Uint8Array;
     try {
-      await this.dependencies.storage.removeSlot(targetSlot);
-      await this.dependencies.storage.importSlot(targetSlot, bytes);
-      validationDatabase = this.dependencies.storage.openSlot(targetSlot);
-      const validated = validateCatalogDatabase(validationDatabase, {
-        slot: targetSlot,
-        activeSlot,
-        catalogVersion: manifest.catalogVersion,
-        manifest
-      });
-      validationDatabase.close();
-      validationDatabase = null;
-
-      // Reopen the completely validated candidate before changing the sole active
-      // pointer. This proves startup readiness while the previous slot is still
-      // authoritative, including on a first install where no rollback slot exists.
-      runtimeDatabase = this.dependencies.storage.openSlot(targetSlot);
-      const nextRecord: CatalogActivationRecord = {
-        activeSlot: targetSlot,
-        catalogVersion: manifest.catalogVersion,
-        sha256: manifest.sha256,
-        validatedAt: this.now(),
-        previousSlot: activeSlot
-      };
-      await this.dependencies.activations.activateValidatedSlot(nextRecord);
-
-      return {
-        database: runtimeDatabase,
-        activation: nextRecord,
-        productCount: validated.productCount,
-        installedFromNetwork: true,
-        diagnostics: null
-      };
+      bytes = await download(this.fetcher, manifest, catalogBaseUrl, state.activeSlot);
     } catch (error) {
-      validationDatabase?.close();
-      runtimeDatabase?.close();
-      await this.removeFailedInactiveSlot(targetSlot);
-      throw toCatalogFailure(error, 'CATALOG_IMPORT_FAILED', 'Der inaktive Katalogslot konnte nicht installiert werden.', {
-        operation: 'install',
-        activeSlot,
-        attemptedSlot: targetSlot,
-        catalogVersion: manifest.catalogVersion
-      });
+      return this.fallback(error, activeDatabase, activeMetadata, publish);
     }
-  }
 
-  private async openPersistedActivation(activation: CatalogActivationRecord): Promise<CatalogOpenResult> {
-    let database: CatalogDatabase | null = null;
+    publish(transient('installing', activeMetadata, 0.5));
+    const target = inactiveCatalogSlot(state.activeSlot);
+    const pool = this.pools[target];
+    const path = catalogSlotDatabasePath(manifest.filename);
+    let checking: CatalogDatabase | null = null;
     try {
-      if (!await this.dependencies.storage.hasSlot(activation.activeSlot)) {
-        throw new CatalogFailure('CATALOG_OPEN_FAILED', 'Der aktive Katalogslot fehlt im OPFS.', {
-          operation: 'open',
-          activeSlot: activation.activeSlot,
-          catalogVersion: activation.catalogVersion
+      clear(pool);
+      pool.importDb(path, bytes);
+      const persisted = pool.exportFile(path);
+      if (persisted.byteLength !== manifest.sizeBytes || await hash(persisted) !== manifest.sha256) {
+        throw new CatalogFailure('CATALOG_HASH_MISMATCH', 'Der persistierte inaktive Slot stimmt nicht mit dem Manifest überein.', {
+          operation: 'validate', activeSlot: state.activeSlot, attemptedSlot: target,
+          catalogVersion: manifest.catalogVersion
         });
       }
-      const bytes = await this.dependencies.storage.readSlot(activation.activeSlot);
-      const actualHash = await sha256Hex(bytes);
-      if (actualHash !== activation.sha256) {
-        throw new CatalogFailure('CATALOG_HASH_MISMATCH', 'Der persistierte aktive Katalogslot hat eine ungültige SHA-256.', {
-          operation: 'open',
-          activeSlot: activation.activeSlot,
-          catalogVersion: activation.catalogVersion,
-          details: { expectedSha256: activation.sha256, actualSha256: actualHash }
-        });
+      checking = new pool.OpfsSAHPoolDb(path, 'r');
+      checking.exec('PRAGMA query_only=ON; PRAGMA temp_store=MEMORY;');
+      validate(checking, manifest);
+      close(checking);
+      checking = null;
+
+      const metadata = slotMetadataFromManifest(target, manifest, this.now());
+      const activated = activateCatalogSlot(
+        recordValidatedCatalogSlot(discardCatalogSlot(state, target), metadata),
+        target
+      );
+      await this.store.write(activated);
+
+      let opened: CatalogDatabase | null = null;
+      try {
+        opened = new pool.OpfsSAHPoolDb(path, 'r');
+        opened.exec('PRAGMA query_only=ON; PRAGMA temp_store=MEMORY;');
+        validate(opened, metadata);
+      } catch (error) {
+        close(opened);
+        await this.store.write(state);
+        clear(pool);
+        return this.fallback(
+          toCatalogFailure(error, 'CATALOG_OPEN_FAILED', 'Der aktivierte Slot konnte nicht geöffnet werden; der vorherige Slot bleibt aktiv.', {
+            operation: 'rollback', activeSlot: state.activeSlot, attemptedSlot: target,
+            catalogVersion: activeMetadata?.catalogVersion ?? null
+          }),
+          activeDatabase,
+          activeMetadata,
+          publish
+        );
       }
-      database = this.dependencies.storage.openSlot(activation.activeSlot);
-      const validated = validateCatalogDatabase(database, {
-        slot: activation.activeSlot,
-        activeSlot: activation.activeSlot,
-        catalogVersion: activation.catalogVersion,
-        manifest: null
-      });
-      return {
-        database,
-        activation,
-        productCount: validated.productCount,
-        installedFromNetwork: false,
-        diagnostics: null
-      };
+      close(activeDatabase);
+      activeDatabase = null;
+      const status = ready(metadata);
+      publish(status);
+      return { database: opened as CatalogDatabase, status };
     } catch (error) {
-      database?.close();
-      if (activation.previousSlot) {
-        return this.rollbackAfterFailedStartup(activation, error);
-      }
-      throw toCatalogFailure(error, 'CATALOG_OPEN_FAILED', 'Der aktive Katalogslot konnte nicht geöffnet werden.', {
-        operation: 'open',
-        activeSlot: activation.activeSlot,
-        catalogVersion: activation.catalogVersion
-      });
+      close(checking);
+      clear(pool);
+      return this.fallback(error, activeDatabase, activeMetadata, publish);
     }
   }
 
-  private async rollbackAfterFailedStartup(
-    failedActivation: CatalogActivationRecord,
-    cause: unknown
-  ): Promise<CatalogOpenResult> {
-    const rollbackSlot = failedActivation.previousSlot;
-    if (!rollbackSlot || !await this.dependencies.storage.hasSlot(rollbackSlot)) {
-      throw toCatalogFailure(cause, 'CATALOG_OPEN_FAILED', 'Aktiver und vorheriger Katalogslot sind nicht verfügbar.', {
-        operation: 'rollback',
-        activeSlot: failedActivation.activeSlot,
-        attemptedSlot: rollbackSlot,
-        catalogVersion: failedActivation.catalogVersion
+  private async recover(state: CatalogSlotState): Promise<{
+    readonly state: CatalogSlotState;
+    readonly opened: Opened | null;
+    readonly diagnostics: CatalogDiagnostics | null;
+  }> {
+    if (!state.activeSlot) return { state, opened: null, diagnostics: null };
+    const failed = state.activeSlot;
+    try {
+      return { state, opened: await this.open(failed, state.slots[failed] as CatalogSlotMetadata), diagnostics: null };
+    } catch (cause) {
+      if (state.rollbackSlot && state.slots[state.rollbackSlot]) {
+        const rollback = state.rollbackSlot;
+        try {
+          const opened = await this.open(rollback, state.slots[rollback] as CatalogSlotMetadata);
+          const next = rollbackCatalogSlot(state);
+          await this.store.write(next);
+          clear(this.pools[failed]);
+          const failure = new CatalogFailure('CATALOG_OPEN_FAILED', 'Der aktive Slot war ungültig; der vorherige validierte Slot wurde wiederhergestellt.', {
+            operation: 'rollback', activeSlot: rollback, attemptedSlot: failed,
+            catalogVersion: opened.metadata.catalogVersion, cause
+          });
+          return { state: next, opened, diagnostics: failure.diagnostics };
+        } catch (rollbackError) {
+          clear(this.pools[failed]);
+          clear(this.pools[rollback]);
+          const empty = discardCatalogSlot(discardCatalogSlot(state, failed), rollback);
+          await this.store.write(empty);
+          throw toCatalogFailure(rollbackError, 'CATALOG_OPEN_FAILED', 'Aktiver Katalog und Rollback-Slot sind ungültig.', {
+            operation: 'rollback', activeSlot: failed, attemptedSlot: rollback
+          });
+        }
+      }
+      clear(this.pools[failed]);
+      const empty = discardCatalogSlot(state, failed);
+      await this.store.write(empty);
+      return { state: empty, opened: null, diagnostics: null };
+    }
+  }
+
+  private async open(slot: CatalogSlotId, metadata: CatalogSlotMetadata): Promise<Opened> {
+    const pool = this.pools[slot];
+    const path = catalogSlotDatabasePath(metadata.filename);
+    if (!pool.getFileNames().includes(path)) {
+      throw new CatalogFailure('CATALOG_OPEN_FAILED', 'Der persistierte Katalogslot fehlt im OPFS.', {
+        operation: 'open', activeSlot: slot, catalogVersion: metadata.catalogVersion
+      });
+    }
+    const bytes = pool.exportFile(path);
+    if (bytes.byteLength !== metadata.sizeBytes || await hash(bytes) !== metadata.sha256) {
+      throw new CatalogFailure('CATALOG_HASH_MISMATCH', 'Der persistierte Katalogslot stimmt nicht mit seinen validierten Metadaten überein.', {
+        operation: 'open', activeSlot: slot, catalogVersion: metadata.catalogVersion
       });
     }
     let database: CatalogDatabase | null = null;
     try {
-      const bytes = await this.dependencies.storage.readSlot(rollbackSlot);
-      const rollbackHash = await sha256Hex(bytes);
-      database = this.dependencies.storage.openSlot(rollbackSlot);
-      const validated = validateCatalogDatabase(database, {
-        slot: rollbackSlot,
-        activeSlot: failedActivation.activeSlot,
-        catalogVersion: failedActivation.catalogVersion,
-        manifest: null
-      });
-      const rollbackRecord: CatalogActivationRecord = {
-        activeSlot: rollbackSlot,
-        // The exact activation-record contract carries no previous catalog version.
-        // The file is fully revalidated and its hash is reconstructed here; the
-        // version label remains the last authoritative manifest label.
-        catalogVersion: failedActivation.catalogVersion,
-        sha256: rollbackHash,
-        validatedAt: this.now(),
-        previousSlot: null
-      };
-      await this.dependencies.activations.activateValidatedSlot(rollbackRecord);
-      await this.dependencies.storage.removeSlot(failedActivation.activeSlot);
-      await this.dependencies.activations.clearInactiveSlotMetadata(failedActivation.activeSlot);
-      const rollbackFailure = new CatalogFailure('CATALOG_OPEN_FAILED', 'Der aktive Katalogslot war ungültig; der vorherige validierte Slot wurde wiederhergestellt.', {
-        operation: 'rollback',
-        activeSlot: rollbackSlot,
-        attemptedSlot: failedActivation.activeSlot,
-        catalogVersion: rollbackRecord.catalogVersion,
-        cause,
-        details: { reconstructedSha256: rollbackHash }
-      });
-      return {
-        database,
-        activation: rollbackRecord,
-        productCount: validated.productCount,
-        installedFromNetwork: false,
-        diagnostics: rollbackFailure.diagnostics
-      };
-    } catch (rollbackError) {
-      database?.close();
-      throw toCatalogFailure(rollbackError, 'CATALOG_OPEN_FAILED', 'Der vorherige Katalogslot konnte nicht wiederhergestellt werden.', {
-        operation: 'rollback',
-        activeSlot: failedActivation.activeSlot,
-        attemptedSlot: rollbackSlot,
-        catalogVersion: failedActivation.catalogVersion
-      });
+      database = new pool.OpfsSAHPoolDb(path, 'r');
+      database.exec('PRAGMA query_only=ON; PRAGMA temp_store=MEMORY;');
+      validate(database, metadata);
+      return { database, metadata };
+    } catch (error) {
+      close(database);
+      throw error;
     }
   }
 
-  private async removeFailedInactiveSlot(slot: CatalogSlotId): Promise<void> {
-    try {
-      await this.dependencies.storage.removeSlot(slot);
-    } finally {
-      await this.dependencies.activations.clearInactiveSlotMetadata(slot);
+  private fallback(
+    error: unknown,
+    database: CatalogDatabase | null,
+    metadata: CatalogSlotMetadata | null,
+    publish: Publish
+  ): CatalogRuntimeHandle {
+    if (database && metadata) {
+      const failure = isCatalogFailure(error)
+        ? error
+        : new CatalogFailure('CATALOG_UNKNOWN', 'Das Katalogupdate ist fehlgeschlagen; der vorherige Slot bleibt aktiv.', {
+            operation: 'install', activeSlot: metadata.slot, catalogVersion: metadata.catalogVersion, cause: error
+          });
+      const status = ready(metadata, failure.diagnostics);
+      publish(status);
+      return { database, status };
     }
-  }
-}
-
-async function fetchCatalogManifestWith(
-  fetcher: typeof fetch,
-  url: string
-): Promise<CatalogManifest> {
-  const originalFetch = globalThis.fetch;
-  if (fetcher === originalFetch) return fetchCatalogManifest(url);
-  const response = await fetcher(url, { cache: 'no-store', credentials: 'same-origin' });
-  if (!response.ok) {
-    throw new CatalogFailure('CATALOG_MANIFEST_UNAVAILABLE', `Katalogmanifest nicht erreichbar (HTTP ${response.status}).`, {
-      operation: 'manifest',
-      details: { status: response.status }
+    if (isCatalogFailure(error)) throw error;
+    throw new CatalogFailure('CATALOG_UNKNOWN', 'Kein validierter Produktkatalog ist verfügbar.', {
+      operation: 'initialize', cause: error
     });
   }
-  const { parseCatalogManifest } = await import('./catalogManifest');
-  return parseCatalogManifest(await response.json());
-}
-
-export function catalogSlotFilename(slot: CatalogSlotId): string {
-  return CATALOG_SLOT_FILES[slot];
 }

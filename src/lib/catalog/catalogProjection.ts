@@ -1,5 +1,6 @@
 import {
   CATALOG_UNIT_KINDS,
+  buildCatalogImageUrl,
   decodeCatalogCode,
   decodeCatalogMetadata
 } from '../../../Catalog/catalog-runtime.generated';
@@ -27,18 +28,21 @@ export interface CatalogSqlRow extends Record<string, unknown> {
 }
 
 const UNIT_KIND_BY_CODE = new Map<number, CatalogUnitKind | null>(
-  Object.entries(CATALOG_UNIT_KINDS).map(([kind, code]) => [
+  Object.entries(CATALOG_UNIT_KINDS).map(([name, code]) => [
     Number(code),
-    kind === 'none' ? null : kind as CatalogUnitKind
+    name === 'none' ? null : (name as CatalogUnitKind)
   ])
 );
-
 const UNIT_SOURCE_BY_CODE = new Map<number, CatalogUnitEvidenceSource | null>([
   [0, null],
   [1, 'manufacturer_serving'],
   [2, 'explicit_serving_count'],
   [3, 'explicit_multipack_quantity']
 ]);
+
+function nullablePositiveNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
 
 function requiredFiniteNumber(value: unknown, field: string): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -47,22 +51,22 @@ function requiredFiniteNumber(value: unknown, field: string): number {
   return value;
 }
 
-function nullablePositiveNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
-}
-
 function basis(volume: boolean): CatalogNutritionBasis {
   return volume ? 'volume' : 'mass';
 }
 
-function countability(kind: CatalogUnitKind): CatalogCountability {
-  if (kind === 'piece' || kind === 'bar' || kind === 'slice') return 'countable';
-  if (kind === 'mass' || kind === 'volume') return 'non_countable';
-  return 'unknown';
+function unitKind(code: number): CatalogUnitKind | null {
+  return UNIT_KIND_BY_CODE.get(code) ?? null;
 }
 
-function requiredUnitKind(code: number, fallbackBasis: CatalogNutritionBasis): CatalogUnitKind {
-  return UNIT_KIND_BY_CODE.get(code) ?? fallbackBasis;
+function unitSource(code: number): CatalogUnitEvidenceSource | null {
+  return UNIT_SOURCE_BY_CODE.get(code) ?? null;
+}
+
+function countability(kind: CatalogUnitKind): CatalogCountability {
+  if (kind === 'piece' || kind === 'bar' || kind === 'slice' || kind === 'package') return 'countable';
+  if (kind === 'mass' || kind === 'volume') return 'non_countable';
+  return 'unknown';
 }
 
 export function projectCatalogProductRow(row: CatalogSqlRow): CatalogProduct {
@@ -73,15 +77,23 @@ export function projectCatalogProductRow(row: CatalogSqlRow): CatalogProduct {
   const rescueCode = typeof row.g === 'string' && row.g.length > 0 ? row.g : null;
   const code = decodeCatalogCode(productId, rescueCode);
   const metadataValue = requiredFiniteNumber(row.m, 'm');
+  if (!Number.isSafeInteger(metadataValue) || metadataValue < 0) {
+    throw new TypeError('Katalogmetadaten sind ungültig.');
+  }
   const metadata = decodeCatalogMetadata(metadataValue);
-  const nutritionBasis = basis(metadata.carbohydrateBasisVolume);
-  const defaultUnitKind = requiredUnitKind(metadata.defaultUnitKind, nutritionBasis);
+  const displayName = typeof row.n === 'string' ? row.n.trim() : '';
+  if (!displayName) throw new TypeError('Katalogprodukt besitzt keinen Anzeigenamen.');
+  const carbohydratesPer100 = requiredFiniteNumber(row.c, 'c');
+  if (carbohydratesPer100 < 0) throw new TypeError('Kohlenhydratwert darf nicht negativ sein.');
 
-  const provenKind = UNIT_KIND_BY_CODE.get(metadata.provenUnitKind) ?? null;
-  const provenSource = UNIT_SOURCE_BY_CODE.get(metadata.provenUnitSource) ?? null;
-  const provenValue = nullablePositiveNumber(row.u);
+  const manufacturerServingValue = metadata.hasServing ? nullablePositiveNumber(row.s) : null;
+  const productQuantityValue = metadata.hasProductQuantity ? nullablePositiveNumber(row.q) : null;
+  const provenKind = unitKind(metadata.provenUnitKind);
+  const provenSource = unitSource(metadata.provenUnitSource);
+  const provenValue = provenKind === null ? null : nullablePositiveNumber(row.u);
+
   let provenUnit: CatalogUnitEvidence | null = null;
-  if (provenKind && provenSource && provenValue !== null) {
+  if (provenKind !== null && provenSource !== null && provenValue !== null) {
     provenUnit = {
       value: provenValue,
       basis: basis(metadata.provenUnitBasisVolume),
@@ -93,38 +105,31 @@ export function projectCatalogProductRow(row: CatalogSqlRow): CatalogProduct {
     };
   }
 
-  const displayName = typeof row.n === 'string' ? row.n.trim() : '';
-  if (!displayName) throw new TypeError('Katalogprodukt besitzt keinen Anzeigenamen.');
-  const carbohydratesPer100 = requiredFiniteNumber(row.c, 'c');
-  if (carbohydratesPer100 < 0) throw new TypeError('Kohlenhydratwert darf nicht negativ sein.');
-
-  const servingValue = metadata.hasServing ? nullablePositiveNumber(row.s) : null;
-  const quantityValue = metadata.hasProductQuantity ? nullablePositiveNumber(row.q) : null;
-
+  const defaultUnitKind = unitKind(metadata.defaultUnitKind) ?? 'mass';
+  const imageUrl = buildCatalogImageUrl(code, metadataValue);
   return {
     productId,
     code,
     displayName,
     brand: typeof row.brand === 'string' && row.brand.trim() ? row.brand.trim() : null,
     carbohydratesPer100,
-    nutritionBasis,
+    nutritionBasis: basis(metadata.carbohydrateBasisVolume),
     nutritionSource: metadata.carbohydrateSourcePrepared ? 'prepared' : 'as_sold',
-    manufacturerServing: servingValue === null
+    manufacturerServing: manufacturerServingValue === null
       ? null
-      : { value: servingValue, basis: basis(metadata.servingBasisVolume) },
-    productQuantity: quantityValue === null
+      : { value: manufacturerServingValue, basis: basis(metadata.servingBasisVolume) },
+    productQuantity: productQuantityValue === null
       ? null
-      : { value: quantityValue, basis: basis(metadata.productQuantityBasisVolume) },
+      : { value: productQuantityValue, basis: basis(metadata.productQuantityBasisVolume) },
     provenUnit,
     defaultUnitKind,
-    // Atlas owns the image reference. Forge intentionally does not compose a URL
-    // and will bind the corrected catalog-native reference after owner integration.
-    image: null,
+    image: imageUrl === null ? null : { url: imageUrl, optionalNetwork: true },
     hasQualityErrors: metadata.hasQualityErrors,
     rankOrdinal: requiredFiniteNumber(row.r, 'r')
   };
 }
 
+/** Assigns resultIndex without sorting, filtering or otherwise changing SQLite order. */
 export function projectCatalogSearchRows(rows: readonly CatalogSqlRow[]): readonly CatalogSearchHit[] {
   return rows.map((row, resultIndex) => ({
     ...projectCatalogProductRow(row),

@@ -6,54 +6,56 @@ function packedGtin(code: string): number {
   return Number(code) * 4 + lengthCode + 1;
 }
 
-function row(name: string, rank: number) {
-  const metadata = (1 << 2) | (5 << 9) | (5 << 12) | (2 << 15);
+function row(name: string, rank: number, metadata = 0, unit: number | null = null) {
   return {
-    id: packedGtin('4008400322728') + rank,
+    id: packedGtin('3017620422003'),
     g: null,
     n: name,
     brand: 'Ferrero',
     c: 49,
     s: 21.5,
     q: null,
-    u: 21.5,
-    m: metadata,
+    u: unit,
+    m: metada,
     r: rank
   };
 }
 
-describe('Atlas catalog projection', () => {
-  it('projects structured proven evidence using Atlas snake_case vocabulary', () => {
-    const product = projectCatalogProductRow(row('Kinder Bueno', 100));
-    expect(product.provenUnit).toEqual({
-      value: 21.5,
-      basis: 'mass',
-      kind: 'bar',
-      source: 'explicit_serving_count',
-      countability: 'countable',
-      smallestEdibleUnit: true,
-      proven: true
+describe('Atlas-aligned catalog projection', () => {
+  it('projects proven unit evidence into the Atlas SSOT without a parallel record type', () => {
+    const metadata = (1 << 2) | (5 << 9) | (5 << 12) | (2 << 15);
+    const product = projectCatalogProductRow(row('Kinder Bueno', 100, metadata, 21.5));
+    expect(product).toMatchObject({
+      productId: packedGtin('3017620422003'),
+      displayName: 'Kinder Bueno',
+      nutritionBasis: 'mass',
+      nutritionSource: 'as_sold',
+      provenUnit: {
+        value: 21.5,
+        basis: 'mass',
+        kind: 'bar',
+        source: 'explicit_serving_count',
+        countability: 'countable',
+        smallestEdibleUnit: true,
+        proven: true
+      }
     });
-    expect(product.image).toBeNull();
   });
 
-  it('does not synthesize absent unit evidence', () => {
-    const product = projectCatalogProductRow({
-      ...row('Produkt ohne Stückbeweis', 1),
-      u: null,
-      m: 1 << 4
-    });
-    expect(product.provenUnit).toBeNull();
+  it('returns null when no countable-unit weight is proven', () => {
+    expect(projectCatalogProductRow(row('Ohne Stückbeweis', 1)).provenUnit).toBeNull();
   });
 
-  it('assigns resultIndex in the exact SQLite row order without reranking', () => {
+  it('preserves SQLite result order exactly and only adds resultIndex', () => {
     const hits = projectCatalogSearchRows([
-      row('SQLite first', 1),
-      row('SQLite second', 999)
+      row('Third by app ranking', 1),
+      row('First by app ranking', 999),
+      row('Second by app ranking', 500)
     ]);
     expect(hits.map((hit) => [hit.displayName, hit.resultIndex])).toEqual([
-      ['SQLite first', 0],
-      ['SQLite second', 1]
+      ['Third by app ranking', 0],
+      ['First by app ranking', 1],
+      ['Second by app ranking', 2]
     ]);
   });
 });

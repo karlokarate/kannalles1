@@ -153,8 +153,12 @@ export function parseCatalogManifest(value: unknown): CatalogManifest {
   };
 }
 
-export async function fetchCatalogManifest(url: string, signal?: AbortSignal): Promise<CatalogManifest> {
-  const response = await fetch(url, {
+export async function fetchCatalogManifest(
+  url: string,
+  signal?: AbortSignal,
+  fetcher: typeof fetch = fetch
+): Promise<CatalogManifest> {
+  const response = await fetcher(url, {
     cache: 'no-store',
     credentials: 'same-origin',
     signal
@@ -169,7 +173,9 @@ export async function fetchCatalogManifest(url: string, signal?: AbortSignal): P
     return parseCatalogManifest(await response.json());
   } catch (error) {
     if (error instanceof CatalogManifestError) throw error;
-    throw new CatalogManifestError(`Katalogmanifest konnte nicht gelesen werden: ${error instanceof Error ? error.message : String(error)}`);
+    throw new CatalogManifestError(
+      `Katalogmanifest konnte nicht gelesen werden: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
