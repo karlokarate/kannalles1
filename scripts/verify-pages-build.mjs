@@ -1,16 +1,13 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validatePublicGatewayUrl } from './public-config.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pagesDir = process.argv[2] ? path.resolve(process.argv[2]) : path.join(rootDir, 'dist');
 const pagesLabel = path.relative(rootDir, pagesDir) || '.';
 const packageJson = JSON.parse(await fs.readFile(path.join(rootDir, 'package.json'), 'utf8'));
 const appVersion = String(packageJson.version);
-const contractFile = `contracts/kh-checker-api-config-user-needs-v${appVersion}.json`;
-const rawExpectedGateway = String(process.env.VITE_DATA_GATEWAY_URL || '').trim();
-const expectedGateway = validatePublicGatewayUrl(rawExpectedGateway);
 
 function fail(message) {
   throw new Error(`GitHub-Pages-Prüfung fehlgeschlagen: ${message}`);
@@ -43,25 +40,34 @@ async function listFiles(directory, prefix = '') {
   return files;
 }
 
+async function sha256(filePath) {
+  const buffer = await fs.readFile(filePath);
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
 const requiredFiles = [
   'index.html',
   'app.css',
   'manifest.webmanifest',
   'sw.js',
-  'API-DIAGNOSE.html',
   'README-ERST-LESEN.html',
-  'api-diagnose.js',
   'package-info.css',
   'icons/apple-touch-icon.png',
-  'api-docs/index.html',
-  'api-docs/search-api.openapi.json',
-  'api-docs/search-api.openapi.yaml',
-  'api-docs/generation-manifest.json',
-  contractFile
+  'catalog/kh-checker-dach.sqlite',
+  'catalog/manifest.json',
+  'catalog/catalog-codecs.v1.json',
+  'catalog/catalog-image-keys.v2.json',
+  'vendor/sqlite/index.mjs',
+  'vendor/sqlite/sqlite3.wasm'
 ];
 await Promise.all(requiredFiles.map(requireFile));
 
-const htmlFiles = ['index.html', 'API-DIAGNOSE.html', 'README-ERST-LESEN.html'];
+for (const retired of ['API-DIAGNOSE.html', 'api-diagnose.js', 'api-docs']) {
+  const present = await fs.stat(path.join(pagesDir, retired)).catch(() => null);
+  if (present) fail(`veraltetes API-Diagnoseartefakt wird noch ausgeliefert: ${retired}`);
+}
+
+const htmlFiles = ['index.html', 'README-ERST-LESEN.html'];
 let referenceCount = 0;
 for (const htmlFile of htmlFiles) {
   const html = await fs.readFile(path.join(pagesDir, htmlFile), 'utf8');
@@ -76,15 +82,14 @@ for (const htmlFile of htmlFiles) {
 }
 
 const indexHtml = await fs.readFile(path.join(pagesDir, 'index.html'), 'utf8');
-const manifest = JSON.parse(await fs.readFile(path.join(pagesDir, 'manifest.webmanifest'), 'utf8'));
-if (manifest.id !== './') fail(`manifest.id muss "./" sein, ist aber ${JSON.stringify(manifest.id)}`);
-if (manifest.start_url !== './') fail(`manifest.start_url muss "./" sein, ist aber ${JSON.stringify(manifest.start_url)}`);
-if (manifest.scope !== './') fail(`manifest.scope muss "./" sein, ist aber ${JSON.stringify(manifest.scope)}`);
-if (manifest.display !== 'standalone') fail(`manifest.display muss "standalone" sein, ist aber ${JSON.stringify(manifest.display)}`);
-if (manifest.orientation !== 'any') fail(`manifest.orientation muss "any" sein, ist aber ${JSON.stringify(manifest.orientation)}`);
-if (!Array.isArray(manifest.icons) || manifest.icons.length < 2) fail('Manifest benötigt mindestens zwei App-Icons.');
-
-for (const icon of manifest.icons) {
+const webManifest = JSON.parse(await fs.readFile(path.join(pagesDir, 'manifest.webmanifest'), 'utf8'));
+if (webManifest.id !== './') fail(`manifest.id muss "./" sein, ist aber ${JSON.stringify(webManifest.id)}`);
+if (webManifest.start_url !== './') fail(`manifest.start_url muss "./" sein, ist aber ${JSON.stringify(webManifest.start_url)}`);
+if (webManifest.scope !== './') fail(`manifest.scope muss "./" sein, ist aber ${JSON.stringify(webManifest.scope)}`);
+if (webManifest.display !== 'standalone') fail(`manifest.display muss "standalone" sein, ist aber ${JSON.stringify(webManifest.display)}`);
+if (webManifest.orientation !== 'any') fail(`manifest.orientation muss "any" sein, ist aber ${JSON.stringify(webManifest.orientation)}`);
+if (!Array.isArray(webManifest.icons) || webManifest.icons.length < 2) fail('Manifest benötigt mindestens zwei App-Icons.');
+for (const icon of webManifest.icons) {
   const localPath = normalizeLocalReference(String(icon?.src ?? ''));
   if (!localPath) fail(`ungültiger lokaler Icon-Pfad: ${JSON.stringify(icon?.src)}`);
   await requireFile(localPath);
@@ -92,7 +97,6 @@ for (const icon of manifest.icons) {
 
 if (!/rel=["']manifest["']/i.test(indexHtml)) fail('index.html bindet kein Web-App-Manifest ein.');
 if (!/apple-touch-icon/i.test(indexHtml)) fail('index.html bindet kein Apple-Touch-Icon ein.');
-
 if (!indexHtml.includes('Content-Security-Policy')) fail('index.html enthält keine statische Content-Security-Policy.');
 if (!indexHtml.includes('name="referrer" content="no-referrer"')) fail('index.html enthält keine no-referrer-Metaregel.');
 if (!indexHtml.includes('id="compatibility-fallback"')) fail('index.html enthält keinen statischen Altbrowser-Fallback.');
@@ -100,62 +104,55 @@ if (!indexHtml.includes('id="vite-legacy-polyfill"') || !indexHtml.includes('id=
   fail('index.html bindet den kontrollierten Legacy-/Polyfill-Pfad nicht ein.');
 }
 
-const serviceWorker = await fs.readFile(path.join(pagesDir, 'sw.js'), 'utf8');
-for (const precached of ['index.html', 'app.css', 'API-DIAGNOSE.html', 'README-ERST-LESEN.html', 'api-diagnose.js', 'package-info.css', 'icons/apple-touch-icon.png', contractFile]) {
-  if (!serviceWorker.includes(precached)) fail(`Service Worker precacht ${precached} nicht.`);
+const catalogManifest = JSON.parse(await fs.readFile(path.join(pagesDir, 'catalog/manifest.json'), 'utf8'));
+const databasePath = path.join(pagesDir, 'catalog/kh-checker-dach.sqlite');
+const databaseStats = await fs.stat(databasePath);
+if (catalogManifest?.contract !== 'kh-checker-offline-catalog-production') fail('Katalogmanifest hat den falschen Vertrag.');
+if (catalogManifest?.contractVersion !== '1.0.0') fail('Katalogmanifest hat die falsche Vertragsversion.');
+if (catalogManifest?.database?.file !== 'kh-checker-dach-v1.sqlite') fail('Katalogmanifest nennt nicht das Production-v1-Artefakt.');
+if (catalogManifest?.database?.bytes !== databaseStats.size) fail('Katalogmanifest und ausgelieferte Dateigröße weichen ab.');
+if (catalogManifest?.database?.products !== 317579) fail('Katalogmanifest enthält nicht die freigegebene Produktzahl.');
+if (catalogManifest?.database?.applicationId !== 1263027011 || catalogManifest?.database?.userVersion !== 1) {
+  fail('Katalogmanifest enthält nicht die freigegebenen SQLite-Identitäten.');
+}
+if (await sha256(databasePath) !== catalogManifest?.database?.sha256) fail('Ausgelieferte SQLite-SHA-256 stimmt nicht zum Manifest.');
+if (await sha256(path.join(pagesDir, 'catalog/catalog-image-keys.v2.json')) !== catalogManifest?.image?.dictionarySha256) {
+  fail('Ausgelieferter Bildschlüsselvertrag stimmt nicht zum Manifest.');
 }
 
-const jsFiles = (await listFiles(pagesDir)).filter((file) => file.endsWith('.js') && file.startsWith('assets/'));
+const serviceWorker = await fs.readFile(path.join(pagesDir, 'sw.js'), 'utf8');
+for (const precached of ['index.html', 'app.css', 'README-ERST-LESEN.html', 'package-info.css', 'icons/apple-touch-icon.png']) {
+  if (!serviceWorker.includes(precached)) fail(`Service Worker precacht ${precached} nicht.`);
+}
+for (const excluded of ['catalog/kh-checker-dach.sqlite', 'catalog/manifest.json', 'vendor/sqlite/sqlite3.wasm']) {
+  if (serviceWorker.includes(excluded)) fail(`Service Worker darf ${excluded} nicht als App-Shell precachen.`);
+}
+
+const allFiles = await listFiles(pagesDir);
+const jsFiles = allFiles.filter((file) => file.endsWith('.js') && file.startsWith('assets/'));
 if (!jsFiles.length) fail('Kein gebautes JavaScript-Asset gefunden.');
 if (!jsFiles.some((file) => /(?:^|-)legacy(?:-|\.)/.test(path.basename(file)))) {
   fail('Kein syntax-abgesenkter Legacy-Bundlepfad gefunden.');
 }
 const appJavaScript = (await Promise.all(jsFiles.map((file) => fs.readFile(path.join(pagesDir, file), 'utf8')))).join('\n');
-if (rawExpectedGateway && !appJavaScript.includes(rawExpectedGateway)) fail('Der statische Build enthält nicht die konfigurierte Gateway-URL.');
-if (!appJavaScript.includes('/api/v1/search')) fail('Der statische Build enthält keinen versionierten Gateway-Suchpfad /api/v1/search.');
-if (!appJavaScript.includes('/api/v1/product/')) fail('Der statische Build enthält keinen versionierten Gateway-Produktpfad /api/v1/product/.');
-if (appJavaScript.includes('boost_phrase')) fail('Der statische App-Build soll keinen zusätzlichen Search-a-licious-Phrase-Boost senden.');
 for (const required of [
-  'https://search.openfoodfacts.org/search',
-  'https://world.openfoodfacts.org/'
+  'kh-checker-dach.sqlite',
+  'catalog/manifest.json',
+  'Produktkatalog ist lokal aktiv',
+  appVersion
 ]) {
-  if (!appJavaScript.includes(required)) fail(`Direkter Pages-Upstream fehlt: ${required}`);
+  if (!appJavaScript.includes(required)) fail(`Offline-App-Build enthält nicht: ${required}`);
 }
-if (!appJavaScript.includes(appVersion)) fail(`Der App-Build enthält die package.json-Version ${appVersion} nicht.`);
-for (const forbidden of ['OPENAI_API_KEY', 'OFF_USER_AGENT', 'process.env.OFF_USER_AGENT']) {
-  if (appJavaScript.includes(forbidden)) fail(`Server-/Secret-Konfiguration ist im statischen App-Build enthalten: ${forbidden}`);
-}
-
-const diagnosticJavaScript = await fs.readFile(path.join(pagesDir, 'api-diagnose.js'), 'utf8');
-if (expectedGateway && !diagnosticJavaScript.includes(expectedGateway)) fail('Das Diagnosewerkzeug enthält nicht die konfigurierte Gateway-URL.');
-if (!diagnosticJavaScript.includes('/api/v1/search')) fail('Das Diagnosewerkzeug prüft den versionierten Gateway-Suchpfad nicht.');
-if (!diagnosticJavaScript.includes('/api/v1/product/')) fail('Das Diagnosewerkzeug prüft den versionierten Gateway-Produktpfad nicht.');
-if (!diagnosticJavaScript.includes('/api/v1/health')) fail('Das Diagnosewerkzeug prüft den versionierten Gateway-Health-Vertrag nicht.');
-if (!diagnosticJavaScript.includes('^\\d{7,14}$')) fail('Das Diagnosewerkzeug akzeptiert den vertraglichen 7-stelligen UPC-E-Grenzfall nicht.');
-if (diagnosticJavaScript.includes('boost_phrase')) fail('Das Diagnosewerkzeug muss denselben kompakten Suchpfad ohne Phrase-Boost testen.');
-if (!diagnosticJavaScript.includes(`const APP_VERSION = '${appVersion}'`)) fail('Das Diagnosewerkzeug enthält nicht die aktuelle Paketversion.');
-for (const required of [
+for (const forbidden of [
   'https://search.openfoodfacts.org/search',
   'https://world.openfoodfacts.org/cgi/search.pl',
-  'https://world.openfoodfacts.org/api/'
+  '/api/v1/search',
+  '/api/v1/product/',
+  'OPENAI_API_KEY',
+  'OFF_USER_AGENT',
+  'process.env.OFF_USER_AGENT'
 ]) {
-  if (!diagnosticJavaScript.includes(required)) fail(`Das Diagnosewerkzeug enthält die direkte Lane nicht: ${required}`);
+  if (appJavaScript.includes(forbidden)) fail(`Retired online/server path is present in the app bundle: ${forbidden}`);
 }
 
-const contract = JSON.parse(await fs.readFile(path.join(pagesDir, contractFile), 'utf8'));
-if (contract?.application?.version !== appVersion) fail('Der maschinenlesbare Runtime-Vertrag enthält nicht die aktuelle App-Version.');
-const generator = contract?.qualityAndTooling?.generatorPipeline;
-if (generator?.authoritativeInput !== 'contracts/source/search-api.contract.mjs') fail('Der Runtime-Vertrag nennt nicht die kanonische Generatorquelle.');
-if (generator?.clientGenerator !== 'Orval fetch') fail('Der Runtime-Vertrag nennt nicht den Orval-Fetch-Generator.');
-if (contract?.architecture?.portableGatewayRuntime !== 'node-express-container'
-  || contract?.architecture?.optionalAdapters?.length !== 0
-  || contract?.architecture?.browserDataAccess !== 'direct-off-or-configured-gateway'
-  || contract?.architecture?.primarySearch !== 'public-search-a-licious') {
-  fail('Der Runtime-Vertrag bildet die direkte Pages-Lane und den optionalen Gateway nicht korrekt ab.');
-}
-const openapi = JSON.parse(await fs.readFile(path.join(pagesDir, 'api-docs/search-api.openapi.json'), 'utf8'));
-if (openapi?.openapi !== '3.1.0' || openapi?.info?.version !== appVersion) fail('Die eingebettete OpenAPI-Datei passt nicht zur App-Version.');
-if (openapi?.['x-kh-generator']?.maximumDirectSearchBackendsPerAction !== 2) fail('Die OpenAPI-KH-Regel für maximal zwei Suchbackends fehlt.');
-if (openapi?.['x-kh-generator']?.browserUpstreamPolicy !== 'direct-off-or-configured-gateway') fail('Die OpenAPI-KH-Regel für beide API-Lanes fehlt.');
-
-console.log(`GitHub-Pages-Build v${appVersion} geprüft: ${htmlFiles.length} HTML-Dateien, ${referenceCount} lokale/externe Referenzen, ${manifest.icons.length} Manifest-Icons, direkte OFF- sowie optionale Gateway-Pfade sind vorhanden.`);
+console.log(`GitHub-Pages-Build v${appVersion} geprüft: Production-v1 SQLite, OPFS/SQLite-WASM-Runtime, ${htmlFiles.length} HTML-Dateien und ${referenceCount} Referenzen.`);
