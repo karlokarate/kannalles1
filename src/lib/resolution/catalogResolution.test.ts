@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { CatalogProduct } from '../catalog/catalogDomain';
 import {
   calculateCatalogCarbohydrates,
   catalogProductEligibility,
@@ -6,27 +7,34 @@ import {
   resolveCatalogUnits
 } from './catalogResolution';
 import type {
-  CatalogResolutionProduct,
   CatalogUnitRequest,
   MatchingUnitCalibration
 } from './catalogResolution';
 
-function bueno(overrides: Partial<CatalogResolutionProduct> = {}): CatalogResolutionProduct {
+function bueno(overrides: Partial<CatalogProduct> = {}): CatalogProduct {
   return {
-    id: '4008400321622',
+    productId: 4008400321622,
+    code: '4008400321622',
     displayName: 'Kinder Bueno',
     brand: 'Kinder',
     carbohydratesPer100: 49.5,
-    carbohydrateBasis: 'mass',
+    nutritionBasis: 'mass',
+    nutritionSource: 'as_sold',
     defaultUnitKind: 'bar',
-    manufacturerServing: { baseValue: 43, basis: 'mass' },
-    productQuantity: { baseValue: 172, basis: 'mass' },
-    unitEvidence: {
-      unitKind: 'bar',
-      baseValue: 21.5,
+    manufacturerServing: { value: 43, basis: 'mass' },
+    productQuantity: { value: 172, basis: 'mass' },
+    provenUnit: {
+      kind: 'bar',
+      value: 21.5,
       basis: 'mass',
-      source: 'explicit-multipack-quantity'
+      source: 'explicit_multipack_quantity',
+      countability: 'countable',
+      smallestEdibleUnit: true,
+      proven: true
     },
+    image: null,
+    hasQualityErrors: false,
+    rankOrdinal: 1,
     ...overrides
   };
 }
@@ -41,23 +49,26 @@ function request(
 
 describe('catalog-native eligibility', () => {
   it('preserves the SQLite result order while removing only ineligible rows', () => {
-    const first = bueno({ id: 'first' });
-    const invalid = bueno({ id: 'invalid', carbohydratesPer100: 101 });
-    const third = bueno({ id: 'third' });
-    expect(filterEligibleCatalogProducts([first, invalid, third]).map((item) => item.id)).toEqual([
-      'first',
-      'third'
+    const first = bueno({ productId: 1 });
+    const invalid = bueno({ productId: 2, carbohydratesPer100: 101 });
+    const third = bueno({ productId: 3 });
+    expect(filterEligibleCatalogProducts([first, invalid, third]).map((item) => item.productId)).toEqual([
+      1,
+      3
     ]);
   });
 
   it('keeps quality flags diagnostic and ignores invalid optional evidence', () => {
     const product = bueno({
       hasQualityErrors: true,
-      unitEvidence: {
-        unitKind: 'bar',
-        baseValue: 6_000,
+      provenUnit: {
+        kind: 'bar',
+        value: 6_000,
         basis: 'mass',
-        source: 'explicit-multipack-quantity'
+        source: 'explicit_multipack_quantity',
+        countability: 'countable',
+        smallestEdibleUnit: true,
+        proven: true
       }
     });
     expect(catalogProductEligibility(product)).toEqual({
@@ -76,7 +87,7 @@ describe('structured catalog unit resolution', () => {
     expect(resolution.options[0]).toMatchObject({
       unit: 'bar',
       baseValue: 21.5,
-      source: 'catalog-explicit-multipack',
+      source: 'explicit_multipack_quantity',
       recommended: true,
       smallestEdibleUnit: true
     });
@@ -86,7 +97,10 @@ describe('structured catalog unit resolution', () => {
   });
 
   it('preserves an explicit bar and never converts a 43 g serving into one bar', () => {
-    const product = bueno({ unitEvidence: null, productQuantity: { baseValue: 43, basis: 'mass' } });
+    const product = bueno({
+      provenUnit: null,
+      productQuantity: { value: 43, basis: 'mass' }
+    });
     const resolution = resolveCatalogUnits(product, request('bar', true));
     expect(resolution.status).toBe('needs_unit_calibration');
     expect(resolution.reason).toBe('countable-weight-missing');
@@ -102,7 +116,7 @@ describe('structured catalog unit resolution', () => {
   });
 
   it('returns calibration-needed for an implicit countable default even when a serving exists', () => {
-    const product = bueno({ unitEvidence: null });
+    const product = bueno({ provenUnit: null });
     const resolution = resolveCatalogUnits(product, request('portion', false));
     expect(resolution.status).toBe('needs_unit_calibration');
     expect(resolution.options[0]).toMatchObject({ unit: 'bar', source: 'unresolved' });
@@ -121,13 +135,13 @@ describe('structured catalog unit resolution', () => {
     const product = bueno({ carbohydratesPer100: 50 });
     const resolution = resolveCatalogUnits(product, request('portion', false), [calibration]);
     expect(resolution.options[0]).toMatchObject({
-      source: 'user-calibration',
+      source: 'user_calibration',
       unit: 'bar',
       baseValue: 21
     });
     const calculation = calculateCatalogCarbohydrates(product, request('portion', false), resolution);
     expect(calculation.carbohydratesG).toBe(10.5);
-    expect(calculation.provenance.source).toBe('user-calibration');
+    expect(calculation.provenance.source).toBe('user_calibration');
   });
 
   it('does not reuse a different calibrated unit for an explicit request', () => {
@@ -140,7 +154,7 @@ describe('structured catalog unit resolution', () => {
       updatedAt: '2026-07-13T12:00:00.000Z',
       active: true
     };
-    const product = bueno({ unitEvidence: null });
+    const product = bueno({ provenUnit: null });
     const resolution = resolveCatalogUnits(product, request('bar', true), [pieceCalibration]);
     expect(resolution.status).toBe('needs_unit_calibration');
     expect(resolution.options[0]).toMatchObject({ unit: 'bar', source: 'unresolved' });
@@ -148,18 +162,19 @@ describe('structured catalog unit resolution', () => {
 
   it('uses a manufacturer serving only as a portion', () => {
     const spread = bueno({
-      id: 'nutella',
+      productId: 99,
+      code: 'nutella',
       displayName: 'Nutella',
       defaultUnitKind: 'portion',
-      unitEvidence: null,
-      manufacturerServing: { baseValue: 15, basis: 'mass' },
-      productQuantity: { baseValue: 450, basis: 'mass' }
+      provenUnit: null,
+      manufacturerServing: { value: 15, basis: 'mass' },
+      productQuantity: { value: 450, basis: 'mass' }
     });
     const resolution = resolveCatalogUnits(spread, request('portion', true));
     expect(resolution.options[0]).toMatchObject({
       unit: 'portion',
       baseValue: 15,
-      source: 'manufacturer-serving'
+      source: 'manufacturer_serving'
     });
   });
 
@@ -174,17 +189,18 @@ describe('structured catalog unit resolution', () => {
       active: true
     };
     const drink = bueno({
-      id: 'drink',
+      productId: 100,
+      code: 'drink',
       displayName: 'Testgetränk',
-      carbohydrateBasis: 'volume',
+      nutritionBasis: 'volume',
       carbohydratesPer100: 12,
       defaultUnitKind: 'volume',
-      unitEvidence: null,
-      manufacturerServing: { baseValue: 250, basis: 'volume' },
-      productQuantity: { baseValue: 750, basis: 'volume' }
+      provenUnit: null,
+      manufacturerServing: { value: 250, basis: 'volume' },
+      productQuantity: { value: 750, basis: 'volume' }
     });
     const resolution = resolveCatalogUnits(drink, request('ml', true, 250), [calibration]);
-    expect(resolution.options.some((option) => option.source === 'user-calibration')).toBe(false);
+    expect(resolution.options.some((option) => option.source === 'user_calibration')).toBe(false);
     const calculation = calculateCatalogCarbohydrates(drink, request('ml', true, 250), resolution);
     expect(calculation.totalVolumeMl).toBe(250);
     expect(calculation.totalMassG).toBeNull();
