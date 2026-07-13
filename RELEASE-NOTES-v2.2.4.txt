@@ -37,11 +37,12 @@ Qualität
 - Node, Redis, Search-a-licious API/Updater und Elasticsearch sind per Tag und OCI-Digest fixiert; unnötige Such-/Admin-UIs laufen nicht im Produktionsdefault
 - getrennte Redis-Dienste: Koordination mit `noeviction`/fail-closed, Antwortcache mit `allkeys-lru`/fail-soft und ein eigener persistenter Search-a-licious-Eventstream
 - Search-a-licious-Updater nur im expliziten `search-updates`-Profil und erst nach Anbindung eines Product-Opener-Producers
-- Pages-main deployt auch ohne Gateway als manuell/offline nutzbare PWA; die optionale Repository-Variable `DATA_GATEWAY_URL` aktiviert beim Build die vollständige Gateway-Suche
+- Pages-main deployt ohne Gateway die direkte vollständige PWA; die optionale Repository-Variable `DATA_GATEWAY_URL` schaltet bewusst auf die getrennte Gateway-Lane
+- Im Settingsscreen kann ein persönliches OFF-Konto direkt geprüft, lokal gespeichert und wieder entfernt werden; es wird nur für world.openfoodfacts.org verwendet, nie für Search-a-licious oder den Gateway
 - Production verlangt einen separaten `GATEWAY_CLIENT_SALT`; pseudonyme IP-Budgets begrenzen standardmäßig 6 Suchen/10 Produktaufrufe je Minute und teilen sich bewusst hinter NAT/VPN
 - Paid-AI kombiniert Minutenlimits (global 30/Nutzer 6) mit rollierenden 24-h-Kostenbudgets (global 300/Nutzer 30), fail-closed in der Koordinations-Redis
 
 Betriebsgrenze
 --------------
-Das Release ist eine installierbare browserbasierte PWA, keine nativ signierte Android-APK. Manuell/offline ist kein Gateway nötig; neue globale Produktsuche benötigt den vendor-neutral deploybaren Node/Express-Gateway. Vercel-Konfiguration und Serverless-Wrapper wurden vollständig entfernt; PWA-Host und Gatewayanbieter bleiben frei wählbar.
-Suchbegriffe, Barcodes und Produktdaten-API-Aufrufe sind Gateway-only. Produktbilder können direkt vom OFF-Bild-CDN geladen werden; dabei werden IP-Adresse und Bild-URL technisch sichtbar. Offline sind nur bereits gecachte Assets, Bilder und Daten verfügbar.
+Das Release ist eine installierbare browserbasierte PWA, keine nativ signierte Android-APK. Lane A nutzt die offiziellen APIs direkt und benötigt keinen App-Server. Lane B bleibt als vollständiger Gateway-Ausweichpfad vorbereitet und wird bei reproduzierbaren CORS-/Limit-/Verfügbarkeitsgrenzen auf Vercel aktiviert. Es gibt keinen OFF-Export oder eigenen Produktindex.
+In Lane A erhalten die offiziellen Dienste Suchbegriffe, Barcodes und die öffentliche IP; in Lane B erhält sie der Gatewaybetreiber. Produktbilder kommen direkt vom OFF-Bild-CDN. Offline sind nur bereits gecachte Assets, Bilder und Daten verfügbar.

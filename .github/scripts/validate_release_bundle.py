@@ -285,13 +285,13 @@ def validate_release_manifest(site: Path, expected_version: str | None) -> str:
         fail('release-manifest artifactType is invalid')
     deployment_profile = data.get('deploymentProfile')
     gateway_url = data.get('configuredGatewayUrl')
-    if deployment_profile not in {'full-app', 'manual-only'}:
+    if deployment_profile not in {'gateway', 'direct-pages'}:
         fail('release-manifest deploymentProfile is invalid')
-    if deployment_profile == 'full-app':
+    if deployment_profile == 'gateway':
         if not isinstance(gateway_url, str) or not gateway_url.startswith('https://'):
-            fail('full-app release-manifest requires an HTTPS configuredGatewayUrl')
+            fail('gateway release-manifest requires an HTTPS configuredGatewayUrl')
     elif gateway_url is not None:
-        fail('manual-only release-manifest must not embed a gateway URL')
+        fail('direct-pages release-manifest must not embed a gateway URL')
     if data.get('qualityGatesSkipped') is not False:
         fail('release was built with skipped quality gates')
     if data.get('schemaVersion') != 3:
@@ -309,12 +309,12 @@ def validate_release_manifest(site: Path, expected_version: str | None) -> str:
         fail('release static-asset hosting contract is invalid')
     if runtime.get('nativeAndroidApk') is not False:
         fail('release manifest must identify this artifact as PWA, not native APK')
-    if runtime.get('browserDataAccess') != 'gateway-only':
-        fail('release manifest must enforce gateway-only browser data access')
-    if runtime.get('gatewayRuntimeRequiredForGlobalSearch') is not True:
-        fail('release manifest must declare the gateway requirement for global search')
-    if runtime.get('gatewayOptionalForManualAndOfflineUse') is not True:
-        fail('release manifest must keep manual/offline use independent from a gateway')
+    if runtime.get('browserDataAccess') != 'direct-off-or-configured-gateway':
+        fail('release manifest must declare direct and gateway API lanes')
+    if runtime.get('gatewayRuntimeRequiredForGlobalSearch') is not False:
+        fail('release manifest must keep direct global search independent from a gateway')
+    if runtime.get('gatewayOptionalForDirectSearch') is not True:
+        fail('release manifest must preserve the optional gateway lane')
     version_text = (site / 'VERSION.txt').read_text(encoding='utf-8')
     if f'KH Checker v{version}' not in version_text:
         fail('VERSION.txt does not match release-manifest.json')
@@ -464,6 +464,10 @@ def main() -> None:
         fail('machine-readable runtime contract does not declare the Node/Express runtime')
     if architecture.get('optionalAdapters') != []:
         fail('machine-readable runtime contract contains a retired platform adapter')
+    if architecture.get('browserDataAccess') != 'direct-off-or-configured-gateway':
+        fail('machine-readable runtime contract does not declare both API lanes')
+    if architecture.get('primarySearch') != 'public-search-a-licious':
+        fail('machine-readable runtime contract does not declare direct Search-a-licious primary')
     validate_runtime(site, version)
     scan_for_secrets(site)
     smoke_http(site, args.base_path, references, manifest)

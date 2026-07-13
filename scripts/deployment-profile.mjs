@@ -1,11 +1,11 @@
-const FULL_APP = 'full-app';
-const MANUAL_ONLY = 'manual-only';
+const GATEWAY = 'gateway';
+const DIRECT_PAGES = 'direct-pages';
 
-export const DEPLOYMENT_PROFILES = Object.freeze([FULL_APP, MANUAL_ONLY]);
+export const DEPLOYMENT_PROFILES = Object.freeze([GATEWAY, DIRECT_PAGES]);
 
 function validatedPublicGateway(value) {
   const raw = String(value ?? '').trim();
-  if (!raw) throw new Error('Das Full-App-Profil benötigt DATA_GATEWAY_URL.');
+  if (!raw) throw new Error('Das Gateway-Profil benötigt DATA_GATEWAY_URL.');
   if (raw.length > 2048 || Array.from(raw).some((character) => {
     const code = character.charCodeAt(0);
     return code <= 32 || code === 127;
@@ -18,12 +18,12 @@ function validatedPublicGateway(value) {
   } catch (cause) {
     throw new Error('DATA_GATEWAY_URL ist keine gültige absolute URL.', { cause });
   }
-  if (url.protocol !== 'https:') throw new Error('Das Full-App-Profil benötigt ein HTTPS-Gateway.');
+  if (url.protocol !== 'https:') throw new Error('Das Gateway-Profil benötigt ein HTTPS-Gateway.');
   if (url.username || url.password || url.search || url.hash) {
     throw new Error('DATA_GATEWAY_URL darf keine Zugangsdaten, Query oder Fragment enthalten.');
   }
   if (['localhost', '127.0.0.1', '::1'].includes(url.hostname.toLowerCase())) {
-    throw new Error('Das Full-App-Profil darf kein Loopback-Gateway verwenden.');
+    throw new Error('Das Gateway-Profil darf kein Loopback-Gateway verwenden.');
   }
   return url.href.replace(/\/$/u, '');
 }
@@ -34,9 +34,9 @@ export function validateDeploymentProfile(profileValue, gatewayValue = '') {
     throw new Error(`Unbekanntes Deploymentprofil ${JSON.stringify(profile)}.`);
   }
   const configuredGateway = String(gatewayValue ?? '').trim();
-  if (profile === MANUAL_ONLY) {
+  if (profile === DIRECT_PAGES) {
     if (configuredGateway) {
-      throw new Error('Das Manual-only-Profil darf kein Daten-Gateway einbetten.');
+      throw new Error('Das Direct-Pages-Profil darf kein Daten-Gateway einbetten.');
     }
     return { profile, gatewayUrl: '' };
   }

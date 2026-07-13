@@ -11,7 +11,7 @@
   document.getElementById('context').textContent = [
     `Seite: ${location.href}`,
     `Origin: ${location.origin}`,
-    `Gateway: ${GATEWAY_BASE || 'nicht konfiguriert'}`,
+    `API-Lane: ${GATEWAY_BASE ? `Gateway ${GATEWAY_BASE}` : 'direkte offizielle APIs'}`,
     `Online: ${navigator.onLine ? 'ja' : 'nein'}`,
     `Secure Context: ${window.isSecureContext ? 'ja' : 'nein'}`,
     `Service Worker: ${'serviceWorker' in navigator ? 'verfügbar' : 'nicht verfügbar'}`,
@@ -179,10 +179,39 @@
   }
 
   function healthUrl() {
-    return gatewayUrl('/api/v1/health');
+    return GATEWAY_BASE
+      ? gatewayUrl('/api/v1/health')
+      : 'https://search.openfoodfacts.org/health';
   }
 
   function searchUrl(searchApi) {
+    if (!GATEWAY_BASE) {
+      if (searchApi === 'legacy') {
+        const url = new URL('https://world.openfoodfacts.org/cgi/search.pl');
+        url.search = new URLSearchParams({
+          action: 'process',
+          json: '1',
+          search_simple: '1',
+          search_terms: cleanQuery(),
+          page: '1',
+          page_size: '10',
+          sort_by: 'popularity',
+          lc: 'de',
+          cc: 'de',
+          fields: 'code,product_name,product_name_de,brands,quantity,nutriments,image_front_url'
+        });
+        return url.toString();
+      }
+      const url = new URL('https://search.openfoodfacts.org/search');
+      url.search = new URLSearchParams({
+        q: cleanQuery(),
+        langs: 'de,en,main',
+        page: '1',
+        page_size: '10',
+        fields: 'code,product_name,product_name_de,brands,quantity,nutriments,image_front_url'
+      });
+      return url.toString();
+    }
     const params = new URLSearchParams({
       q: cleanQuery(),
       page_size: '10',
@@ -192,7 +221,19 @@
   }
 
   function productUrl(version) {
-    if (!GATEWAY_BASE) throw new Error('Gateway ist nicht konfiguriert.');
+    if (!GATEWAY_BASE) {
+      const apiVersion = version === 'v3' ? 'v3.6' : 'v2';
+      const suffix = version === 'v3' ? '' : '.json';
+      const url = new URL(`https://world.openfoodfacts.org/api/${apiVersion}/product/${cleanBarcode()}${suffix}`);
+      url.search = new URLSearchParams({
+        lc: 'de',
+        cc: 'de',
+        fields: version === 'v3'
+          ? 'code,product_name,product_name_de,brands,quantity,nutrition,image_front_url'
+          : 'code,product_name,product_name_de,brands,quantity,nutriments,image_front_url'
+      });
+      return url.toString();
+    }
     const params = new URLSearchParams({ known_carbs: '0', product_api: version });
     return gatewayUrl(`/api/v1/product/${cleanBarcode()}`, params);
   }
@@ -266,14 +307,14 @@
     });
   }
 
-  bindGet('healthBtn', 'health', 'Gateway /api/v1/health', healthUrl, healthSummary);
-  bindGet('searchBtn', 'search-index', 'Eigener Suchindex', () => searchUrl('search-index'), searchSummary);
-  bindGet('searchPublicBtn', 'search-public', 'Search-a-licious (explizite Reserve)', () => searchUrl('search-a-licious'), searchSummary);
-  bindGet('legacyBtn', 'legacy', 'OFF Legacy (explizite Reserve)', () => searchUrl('legacy'), searchSummary);
+  bindGet('healthBtn', 'health', GATEWAY_BASE ? 'Gateway /api/v1/health' : 'Search-a-licious /health', healthUrl, healthSummary);
+  bindGet('searchBtn', 'search-primary', GATEWAY_BASE ? 'Gateway-Produktsuche' : 'Search-a-licious direkt', () => searchUrl('auto'), searchSummary);
+  bindGet('searchPublicBtn', 'search-public', 'Search-a-licious explizit', () => searchUrl('search-a-licious'), searchSummary);
+  bindGet('legacyBtn', 'legacy', 'OFF Legacy explizit', () => searchUrl('legacy'), searchSummary);
 
   for (const [buttonId, version, id, label] of [
-    ['productV3Btn', 'v3', 'product-v3', 'Gateway /api/v1/product (v3.6)'],
-    ['productV2Btn', 'v2', 'product-v2', 'Gateway /api/v1/product (v2)']
+    ['productV3Btn', 'v3', 'product-v3', GATEWAY_BASE ? 'Gateway-Produkt (v3.6)' : 'OFF API v3.6 direkt'],
+    ['productV2Btn', 'v2', 'product-v2', GATEWAY_BASE ? 'Gateway-Produkt (v2)' : 'OFF API v2 direkt']
   ]) {
     document.getElementById(buttonId).addEventListener('click', () => {
       try {

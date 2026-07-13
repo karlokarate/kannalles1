@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import type { KeyboardEvent, ReactNode, RefObject } from 'react';
+import type { FormEvent, KeyboardEvent, ReactNode, RefObject } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -19,6 +19,7 @@ import {
   Mail,
   Mic,
   Package,
+  UserRound,
   Search,
   Settings,
   ShieldCheck,
@@ -36,6 +37,7 @@ import type {
   FoodUnit,
   ManualFormValues,
   OffProduct,
+  OffAccountCredentials,
   ParsedFoodRequest,
   PortionOption,
   ProductApiMode,
@@ -48,6 +50,7 @@ import { parseFoodRequestLocal } from './lib/parser';
 import { parseFoodRequestWithAi } from './lib/aiClient';
 import {
   DataSourceError,
+  authenticateOffAccount,
   cancelPendingApiRequests,
   clearApiGovernor,
   getApiUsageSnapshot,
@@ -143,7 +146,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   saveCalibrations: false,
   cacheApiData: false,
   dataGatewayUrl: import.meta.env.VITE_DATA_GATEWAY_URL || import.meta.env.VITE_DATA_API_BASE_URL || '',
-  productApiMode: 'hybrid'
+  productApiMode: 'hybrid',
+  offAccount: null
 };
 
 const DEFAULT_MANUAL: ManualFormValues = {
@@ -323,6 +327,21 @@ function sanitizeSettings(value: AppSettings | null): AppSettings {
   if (!['hybrid', 'v3', 'v2'].includes(String(merged.productApiMode))) {
     merged.productApiMode = 'hybrid';
   }
+  const account = merged.offAccount;
+  const safeOffAccount: OffAccountCredentials | null = account
+    && typeof account.userId === 'string'
+    && account.userId.trim().length > 0
+    && !account.userId.includes('@')
+    && typeof account.password === 'string'
+    && account.password.length > 0
+    && typeof account.verifiedAt === 'string'
+    && Number.isFinite(Date.parse(account.verifiedAt))
+      ? {
+          userId: account.userId.trim(),
+          password: account.password,
+          verifiedAt: account.verifiedAt
+        }
+      : null;
   return {
     aiEnabled: merged.aiEnabled === true,
     decimalPlaces: [0, 1, 2].includes(Number(merged.decimalPlaces)) ? merged.decimalPlaces : 1,
@@ -333,7 +352,8 @@ function sanitizeSettings(value: AppSettings | null): AppSettings {
     saveCalibrations: merged.saveCalibrations === true,
     cacheApiData: merged.cacheApiData === true,
     dataGatewayUrl: merged.dataGatewayUrl,
-    productApiMode: merged.productApiMode
+    productApiMode: merged.productApiMode,
+    offAccount: safeOffAccount
   };
 }
 
@@ -347,7 +367,10 @@ function sameSettings(left: AppSettings, right: AppSettings): boolean {
     && left.saveCalibrations === right.saveCalibrations
     && left.cacheApiData === right.cacheApiData
     && left.dataGatewayUrl === right.dataGatewayUrl
-    && left.productApiMode === right.productApiMode;
+    && left.productApiMode === right.productApiMode
+    && left.offAccount?.userId === right.offAccount?.userId
+    && left.offAccount?.password === right.offAccount?.password
+    && left.offAccount?.verifiedAt === right.offAccount?.verifiedAt;
 }
 
 function attemptOutcomeLabel(outcome: ApiAttemptDiagnostic['outcome']): string {
@@ -382,7 +405,7 @@ function backendLabel(backend: ApiResponseMeta['backend'] | ApiResponseMeta['ori
   if (!backend) return 'unbekannt';
   return ({
     gateway: 'eigener Gateway',
-    'search-index': 'eigener Suchindex',
+    'search-index': 'konfigurierter Suchindex',
     'search-a-licious': 'Search-a-licious',
     'open-food-facts-legacy': 'OFF Legacy-Suche',
     'open-food-facts-v3': 'OFF API v3.6',
@@ -855,7 +878,7 @@ function RuntimeStatusRegion({
         <div className="runtime-status configuration" role="status">
           <AlertTriangle size={18} />
           <span>{gatewayError} Netzwerk-Suche ist deaktiviert; lokale Funktionen bleiben nutzbar.</span>
-          <button type="button" className="secondary-button compact" onClick={onConfigure}>Gateway konfigurieren</button>
+          <button type="button" className="secondary-button compact" onClick={onConfigure}>API-Einstellungen öffnen</button>
         </div>
       )}
       {pending && (
@@ -1826,6 +1849,66 @@ function SettingsScreen({
   const patch = (next: Partial<AppSettings>) => onChange({ ...settings, ...next });
   const gatewayValidation = validateHttpEndpoint(settings.dataGatewayUrl);
   const [copied, setCopied] = useState(false);
+  const [offUserId, setOffUserId] = useState(settings.offAccount?.userId ?? '');
+  const [offPassword, setOffPassword] = useState(settings.offAccount?.password ?? '');
+  const [offAuthState, setOffAuthState] = useState<{
+    status: 'idle' | 'pending' | 'connected' | 'error';
+    message: string;
+  }>(settings.offAccount
+    ? { status: 'connected', message: `OFF-Konto ${settings.offAccount.userId} ist verbunden.` }
+    : { status: 'idle', message: '' });
+  const offAuthAbort = useRef<AbortController | null>(null);
+  useEffect(() => {
+    setOffUserId(settings.offAccount?.userId ?? '');
+    setOffPassword(settings.offAccount?.password ?? '');
+    setOffAuthState(settings.offAccount
+      ? { status: 'connected', message: `OFF-Konto ${settings.offAccount.userId} ist verbunden.` }
+      : { status: 'idle', message: '' });
+  }, [settings.offAccount]);
+  useEffect(() => () => offAuthAbort.current?.abort(), []);
+
+  const connectOffAccount = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    offAuthAbort.current?.abort();
+    const controller = new AbortController();
+    offAuthAbort.current = controller;
+    setOffAuthState({ status: 'pending', message: 'OFF prüft die Zugangsdaten …' });
+    try {
+      const identity = await authenticateOffAccount({ userId: offUserId, password: offPassword }, controller.signal);
+      if (controller.signal.aborted) return;
+      patch({
+        offAccount: {
+          userId: identity.userId,
+          password: offPassword,
+          verifiedAt: new Date().toISOString()
+        }
+      });
+      setOffUserId(identity.userId);
+      setOffAuthState({
+        status: 'connected',
+        message: identity.name
+          ? `Mit OFF als ${identity.name} (${identity.userId}) verbunden.`
+          : `Mit OFF als ${identity.userId} verbunden.`
+      });
+    } catch (cause) {
+      if (controller.signal.aborted) return;
+      setOffAuthState({
+        status: 'error',
+        message: regularErrorMessage(cause, 'Die OFF-Anmeldung ist fehlgeschlagen.')
+      });
+    } finally {
+      if (offAuthAbort.current === controller) offAuthAbort.current = null;
+    }
+  };
+
+  const disconnectOffAccount = () => {
+    offAuthAbort.current?.abort();
+    offAuthAbort.current = null;
+    setOffUserId('');
+    setOffPassword('');
+    patch({ offAccount: null });
+    setOffAuthState({ status: 'idle', message: 'Das lokal gespeicherte OFF-Konto wurde entfernt.' });
+  };
   const copy = async () => {
     await copyText(diagnosticsBundleText(issue, apiTrace, apiUsage));
     setCopied(true);
@@ -1835,29 +1918,29 @@ function SettingsScreen({
     <div className="screen-content settings-screen">
       <section className="list-heading">
         <h2>Einstellungen</h2>
-        <p>Alle Netzwerk-API-Aufrufe laufen ausschließlich über den konfigurierten Daten-Gateway; Berechnung und optionale Offline-Daten bleiben lokal.</p>
+        <p>Standardmäßig fragt dein Browser die offiziellen OFF-Dienste direkt ab. Ein eigener Daten-Gateway bleibt als optionale zweite Betriebsart verfügbar; Berechnung und Offline-Daten bleiben lokal.</p>
       </section>
 
       <section className="settings-card card">
         <div className="setting-title"><Sparkles size={20} /><div><strong>Optionaler KI-Parser</strong><span>Nur Sprach-/Textstrukturierung; keine Nährwertschätzung</span></div></div>
         <label className="toggle-row"><span>OpenAI-Parsing verwenden</span><input type="checkbox" checked={settings.aiEnabled} onChange={(event) => patch({ aiEnabled: event.target.checked })} /></label>
-        <p className="setting-note">Nur nach deiner Aktivierung wird der Suchtext über denselben Daten-Gateway an OpenAI übertragen; es findet keine Nährwertschätzung statt. Antworten werden mit <code>store:false</code> angefragt, mögliche Abuse-Monitoring-Logs können dennoch bis zu 30 Tage bestehen. <a href="https://platform.openai.com/docs/guides/your-data" target="_blank" rel="noreferrer">Datenschutzhinweise von OpenAI</a>. Bei fehlender Capability bleibt der lokale Parser aktiv.</p>
+        <p className="setting-note">OpenAI-Parsing benötigt einen entsprechend konfigurierten optionalen Daten-Gateway; API-Schlüssel gelangen nie in den Browser. Ohne diese Capability bleibt der lokale Parser aktiv. Es findet keine Nährwertschätzung statt.</p>
       </section>
 
       <section className="settings-card card">
-        <div className="setting-title"><Gauge size={20} /><div><strong>Suche & Darstellung</strong><span>Eigener Suchindex primär, lokale Berechnung</span></div></div>
+        <div className="setting-title"><Gauge size={20} /><div><strong>Suche & Darstellung</strong><span>Search-a-licious mit OFF-Reserve, lokale Berechnung</span></div></div>
         <label className="toggle-row"><span>Deutschen Markt bevorzugen</span><input type="checkbox" checked={settings.preferGermanMarket} onChange={(event) => patch({ preferGermanMarket: event.target.checked })} /></label>
         <details className="advanced-fields">
           <summary>Technische Produkt-API-Strategie <ChevronDown size={17} /></summary>
           <label>
-            <span>Produktdaten-Adapter im Gateway</span>
+            <span>Produktdaten-Strategie</span>
             <select value={settings.productApiMode} onChange={(event) => patch({ productApiMode: event.target.value as ProductApiMode })}>
               <option value="hybrid">Hybrid (empfohlen)</option>
               <option value="v3">Nur OFF API v3.6</option>
               <option value="v2">Nur OFF API v2 (Kompatibilität)</option>
             </select>
           </label>
-          <p className="setting-note">Der Gateway führt die Adapterstrategie aus. Hybrid nutzt v3.6 primär und ergänzt v2 nur bei fehlenden, berechnungsrelevanten Feldern.</p>
+          <p className="setting-note">Hybrid nutzt OFF v3.6 primär und ergänzt v2 nur bei fehlenden, berechnungsrelevanten Feldern. Die Strategie gilt im direkten und im optionalen Gateway-Betrieb.</p>
         </details>
         <label>
           <span>Suchtreffer</span>
@@ -1879,7 +1962,71 @@ function SettingsScreen({
       </section>
 
       <section className="settings-card card">
-        <div className="setting-title"><ShieldCheck size={20} /><div><strong>API-Diagnose & Zwischenspeicher</strong><span>Daten-Gateway, cache-first, deduplizierte GET-Anfragen</span></div></div>
+        <div className="setting-title"><UserRound size={20} /><div><strong>Persönliches Open-Food-Facts-Konto</strong><span>Optional für direkte OFF-Anfragen ohne Gateway</span></div></div>
+        <form className="off-account-form" onSubmit={(event) => { void connectOffAccount(event); }}>
+          <label>
+            <span>OFF-Benutzername</span>
+            <input
+              value={offUserId}
+              onChange={(event) => {
+                setOffUserId(event.target.value);
+                if (offAuthState.status !== 'pending') setOffAuthState({ status: 'idle', message: '' });
+              }}
+              autoComplete="username"
+              spellCheck={false}
+              maxLength={80}
+              placeholder="Benutzername, nicht E-Mail"
+              required
+            />
+          </label>
+          <label>
+            <span>OFF-Passwort</span>
+            <input
+              type="password"
+              value={offPassword}
+              onChange={(event) => {
+                setOffPassword(event.target.value);
+                if (offAuthState.status !== 'pending') setOffAuthState({ status: 'idle', message: '' });
+              }}
+              autoComplete="current-password"
+              maxLength={300}
+              required
+            />
+          </label>
+          <div className="off-account-actions">
+            <button
+              type="submit"
+              className="primary-button compact"
+              disabled={offAuthState.status === 'pending' || !offUserId.trim() || !offPassword}
+            >
+              {offAuthState.status === 'pending' ? <LoaderCircle className="spin" size={16} /> : <ShieldCheck size={16} />}
+              {settings.offAccount ? 'Neu verbinden' : 'Anmelden & lokal speichern'}
+            </button>
+            {settings.offAccount && (
+              <button type="button" className="secondary-button compact" onClick={disconnectOffAccount}>
+                Konto entfernen
+              </button>
+            )}
+          </div>
+        </form>
+        {offAuthState.message && (
+          <p
+            className={`setting-note ${offAuthState.status === 'error' ? 'setting-warning' : ''}`}
+            role={offAuthState.status === 'error' ? 'alert' : 'status'}
+          >
+            {offAuthState.message}
+          </p>
+        )}
+        <p className="setting-note">
+          Die App prüft die Daten über <code>world.openfoodfacts.org/cgi/auth.pl</code> und speichert Benutzername und Passwort in den lokalen Einstellungen dieses Browserprofils. Im Direktbetrieb werden sie bei OFF Legacy sowie den OFF-Produkt-APIs verwendet; Search-a-licious und ein konfigurierter Gateway erhalten sie nie.
+        </p>
+        <p className="setting-note setting-warning">
+          OFF-Lesezugriffe benötigen laut OFF grundsätzlich kein persönliches Login. Die direkte Parameter-Authentifizierung läuft über HTTPS, kann aber in OFFs Request-Logs erscheinen. Sie ersetzt nicht die von Browsern nicht setzbare App-User-Agent-Kennung und erhöht keine offiziellen Rate-Limits.
+        </p>
+      </section>
+
+      <section className="settings-card card">
+        <div className="setting-title"><ShieldCheck size={20} /><div><strong>API-Diagnose & Zwischenspeicher</strong><span>Direkte APIs oder optionaler Gateway, cache-first</span></div></div>
         <label>
           <span>Daten-Gateway für Netzsuche (optional)</span>
           <input
@@ -1894,19 +2041,19 @@ function SettingsScreen({
         </label>
         {gatewayValidation.error && <p className="setting-note setting-warning" role="alert">{gatewayValidation.error} Der ungültige Wert wird nicht verwendet.</p>}
         <p className="setting-note" id="gateway-help">
-          Ohne gültigen Gateway wird keine Netzwerk-Suche gestartet. Manuelle Berechnung, Verlauf und vorhandene Offline-Daten bleiben verfügbar. Unterstützt werden ein Same-Origin-Gateway oder ein externer HTTPS-Gateway mit der versionierten API der App.
+          Leer bedeutet Direktbetrieb: Search-a-licious wird zuerst angefragt, OFF Legacy dient als Suchreserve; Produktdetails nutzen OFF v3.6 und bei Bedarf v2. Ein Same-Origin- oder HTTPS-Gateway schaltet stattdessen vollständig auf die versionierte Gateway-API um.
         </p>
         <p className="setting-note">
-          Suchbegriffe, Barcodes und Produktdaten-Anfragen gehen ausschließlich an den konfigurierten Gateway. Produktbilder können direkt von <code>images.openfoodfacts.org</code> geladen werden; dabei sieht das Bild-CDN technisch die IP-Adresse und angeforderte Bild-URL. Offline verfügbar sind nur bereits gespeicherte App-Assets und Daten.
+          Im Direktbetrieb erhalten <code>search.openfoodfacts.org</code> beziehungsweise <code>world.openfoodfacts.org</code> Suchbegriffe, Barcodes und deine öffentliche IP-Adresse. Mit Gateway gehen diese Anfragen an dessen Betreiber. Produktbilder kommen von <code>images.openfoodfacts.org</code>. Offline verfügbar sind nur bereits gespeicherte App-Assets und Daten.
         </p>
         <div className="api-budget-grid">
           <div>
-            <span>Browser → Gateway: Suchen (letzte Minute)</span>
+            <span>Gesendete Suchanfragen (letzte Minute)</span>
             <strong>{apiUsage.search.used}</strong>
             <small>{apiUsage.search.retryAfterMs > 0 ? `Server-Hinweis: ${formatCountdown(apiUsage.search.retryAfterMs)}` : 'Tatsächlich gesendete Anfragen'}</small>
           </div>
           <div>
-            <span>Browser → Gateway: Produktdetails (letzte Minute)</span>
+            <span>Gesendete Produktanfragen (letzte Minute)</span>
             <strong>{apiUsage.product.used}</strong>
             <small>{apiUsage.product.retryAfterMs > 0 ? `Server-Hinweis: ${formatCountdown(apiUsage.product.retryAfterMs)}` : 'Tatsächlich gesendete Anfragen'}</small>
           </div>
@@ -1925,7 +2072,7 @@ function SettingsScreen({
           </p>
         )}
         <p className="setting-note">
-          Cache-Schlüssel trennen Gateway, Contract-Version, Seitengröße und Suchbegriff. Treffer bleiben 24 Stunden frisch und bis zu 30 Tage als Ausfallreserve; Produktdetails 30 beziehungsweise 180 Tage. Retry-After ist nur ein Serverhinweis und sperrt keine Bedienaktion.
+          Cache-Schlüssel trennen Betriebsart, Contract-Version, Seitengröße und Suchbegriff. Treffer bleiben 24 Stunden frisch und bis zu 30 Tage als Ausfallreserve; Produktdetails 30 beziehungsweise 180 Tage. Retry-After ist nur ein Serverhinweis und sperrt keine Bedienaktion.
         </p>
         <button type="button" className="secondary-button" onClick={onClearApiCache}>API-Zwischenspeicher leeren</button>
         <details className="api-diagnostics" open={Boolean(issue || apiTrace)}>
@@ -1971,7 +2118,7 @@ function SettingsScreen({
 
       <section className="about-card card">
         <Info size={20} />
-        <div><strong>KH Checker v{APP_VERSION}</strong><p>Progressive Web App mit Gateway-only-Netzwerkzugriff, lokaler Offline-Reserve, sofortigem Retry und deterministischer Portionsberechnung.</p></div>
+        <div><strong>KH Checker v{APP_VERSION}</strong><p>Progressive Web App mit direktem OFF-Zugriff, optionalem Gateway-Ausweichpfad, lokaler Offline-Reserve und deterministischer Portionsberechnung.</p></div>
       </section>
     </div>
   );
@@ -2235,11 +2382,13 @@ export default function App() {
     const onOffline = () => setOnline(false);
     const onPwaStatus = (event: Event) => {
       const detail = (event as CustomEvent<Partial<PwaStatusNotice>>).detail;
-      setPwaNotice(detail?.message ? {
-        message: detail.message,
-        updateAvailable: detail.updateAvailable === true,
-        applyUpdate: detail.applyUpdate
-      } : null);
+      setPwaNotice((current) => current?.updateAvailable
+        ? current
+        : detail?.message ? {
+            message: detail.message,
+            updateAvailable: detail.updateAvailable === true,
+            applyUpdate: detail.applyUpdate
+          } : null);
     };
     const onPwaUpdateAvailable = (event: Event) => {
       const detail = (event as CustomEvent<{ apply?: () => void | Promise<void> }>).detail;
@@ -2386,7 +2535,7 @@ export default function App() {
   const gatewayError = settingsReady
     ? missingNetwork.length
       ? `Browser-Funktionen für die Netzwerksuche fehlen: ${missingNetwork.join(', ')}.`
-      : configuredGateway.error ?? (!configuredGateway.value ? 'Kein Daten-Gateway konfiguriert.' : null)
+      : configuredGateway.error
     : null;
 
   async function refreshHistory() {
@@ -2456,9 +2605,9 @@ export default function App() {
       );
     }
     const validation = validateHttpEndpoint(settings.dataGatewayUrl);
-    if (validation.error || !validation.value) {
+    if (validation.error) {
       throw new DataSourceError(
-        validation.error || 'Kein Daten-Gateway konfiguriert. Die manuelle und lokale Nutzung bleibt verfügbar.',
+        validation.error,
         'configuration'
       );
     }
@@ -2531,7 +2680,7 @@ export default function App() {
         ? attemptTechnicalText(failedAttempt)
         : `${caught.name}: ${caught.message}`;
       const title: Record<DataSourceError['kind'], string> = {
-        configuration: 'Daten-Gateway nicht konfiguriert',
+        configuration: 'API-Konfiguration ungültig',
         aborted: 'Anfrage abgebrochen',
         timeout: 'API-Zeitüberschreitung',
         network: 'Netzwerk- oder CORS-Fehler',
@@ -2540,7 +2689,7 @@ export default function App() {
         'rate-limit': `API-Hinweis${caught.status ? ` HTTP ${caught.status}` : ''}`
       };
       const message: Record<DataSourceError['kind'], string> = {
-        configuration: 'Für eine neue Produktsuche ist ein Daten-Gateway erforderlich. Manuelle Berechnung und lokal gespeicherte Ergebnisse funktionieren weiterhin.',
+        configuration: 'Die optionale Gateway-Adresse ist ungültig. Leere das Feld für direkten API-Zugriff oder trage einen gültigen HTTPS-Gateway ein.',
         aborted: '',
         timeout: 'Die Datenquelle hat innerhalb des sicheren Zeitlimits nicht geantwortet. Die Suche bleibt entsperrt und kann sofort neu gestartet werden.',
         network: 'Der Browser konnte den API-Endpunkt nicht erreichen oder dessen Antwort wegen CORS nicht lesen. Unten steht der originale technische Fehler.',
@@ -2611,7 +2760,8 @@ export default function App() {
           gatewayUrl: configuredGatewayUrl(),
           productApiMode: configuredProductApiMode(),
           seedProduct: productSeedFromSearchHit(candidate),
-          cacheEnabled: settings.cacheApiData
+          cacheEnabled: settings.cacheApiData,
+          offAccount: settings.offAccount
         });
         ensureControllerActive(controller);
         observeApiMeta(response.api_meta, 'Produktdetails');
@@ -2660,7 +2810,8 @@ export default function App() {
         const productResponse = await getProductByBarcode(parsed.barcode, controller.signal, {
           gatewayUrl: configuredGatewayUrl(),
           productApiMode,
-          cacheEnabled: settings.cacheApiData
+          cacheEnabled: settings.cacheApiData,
+          offAccount: settings.offAccount
         });
         ensureControllerActive(controller);
         observeApiMeta(productResponse.api_meta, 'Barcode-Produkt');
@@ -2704,7 +2855,8 @@ export default function App() {
             || parsed.product.name.trim().split(/\s+/).length >= 3,
           gatewayUrl: configuredGatewayUrl(),
           productOnly: parsed.product.name,
-          cacheEnabled: settings.cacheApiData
+          cacheEnabled: settings.cacheApiData,
+          offAccount: settings.offAccount
         }
       );
       ensureControllerActive(controller);

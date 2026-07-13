@@ -15,6 +15,7 @@
   "files": {
     "contracts/critical-fields.contract.json": "Zentrale Muss-Anforderungen",
     "contracts/search-execution.contract.json": "Suchpipeline und Fehlerzustände",
+    "contracts/off-account.contract.json": "Persönliches OFF-Konto im direkten Browserbetrieb",
     "contracts/unit-resolution.contract.json": "Auswahl der kleinsten Einheit",
     "contracts/calibration-persistence.contract.json": "Speicherung und Wiederverwendung",
     "contracts/ui-behavior.contract.json": "Verbindliches UI-Verhalten",
@@ -29,7 +30,7 @@
     "tests/acceptance-cases.json": "Maschinenlesbare Abnahmefixtures; ausführbar erst durch die Case-ID-Bindungen im Integrity-Test",
     "tests/acceptance-integrity.test.ts": "Jede Acceptance-Case-ID ist an einen real ausgeführten Produktionspfad gebunden",
     "tests/core-contract.test.ts": "Zusätzliche ausführbare Vitest-Vertragstests gegen Produktionsmodule",
-    "tests/normative-contract-consistency.test.ts": "Schützt Gateway-only-, Cache-Identity- und ehrliche Kalibrierungs-UI-Verträge vor Regression",
+    "tests/normative-contract-consistency.test.ts": "Schützt Dual-Lane-, Cache-Identity- und ehrliche Kalibrierungs-UI-Verträge vor Regression",
     "release/production-gates.json": "Freigabekriterien"
   }
 }

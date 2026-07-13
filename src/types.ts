@@ -303,6 +303,15 @@ export interface ManualFormValues {
   carbsPer100: number | null;
 }
 
+export interface OffAccountCredentials {
+  /** Open Food Facts username (`user_id`), never the account e-mail address. */
+  userId: string;
+  /** User-approved local credential used only for direct OFF authentication. */
+  password: string;
+  /** Last successful validation through the official OFF authentication API. */
+  verifiedAt: string;
+}
+
 export interface AppSettings {
   aiEnabled: boolean;
   decimalPlaces: 0 | 1 | 2;
@@ -313,12 +322,14 @@ export interface AppSettings {
   saveSearchSession: boolean;
   /** Persist user-entered unit calibrations for later calculations. */
   saveCalibrations: boolean;
-  /** Persist API responses for offline use. Network access still requires the gateway. */
+  /** Persist API responses for offline use. */
   cacheApiData: boolean;
-  /** Required for network search; manual and previously cached flows remain local. */
+  /** Optional gateway override. Empty selects direct official API access. */
   dataGatewayUrl: string;
   /** Product detail strategy: hybrid (v3->v2), v3-only, or v2-only. */
   productApiMode: ProductApiMode;
+  /** Optional personal OFF account for the direct browser lane. */
+  offAccount: OffAccountCredentials | null;
 }
 
 export interface WeightMeasurement {

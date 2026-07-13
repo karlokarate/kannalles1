@@ -4,8 +4,10 @@
 
 ### Zielarchitektur und API
 
-- statische, installierbare PWA plus vendor-neutraler Node-Gateway; globale Suche benötigt das Gateway, manuelle und lokal gespeicherte Funktionen nicht
-- Browserdaten-API strikt Gateway-only; eigener Search-a-licious-/OFF-Export-Index primär, OFF Legacy kontrollierte Auto-Reserve, öffentliche Search-a-licious-Instanz nur explizite Diagnose
+- zwei ausdrücklich getrennte Lanes: direkter Pages-Betrieb als Standard und autoritativer Gatewaybetrieb als vorbereiteter Ausweichpfad
+- direkte Suche über Search-a-licious mit genau einem OFF-Legacy-Fallback; Produktdetails über OFF v3.6 mit gezielter v2-Ergänzung
+- optionales persönliches OFF-Konto im Settingsscreen: Prüfung über die offizielle Auth-API, lokale Persistenz und Verwendung ausschließlich für direkte OFF-Requests mit credential-freien Diagnose-/Cachemetadaten
+- kein OFF-Export und kein eigener Produktindex; Vercel wird nur aktiviert, wenn die dokumentierten CORS-/Limit-/Verfügbarkeitskriterien eintreten
 - URL-versionierte `/api/v1`-Routen mit generiertem OpenAPI-/Orval-/Zod-Vertrag, strukturierten Fehlern und diagnostizierbarem Health-503
 - OFF Produkt v3.6 primär und v2 nur zur gezielten Ergänzung weiterhin fehlender Produktdaten
 - physisch getrennte Redis-Rollen: Limits/Single-Flight/Circuits fail-closed mit `noeviction`, Antwortcache fail-soft mit `allkeys-lru`; gleiche Production-Keyspaces werden abgelehnt
@@ -14,7 +16,7 @@
 
 - portable Docker-/Compose-Auslieferung ohne Vercel-Konfiguration oder Serverless-Wrapper; die umfassenden Container-/Runtime-Gates bleiben lokal und als explizite Abnahmebefehle verfügbar, blockieren aber nicht mehr das Pages-Deployment
 - gepinnter offizieller Search-a-licious-Commit mit tatsächlich verwendeten Tag-und-Digest-Images, versioniertem Länderfeld-Patch, Commit- und SHA-256-Preflight; ARM64-Buildgrenze dokumentiert
-- Pages-Workflow ist vom umfassenden Qualitätspaket entkoppelt und führt nur Lockfile-Installation, Produktionsbuild, Artefakt-Upload und Deploy aus; ohne `DATA_GATEWAY_URL` entsteht eine manuell/offline nutzbare PWA, mit öffentlichem HTTPS-Gateway die vollständige App
+- Pages-Workflow ist vom umfassenden Qualitätspaket entkoppelt und führt nur Lockfile-Installation, Produktionsbuild, Artefakt-Upload und Deploy aus; ohne `DATA_GATEWAY_URL` entsteht die direkte vollständige App, mit HTTPS-Gateway die getrennte Gateway-Lane
 - Search-a-licious verwendet einen eigenen Eventstream-Redis; der Updater liegt hinter dem Profil `search-updates` und setzt einen realen Product-Opener-Producer voraus
 - sichere, reproduzierbare Release- und Quellcode-ZIPs mit vollständiger SHA-256-Verifikation; keine alten Binärartefakte als Fallback
 - gepinnter Gitleaks-Scan mit enger Ausnahme ausschließlich für generierte Manifest-Digests
@@ -24,7 +26,7 @@
 
 - Pflichtprojekte Chromium Desktop/Android, Firefox Desktop und WebKit/iPhone sowie Offline-/Service-Worker-, History-, 320-px-, große-Schrift- und axe-WCAG-Smokes
 - deterministische manuelle Berechnung, Gruppenwägung, Kalibrierung, sofortiger Retry sowie getrennte lokale Daten-/Löschgrenzen
-- Suchbegriffe, Barcodes und Produktdaten nur zum Gateway; transparenter Hinweis, dass Produktbilder derzeit direkt vom OFF-CDN geladen werden und nur gecachte Assets/Daten offline vorliegen
+- transparente Zielangabe: Suchbegriffe und Barcodes gehen in Lane A an die offiziellen Dienste, in Lane B an den Gatewaybetreiber; nur gecachte Assets/Daten liegen offline vor
 - strukturierte, sicher bereinigte Fehlerdiagnose ohne Offenlegung interner Stackdetails
 
 ## 2.2.1

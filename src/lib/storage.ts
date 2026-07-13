@@ -331,7 +331,20 @@ function isSettingsRecord(value: unknown): value is AppSettings {
     && typeof candidate.saveCalibrations === 'boolean'
     && typeof candidate.cacheApiData === 'boolean'
     && typeof candidate.dataGatewayUrl === 'string'
-    && ['hybrid', 'v2', 'v3'].includes(String(candidate.productApiMode));
+    && ['hybrid', 'v2', 'v3'].includes(String(candidate.productApiMode))
+    && (candidate.offAccount === null || isOffAccountCredentials(candidate.offAccount));
+}
+
+function isOffAccountCredentials(value: unknown): value is NonNullable<AppSettings['offAccount']> {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<NonNullable<AppSettings['offAccount']>>;
+  return typeof candidate.userId === 'string'
+    && candidate.userId.trim().length > 0
+    && !candidate.userId.includes('@')
+    && typeof candidate.password === 'string'
+    && candidate.password.length > 0
+    && typeof candidate.verifiedAt === 'string'
+    && Number.isFinite(Date.parse(candidate.verifiedAt));
 }
 
 function migrateSettingsRecord(value: unknown): AppSettings | null {
@@ -345,7 +358,8 @@ function migrateSettingsRecord(value: unknown): AppSettings | null {
     saveCalibrations: value.saveCalibrations,
     cacheApiData: value.cacheApiData,
     dataGatewayUrl: value.dataGatewayUrl,
-    productApiMode: value.productApiMode
+    productApiMode: value.productApiMode,
+    offAccount: value.offAccount
   };
   if (!value || typeof value !== 'object') return null;
   const legacy = value as Partial<AppSettings>;
@@ -356,19 +370,24 @@ function migrateSettingsRecord(value: unknown): AppSettings | null {
     || typeof legacy.saveHistory !== 'boolean'
     || typeof legacy.dataGatewayUrl !== 'string'
     || !['hybrid', 'v2', 'v3'].includes(String(legacy.productApiMode))) return null;
+  const hasIndependentRepositoryConsent = typeof legacy.saveSearchSession === 'boolean'
+    && typeof legacy.saveCalibrations === 'boolean'
+    && typeof legacy.cacheApiData === 'boolean';
   return {
     aiEnabled: legacy.aiEnabled,
     decimalPlaces: legacy.decimalPlaces as AppSettings['decimalPlaces'],
     searchPageSize: legacy.searchPageSize as AppSettings['searchPageSize'],
     preferGermanMarket: legacy.preferGermanMarket,
-    // Releases before the per-repository consent controls could not prove that
-    // a true value represented an explicit opt-in. Migrate conservatively.
-    saveHistory: false,
-    saveSearchSession: false,
-    saveCalibrations: false,
-    cacheApiData: false,
+    // Only releases predating the independent repository controls need the
+    // conservative opt-out migration. A current record merely missing the new
+    // OFF account field retains the user's existing choices.
+    saveHistory: hasIndependentRepositoryConsent ? legacy.saveHistory : false,
+    saveSearchSession: hasIndependentRepositoryConsent ? Boolean(legacy.saveSearchSession) : false,
+    saveCalibrations: hasIndependentRepositoryConsent ? Boolean(legacy.saveCalibrations) : false,
+    cacheApiData: hasIndependentRepositoryConsent ? Boolean(legacy.cacheApiData) : false,
     dataGatewayUrl: legacy.dataGatewayUrl,
-    productApiMode: legacy.productApiMode as AppSettings['productApiMode']
+    productApiMode: legacy.productApiMode as AppSettings['productApiMode'],
+    offAccount: isOffAccountCredentials(legacy.offAccount) ? legacy.offAccount : null
   };
 }
 

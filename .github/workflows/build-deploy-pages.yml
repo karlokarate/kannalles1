@@ -20,8 +20,8 @@ jobs:
     permissions:
       contents: read
     env:
-      # Empty is a supported manual/offline deployment. As soon as a public
-      # HTTPS gateway exists, set the repository variable DATA_GATEWAY_URL.
+      # Empty selects direct OFF/Search-a-licious browser access. Set the
+      # repository variable only when intentionally switching to gateway lane B.
       VITE_DATA_GATEWAY_URL: ${{ vars.DATA_GATEWAY_URL }}
 
     steps:
@@ -82,8 +82,8 @@ jobs:
             echo "- URL: ${PAGE_URL}"
             echo "- Commit: ${GITHUB_SHA}"
             if [[ -n "${GATEWAY_URL}" ]]; then
-              echo "- Mode: full app with ${GATEWAY_URL}"
+              echo "- API lane: configured gateway ${GATEWAY_URL}"
             else
-              echo "- Mode: manual/offline; set DATA_GATEWAY_URL for global search"
+              echo "- API lane: direct Search-a-licious with OFF fallback"
             fi
           } >> "${GITHUB_STEP_SUMMARY}"

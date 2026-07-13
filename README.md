@@ -1,6 +1,6 @@
 # KH Checker v2.2.4
 
-KH Checker ist eine installierbare Web-App zur nachvollziehbaren Kohlenhydratberechnung. Manuelle Berechnung, App-Shell und lokal gespeicherte Daten funktionieren ohne Gateway. Eine neue globale Produktsuche benötigt ein konfiguriertes Daten-Gateway; der Browser ruft Open Food Facts niemals direkt auf.
+KH Checker ist eine installierbare Web-App zur nachvollziehbaren Kohlenhydratberechnung. Im Standardbetrieb auf GitHub Pages ruft der Browser Search-a-licious und Open Food Facts direkt auf. Ein versionierter Daten-Gateway bleibt als vollständig getrennte zweite Lane verfügbar. Manuelle Berechnung, App-Shell und lokale Daten funktionieren offline, soweit sie bereits auf dem Gerät vorhanden sind.
 
 ## Autoritäten
 
@@ -15,15 +15,14 @@ KH Checker ist eine installierbare Web-App zur nachvollziehbaren Kohlenhydratber
 ```text
 React-PWA
   → typisierte Search/Result-State-Machine
-  → generierter, Zod-validierender Gateway-Client
-  → /api/v1
-      → eigener Search-a-licious-/OFF-Export-Index
-      → OFF Legacy als Suchreserve; öffentliche Search-a-licious-Instanz nur explizit
-      → OFF v3.6-Adapter, v2-Kompatibilitätsadapter
-      → Redis-Koordination: Single-Flight, Limiter und Circuit Breaker
-      → separater Redis-Antwortcache
+  → Lane A (Default): Search-a-licious → OFF Legacy; OFF v3.6 → v2
+  → Lane B (optional): generierter Client → /api/v1 → gemeinsamer Gateway-Core
   → versionierte lokale Repositories (Memory → IndexedDB → kontrollierter Fallback)
 ```
+
+Die verbindliche Dual-Lane-Entscheidung und die objektiven Umschaltkriterien stehen in [docs/DECISION-DUAL-API-LANES.md](docs/DECISION-DUAL-API-LANES.md). Es gibt in keiner Lane einen OFF-Export oder einen eigenen Produktindex.
+
+Im Settingsscreen kann optional ein persönliches Open-Food-Facts-Konto verbunden werden. Die App prüft Benutzername und Passwort direkt bei OFF, speichert sie nach erfolgreicher Prüfung lokal im Browserprofil und nutzt sie ausschließlich für direkte OFF Legacy-/Produktrequests. Search-a-licious und ein konfigurierter Gateway erhalten diese Zugangsdaten nicht. OFF-Reads funktionieren grundsätzlich auch ohne Konto; das Login erhöht keine Rate-Limits und ersetzt keinen anwendungsspezifischen `User-Agent`.
 
 Kanonische Endpunkte:
 
@@ -49,7 +48,7 @@ npm run audit
 
 Die E2E-Suite läuft verpflichtend in Chromium Desktop/Android, Firefox Desktop und WebKit/iPhone. Die Scripts verwenden keine POSIX-Env-Zuweisung und laufen unter Windows, Linux und macOS.
 
-## Primäres Deployment: Container/Self-host
+## Optionale Gateway-Lane: Container/Self-host
 
 ```sh
 cp .env.example .env
@@ -58,13 +57,7 @@ docker compose up -d --build
 curl --fail http://127.0.0.1:8787/api/v1/health
 ```
 
-Für den vollständigen Produktionsstack mit eigenem Search-a-licious-Index siehe [deploy/search-index/README.md](deploy/search-index/README.md):
-
-```sh
-docker compose -f compose.yml -f compose.production.yml up -d --build
-```
-
-Externe `SEARCH_INDEX_URL`-Werte müssen in Production HTTPS verwenden. Nur das Produktions-Compose-Overlay setzt `SEARCH_INDEX_ALLOW_INSECURE_HTTP=1`, weil `http://api:8000/search` ausschließlich im privaten Compose-Netz aufgelöst wird; diese Ausnahme darf nicht auf einen öffentlichen Host übertragen werden.
+Diese Lane ist nicht für den aktuellen Pages-Betrieb erforderlich. Sie wird erst aktiviert, wenn die dokumentierten CORS-, Identifikations-, Limit- oder Verfügbarkeitsgrenzen der direkten Lane reproduzierbar überschritten werden.
 
 Das finale Gateway-Image installiert ausschließlich den separaten Lock unter `deploy/runtime`: `dotenv`, Express, OpenAI, Redis und Zod. React/Lucide sind bereits gebundelte Frontend-Assets; Hono/OpenAPI und die Generatorwerkzeuge bleiben im Build-Stage. Der Server konsumiert dafür einen deterministisch generierten, eigenständigen Zod-Graphen statt der Hono-Contract-Datei zur Laufzeit.
 
@@ -74,11 +67,11 @@ Der optionale Paid-AI-Parser ist in Production nur aktiv, wenn sowohl `OPENAI_AP
 
 `GATEWAY_CLIENT_SALT` ist ein zweites, unabhängiges Production-Secret für pseudonyme Client-Budgets (standardmäßig 6 Suchen und 10 Produktaufrufe pro Minute). Es HMACt ausschließlich die vom Express-Trust-Proxy-Modell bestätigte Client-IP; Rohadressen werden nicht als Budget-Key abgelegt. Weil mehrere Personen hinter demselben NAT/VPN dieselbe öffentliche Adresse teilen, teilen sie auch dieses konservative Missbrauchsbudget und können sich gegenseitig kurz drosseln. Bei Klinik-/Schulnetzen die Werte kontrolliert erhöhen oder einen authentifizierten First-Party-Clientschlüssel ergänzen, jedoch niemals ungeprüfte Forwarded-Header vertrauen.
 
-Vercel ist weder Laufzeit- noch Deploymentabhängigkeit. Die frühere Plattformkonfiguration und die Serverless-Wrapper wurden entfernt; der einzige gepflegte Backendpfad ist der vendor-neutrale Node/Express-Gateway, der als Container oder normaler Node-Prozess betrieben werden kann. Die statische PWA kann unabhängig davon auf jedem HTTPS-Host liegen.
+Vercel ist in Lane A keine Laufzeit- oder Deploymentabhängigkeit. Bei einem späteren vollständigen Wechsel auf Lane B wird Vercel bewusst als externer Serverdienst gepflegt; dünne Serverless-Routen müssen dann denselben Gateway-Core wie der Node/Express-Adapter verwenden.
 
 ## Statisches PWA-Deployment
 
-`VITE_DATA_GATEWAY_URL=https://gateway.example.org` bindet das Gateway beim Build ein. Ein leerer Wert ist zulässig und erzeugt eine installierbare, manuell/offline nutzbare PWA ohne globale Netzwerksuche. Ein vollständiges Release kann weiterhin separat mit `RELEASE_DEPLOYMENT_PROFILE=full-app` und den dafür vorgesehenen Live-Gates abgenommen werden. Direkte OFF-/Search-a-licious-API-URLs bleiben im Browserbundle verboten.
+Ein leerer `VITE_DATA_GATEWAY_URL`-Wert baut die direkte Pages-Lane mit globaler Suche. `VITE_DATA_GATEWAY_URL=https://gateway.example.org` schaltet alle Such- und Produktanfragen autoritativ auf Lane B. Releaseprofile heißen entsprechend `direct-pages` und `gateway`.
 
 ```sh
 npm run build
@@ -86,10 +79,10 @@ npm run check:pages
 npm run release
 ```
 
-Der Pages-Workflow ist bewusst ein schlanker Deploymentpfad: Lockfile installieren, Produktions-PWA bauen, `dist/` hochladen und deployen. Er wiederholt weder Unit-/Browser-/Container-/Securitytests noch den separaten Releasebau. Ohne Repository-Variable `DATA_GATEWAY_URL` wird die manuell/offline nutzbare PWA veröffentlicht; mit einer öffentlichen HTTPS-URL wird dieselbe PWA als vollständige Gateway-App gebaut. Die alte Variable `VITE_DATA_GATEWAY_URL` wird vom Workflow nicht verwendet.
+Der Pages-Workflow ist bewusst ein schlanker Deploymentpfad: Lockfile installieren, Produktions-PWA bauen, `dist/` hochladen und deployen. Er wiederholt weder Unit-/Browser-/Container-/Securitytests noch den separaten Releasebau. Ohne Repository-Variable `DATA_GATEWAY_URL` wird Lane A veröffentlicht; mit einer öffentlichen HTTPS-URL wird Lane B gebaut. Die alte Variable `VITE_DATA_GATEWAY_URL` wird vom Workflow nicht verwendet.
 
 ```sh
-# Optional, sobald ein öffentliches HTTPS-Gateway existiert:
+# Nur für den bewussten Wechsel auf Lane B:
 gh variable set DATA_GATEWAY_URL --body https://gateway.example.org
 gh workflow run build-deploy-pages.yml
 ```
@@ -112,10 +105,10 @@ Zusätzlich gelten 320-px-Reflow (entspricht 400 % Zoom bei 1280 px Ausgangsbrei
 
 ## Datenschutz, Lizenz und Sicherheit
 
-- Suchbegriffe und Barcodes gehen nur an das konfigurierte Gateway. Der Browser sendet sie nicht direkt an OFF oder Search-a-licious.
+- In Lane A gehen Suchbegriffe an Search-a-licious beziehungsweise OFF Legacy und Barcodes an OFF; diese Dienste sehen die öffentliche Client-IP. In Lane B gehen diese Daten an den konfigurierten Gatewaybetreiber.
 - Produktbilder können derzeit direkt von `images.openfoodfacts.org` geladen werden. Dabei erhält das OFF-Bild-CDN technisch IP-Adresse und angeforderte Bild-URL; vollständig drittanbieterfreier Betrieb erfordert einen eigenen Bild-Proxy. Offline erscheinen nur bereits gecachte Bilder und Daten.
 - Verlauf, Favoriten, Kalibrierungen und API-Cache sind getrennte lokale Datenbereiche und können unabhängig gelöscht werden.
-- Keine OFF-, Redis- oder OpenAI-Credentials dürfen `VITE_*` heißen oder im statischen Bundle landen.
+- Keine Betreiber-Credentials für OFF, Redis oder OpenAI dürfen `VITE_*` heißen oder im statischen Bundle landen. Persönliche, im Settingsscreen eingegebene OFF-Zugangsdaten sind ausdrücklich erlaubte lokale Laufzeitdaten; sie werden weder eingebaut noch an Search-a-licious/Gateway oder Diagnose-/API-Caches weitergegeben.
 - CORS ist keine Authentifizierung: Der kostenpflichtige AI-Endpunkt benötigt in Production zusätzlich den geheimen `AI_SAFETY_SALT`, damit globale und pseudonyme Nutzerbudgets immer gemeinsam greifen.
 - Produktdaten stammen von Open Food Facts und stehen unter ODbL; Bilder können abweichende Einzel-Lizenzen haben. Quellen- und Altersangaben müssen im Ergebnis sichtbar bleiben. Siehe [OFF API-Dokumentation](https://openfoodfacts.github.io/documentation/docs/Product-Opener/api/).
 - Search-a-licious ist AGPL-3.0; beim Self-hosting gelten dessen Lizenz- und Source-Angebotspflichten. Siehe [offizielles Repository](https://github.com/openfoodfacts/search-a-licious).

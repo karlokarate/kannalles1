@@ -182,9 +182,11 @@ test("Suchbutton erlaubt sofortige Wiederholung ohne direkten Browser-OFF-Aufruf
 	expect(offRequests).toBe(0);
 });
 
-test("fehlender Gateway wird als fokussierter Konfigurationszustand erklärt", async ({
+test("Ausfall beider direkten Suchdienste wird fokussiert und diagnostizierbar erklärt", async ({
 	page,
 }) => {
+	await page.route("https://search.openfoodfacts.org/**", (route) => route.abort());
+	await page.route("https://world.openfoodfacts.org/**", (route) => route.abort());
 	await openApp(page);
 	await page
 		.getByRole("button", { name: "Einstellungen", exact: true })
@@ -197,13 +199,59 @@ test("fehlender Gateway wird als fokussierter Konfigurationszustand erklärt", a
 	await page.getByRole("button", { name: "Suchen" }).click();
 
 	const alert = page.getByRole("alert");
-	await expect(alert).toContainText("Daten-Gateway nicht konfiguriert");
-	await expect(alert).toContainText("Manuelle Berechnung");
+	await expect(alert).toContainText("Netzwerk- oder CORS-Fehler");
+	await expect(alert).toContainText("Search-a-licious");
+	await expect(alert).toContainText("Open Food Facts Legacy-Suche");
+	await expect(alert.getByRole("button", { name: "Erneut versuchen" })).toBeEnabled();
 	await expect(alert).toBeFocused();
 	const errorA11y = await new AxeBuilder({ page })
 		.withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
 		.analyze();
 	expect(errorA11y.violations).toEqual([]);
+});
+
+test("persönliches OFF-Konto wird geprüft, lokal gespeichert und wieder entfernt", async ({
+	page,
+}) => {
+	let loginBody = "";
+	await page.route("https://world.openfoodfacts.org/cgi/auth.pl", async (route) => {
+		loginBody = route.request().postData() ?? "";
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			headers: { "Access-Control-Allow-Origin": "*" },
+			body: JSON.stringify({
+				status: 1,
+				user_id: "e2e-off-user",
+				user: { name: "E2E OFF User" },
+			}),
+		});
+	});
+
+	await openApp(page);
+	await page
+		.getByRole("button", { name: "Einstellungen", exact: true })
+		.click();
+	await page.getByLabel("OFF-Benutzername").fill("e2e-off-user");
+	await page.getByLabel("OFF-Passwort").fill("e2e password");
+	await page.getByRole("button", { name: "Anmelden & lokal speichern" }).click();
+	await expect(page.getByRole("status").filter({ hasText: /OFF-Konto e2e-off-user ist verbunden/ })).toBeVisible();
+	const submitted = new URLSearchParams(loginBody);
+	expect(submitted.get("user_id")).toBe("e2e-off-user");
+	expect(submitted.get("password")).toBe("e2e password");
+
+	await expect
+		.poll(() => page.evaluate(() => localStorage.getItem("kh-checker-settings-v3")))
+		.toContain("e2e-off-user");
+	await page.reload();
+	await page
+		.getByRole("button", { name: "Einstellungen", exact: true })
+		.click();
+	await expect(page.getByLabel("OFF-Benutzername")).toHaveValue("e2e-off-user");
+	await expect(page.getByRole("button", { name: "Konto entfernen" })).toBeVisible();
+	await page.getByRole("button", { name: "Konto entfernen" }).click();
+	await expect(page.getByLabel("OFF-Benutzername")).toHaveValue("");
+	await expect(page.getByRole("button", { name: "Konto entfernen" })).toHaveCount(0);
 });
 
 test("leere Suche endet in einem expliziten Empty-State", async ({ page }) => {

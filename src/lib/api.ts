@@ -2,13 +2,15 @@ import {
   buildGatewayProductUrl,
   buildGatewaySearchUrl,
   createGatewayClient,
-  GatewayTransportError
+  GatewayTransportError,
+  MAX_GATEWAY_RESPONSE_BYTES
 } from '../generated/search-api';
 import type { GatewayTransportResult } from '../generated/search-api';
 import type {
   ApiAttemptDiagnostic,
   ApiBackend,
   ApiResponseMeta,
+  OffAccountCredentials,
   OffProduct,
   OffProductResponse,
   ProductApiMode,
@@ -29,8 +31,22 @@ import {
 import type { ApiBucket } from './apiGovernor';
 import { isOffBarcodeInput, normalizeOffBarcode } from './barcode';
 import { validatedGatewayBase } from './gatewayUrl';
+import {
+  PRODUCT_V2_FIELDS,
+  PRODUCT_V3_FIELDS,
+  SEARCH_FIELDS as OFF_SEARCH_FIELDS,
+  SEARCH_INDEX_FIELDS,
+  adaptV2ProductResponse,
+  adaptV3ProductResponse,
+  hasCarbohydrateData,
+  normalizeIndexSearch,
+  normalizeLegacySearch
+} from '../../server/gateway-core/off-adapters.mjs';
 
-const CACHE_NAMESPACE = 'kh-v3:gateway';
+const CACHE_NAMESPACE = 'kh-v3:api-lane';
+const SEARCH_A_LICIOUS_URL = 'https://search.openfoodfacts.org/search';
+const OFF_BASE_URL = 'https://world.openfoodfacts.org/';
+const OFF_AUTH_URL = 'https://world.openfoodfacts.org/cgi/auth.pl';
 const MAX_SEARCH_QUERY_LENGTH = 120;
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -75,6 +91,8 @@ export interface SearchFoodOptions {
   searchApiMode?: 'auto' | 'legacy-only';
   /** Disable persistent API data for privacy-sensitive sessions. */
   cacheEnabled?: boolean;
+  /** Personal account used only by direct requests to world.openfoodfacts.org. */
+  offAccount?: OffAccountCredentials | null;
 }
 
 export interface ProductRequestOptions {
@@ -82,6 +100,13 @@ export interface ProductRequestOptions {
   seedProduct?: OffProduct;
   productApiMode?: ProductApiMode;
   cacheEnabled?: boolean;
+  /** Personal account used only by direct requests to world.openfoodfacts.org. */
+  offAccount?: OffAccountCredentials | null;
+}
+
+export interface OffAccountIdentity {
+  userId: string;
+  name: string | null;
 }
 
 type DataSourceErrorKind =
@@ -202,9 +227,9 @@ function cacheToken(value: string): string {
   return encodeURIComponent(normalizeText(value).replace(/\s+/g, ' ').trim());
 }
 
-function gatewayCacheNamespace(value = ''): string {
+function runtimeLaneCacheNamespace(value = ''): string {
   const clean = value.trim();
-  if (!clean) return 'unconfigured';
+  if (!clean) return 'direct-off';
   try {
     const url = clean.startsWith('/') && typeof window !== 'undefined'
       ? new URL(clean, window.location.origin)
@@ -216,21 +241,16 @@ function gatewayCacheNamespace(value = ''): string {
 }
 
 function searchCacheKey(query: string, pageSize: number, gatewayUrl = ''): string {
-  return `${CACHE_NAMESPACE}:search:v1:${gatewayCacheNamespace(gatewayUrl)}:${pageSize}:${cacheToken(query)}`;
+  return `${CACHE_NAMESPACE}:search:v1:${runtimeLaneCacheNamespace(gatewayUrl)}:${pageSize}:${cacheToken(query)}`;
 }
 
 function productCacheKey(code: string, mode: ProductApiMode, gatewayUrl = ''): string {
-  return `${CACHE_NAMESPACE}:product:v2:${gatewayCacheNamespace(gatewayUrl)}:${mode}:${code}`;
+  return `${CACHE_NAMESPACE}:product:v2:${runtimeLaneCacheNamespace(gatewayUrl)}:${mode}:${code}`;
 }
 
 function validateGatewayBase(value = ''): string {
   const clean = value.trim();
-  if (!clean) {
-    throw new DataSourceError(
-      'Kein Daten-Gateway konfiguriert. Bereits gespeicherte Daten und die manuelle Berechnung bleiben verfügbar.',
-      'configuration'
-    );
-  }
+  if (!clean) return '';
 
   try {
     return validatedGatewayBase(
@@ -239,6 +259,190 @@ function validateGatewayBase(value = ''): string {
     );
   } catch (cause) {
     throw new DataSourceError('Die konfigurierte Daten-Gateway-Adresse ist ungültig oder unsicher.', 'configuration', { cause });
+  }
+}
+
+function directSearchALiciousUrl(query: string, pageSize: number): string {
+  const url = new URL(SEARCH_A_LICIOUS_URL);
+  url.searchParams.set('q', query);
+  url.searchParams.set('langs', 'de,en,main');
+  url.searchParams.set('page', '1');
+  url.searchParams.set('page_size', String(pageSize));
+  url.searchParams.set('fields', SEARCH_INDEX_FIELDS.join(','));
+  return url.toString();
+}
+
+function directLegacySearchUrl(query: string, pageSize: number): string {
+  const url = new URL('/cgi/search.pl', OFF_BASE_URL);
+  url.searchParams.set('action', 'process');
+  url.searchParams.set('json', '1');
+  url.searchParams.set('search_simple', '1');
+  url.searchParams.set('search_terms', query);
+  url.searchParams.set('page', '1');
+  url.searchParams.set('page_size', String(pageSize));
+  url.searchParams.set('sort_by', 'popularity');
+  url.searchParams.set('lc', 'de');
+  url.searchParams.set('cc', 'de');
+  url.searchParams.set('fields', OFF_SEARCH_FIELDS.join(','));
+  return url.toString();
+}
+
+function directProductUrl(version: 'v3.6' | 'v2', code: string): string {
+  const suffix = version === 'v3.6' ? '' : '.json';
+  const url = new URL(`/api/${version}/product/${encodeURIComponent(code)}${suffix}`, OFF_BASE_URL);
+  url.searchParams.set('lc', 'de');
+  url.searchParams.set('cc', 'de');
+  if (version === 'v3.6') url.searchParams.set('tags_lc', 'de');
+  url.searchParams.set('fields', (version === 'v3.6' ? PRODUCT_V3_FIELDS : PRODUCT_V2_FIELDS).join(','));
+  return url.toString();
+}
+
+function authenticatedOffRequestUrl(url: string, account?: OffAccountCredentials | null): string {
+  if (!account) return url;
+  const requestUrl = new URL(url);
+  if (requestUrl.origin !== new URL(OFF_BASE_URL).origin) return url;
+  requestUrl.searchParams.set('user_id', account.userId);
+  requestUrl.searchParams.set('password', account.password);
+  // Authenticate this request without opening another OFF session. The
+  // browser lane cannot reliably reuse OFF's SameSite=Lax cross-site cookie.
+  requestUrl.searchParams.set('no_log', '1');
+  return requestUrl.toString();
+}
+
+async function directJsonTransport(
+  requestUrl: string,
+  signal: AbortSignal,
+  diagnosticUrl = requestUrl
+): Promise<GatewayTransportResult<unknown>> {
+  const response = await fetch(requestUrl, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    mode: 'cors',
+    credentials: 'omit',
+    cache: 'no-store',
+    referrerPolicy: 'no-referrer',
+    signal
+  });
+  const declaredLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_GATEWAY_RESPONSE_BYTES) {
+    throw new GatewayTransportError('API-Antwort überschreitet das Größenlimit.', {
+      status: response.status,
+      headers: response.headers,
+      url: diagnosticUrl
+    });
+  }
+  const responseText = await response.text();
+  if (new TextEncoder().encode(responseText).byteLength > MAX_GATEWAY_RESPONSE_BYTES) {
+    throw new GatewayTransportError('API-Antwort überschreitet das Größenlimit.', {
+      status: response.status,
+      headers: response.headers,
+      url: diagnosticUrl
+    });
+  }
+  if (!response.ok) {
+    throw new GatewayTransportError(`API antwortete mit HTTP ${response.status}.`, {
+      status: response.status,
+      responseText,
+      headers: response.headers,
+      url: diagnosticUrl
+    });
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(responseText);
+  } catch (cause) {
+    throw new GatewayTransportError('API lieferte kein gültiges JSON.', {
+      status: response.status,
+      responseText,
+      headers: response.headers,
+      url: diagnosticUrl,
+      cause
+    });
+  }
+  return { data, status: response.status, headers: response.headers, responseText, url: diagnosticUrl };
+}
+
+/**
+ * Validate and identify a personal OFF account through OFF's official login
+ * API. The password is sent in a form body and is never copied into errors or
+ * diagnostics. Persistence is an explicit Settings concern.
+ */
+export async function authenticateOffAccount(
+  credentials: Pick<OffAccountCredentials, 'userId' | 'password'>,
+  signal?: AbortSignal
+): Promise<OffAccountIdentity> {
+  const userId = credentials.userId.trim();
+  if (!userId || userId.includes('@')) {
+    throw new DataSourceError('OFF benötigt den Benutzernamen, nicht die E-Mail-Adresse.', 'http', { status: 400 });
+  }
+  if (!credentials.password) {
+    throw new DataSourceError('Bitte gib dein OFF-Passwort ein.', 'http', { status: 400 });
+  }
+  throwIfAborted(signal);
+
+  const controller = new AbortController();
+  const forwardAbort = () => controller.abort(signal?.reason);
+  signal?.addEventListener('abort', forwardAbort, { once: true });
+  const timeout = globalThis.setTimeout(
+    () => controller.abort(new DOMException('OFF-Anmeldung hat zu lange gedauert.', 'TimeoutError')),
+    10_000
+  );
+  const body = new URLSearchParams({
+    user_id: userId,
+    password: credentials.password,
+    body: '1',
+    no_log: '1'
+  });
+
+  try {
+    const response = await fetch(OFF_AUTH_URL, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+      },
+      body,
+      mode: 'cors',
+      credentials: 'omit',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      signal: controller.signal
+    });
+    const responseText = await response.text();
+    let payload: unknown = null;
+    try {
+      payload = JSON.parse(responseText);
+    } catch {
+      throw new DataSourceError('OFF lieferte bei der Anmeldung keine gültige Antwort.', 'parse', {
+        status: response.status
+      });
+    }
+    const candidate = payload as {
+      status?: unknown;
+      user_id?: unknown;
+      user?: { name?: unknown };
+    };
+    if (!response.ok || candidate.status !== 1 || typeof candidate.user_id !== 'string') {
+      throw new DataSourceError('OFF-Benutzername oder Passwort ist nicht gültig.', 'http', {
+        status: response.ok || response.status === 403 ? 401 : response.status
+      });
+    }
+    return {
+      userId: candidate.user_id,
+      name: typeof candidate.user?.name === 'string' && candidate.user.name.trim()
+        ? candidate.user.name.trim()
+        : null
+    };
+  } catch (cause) {
+    if (cause instanceof DataSourceError) throw cause;
+    if (signal?.aborted) throwIfAborted(signal);
+    if (controller.signal.aborted) {
+      throw new DataSourceError('Die OFF-Anmeldung hat zu lange gedauert.', 'timeout', { cause });
+    }
+    throw new DataSourceError('OFF konnte die Anmeldung nicht prüfen. Bitte versuche es erneut.', 'network', { cause });
+  } finally {
+    globalThis.clearTimeout(timeout);
+    signal?.removeEventListener('abort', forwardAbort);
   }
 }
 
@@ -302,14 +506,16 @@ async function requestNetwork<T>(
   label: string,
   controller: AbortController,
   telemetryEnabled: boolean,
-  execute: (signal: AbortSignal) => Promise<GatewayTransportResult<T>>
+  execute: (signal: AbortSignal) => Promise<GatewayTransportResult<T>>,
+  deadlineMs = REQUEST_DEADLINE_MS,
+  attemptBackend: ApiBackend = 'gateway'
 ): Promise<NetworkResult<T>> {
   const startedAt = Date.now();
   let timedOut = false;
   const timeout = globalThis.setTimeout(() => {
     timedOut = true;
     controller.abort(new DOMException('Gesamtdeadline überschritten.', 'TimeoutError'));
-  }, REQUEST_DEADLINE_MS);
+  }, deadlineMs);
   if (telemetryEnabled) recordApiRequest(bucket, startedAt);
 
   try {
@@ -318,7 +524,10 @@ async function requestNetwork<T>(
     return {
       value: response.data,
       fetchedAt: Date.now(),
-      attempt: gatewayAttempt(response.url, label, startedAt, 'success', { status: response.status })
+      attempt: gatewayAttempt(response.url, label, startedAt, 'success', {
+        backend: attemptBackend,
+        status: response.status
+      })
     };
   } catch (cause) {
     if (cause instanceof DataSourceError) throw cause;
@@ -340,6 +549,7 @@ async function requestNetwork<T>(
       const parseFailure = cause.message.includes('JSON') || cause.message.includes('API-Vertrag');
       const kind: DataSourceErrorKind = rateLimited ? 'rate-limit' : parseFailure ? 'parse' : 'http';
       const attempt = gatewayAttempt(cause.url, label, startedAt, rateLimited ? 'rate-limit' : parseFailure ? 'parse-error' : 'http-error', {
+        backend: attemptBackend,
         status: cause.status,
         errorName: cause.name,
         errorMessage: cause.message,
@@ -356,10 +566,11 @@ async function requestNetwork<T>(
     const aborted = controller.signal.aborted;
     const kind: DataSourceErrorKind = timedOut ? 'timeout' : aborted ? 'aborted' : 'network';
     const attempt = gatewayAttempt(url, label, startedAt, timedOut ? 'timeout' : aborted ? 'aborted' : 'network-error', {
+      backend: attemptBackend,
       errorName: timedOut ? 'TimeoutError' : errorName(cause),
-      errorMessage: timedOut ? `Gesamtdeadline nach ${REQUEST_DEADLINE_MS} ms überschritten.` : errorMessage(cause)
+      errorMessage: timedOut ? `Gesamtdeadline nach ${deadlineMs} ms überschritten.` : errorMessage(cause)
     });
-    throw new DataSourceError(attempt.errorMessage ?? 'Daten-Gateway nicht erreichbar.', kind, {
+    throw new DataSourceError(attempt.errorMessage ?? 'API-Endpunkt nicht erreichbar.', kind, {
       attempts: [attempt],
       cause
     });
@@ -414,10 +625,13 @@ async function sharedNetwork<T>(
   label: string,
   signal?: AbortSignal,
   telemetryEnabled = true,
-  execute?: (signal: AbortSignal) => Promise<GatewayTransportResult<T>>
+  execute?: (signal: AbortSignal) => Promise<GatewayTransportResult<T>>,
+  deadlineMs = REQUEST_DEADLINE_MS,
+  attemptBackend: ApiBackend = 'gateway',
+  requestIdentity = ''
 ): Promise<NetworkResult<T>> {
   throwIfAborted(signal);
-  const requestKey = `${telemetryEnabled ? 'telemetry' : 'private'}:${url}`;
+  const requestKey = `${telemetryEnabled ? 'telemetry' : 'private'}:${requestIdentity}:${url}`;
   let request = inFlight.get(requestKey) as SharedRequest<T> | undefined;
   // The final subscriber aborts the shared controller synchronously, while the
   // promise cleanup runs in a later microtask. Never attach a new user action
@@ -436,7 +650,16 @@ async function sharedNetwork<T>(
       settled: false
     };
     const currentRequest = request;
-    request.promise = requestNetwork<T>(url, bucket, label, controller, telemetryEnabled, execute).finally(() => {
+    request.promise = requestNetwork<T>(
+      url,
+      bucket,
+      label,
+      controller,
+      telemetryEnabled,
+      execute,
+      deadlineMs,
+      attemptBackend
+    ).finally(() => {
       currentRequest.settled = true;
       if (inFlight.get(requestKey) === currentRequest) inFlight.delete(requestKey);
     });
@@ -511,7 +734,8 @@ function normalizeGatewayMeta<T extends { api_meta?: ApiResponseMeta; gateway_at
   response: T,
   sourceUrl: string,
   fetchedAt: number,
-  transportAttempt: ApiAttemptDiagnostic
+  transportAttempt: ApiAttemptDiagnostic,
+  transportBackend: ApiBackend = 'gateway'
 ): T {
   const upstream = response.api_meta;
   const attempts = mergeAttempts(response.gateway_attempts, upstream?.attempts, [transportAttempt]);
@@ -523,8 +747,8 @@ function normalizeGatewayMeta<T extends { api_meta?: ApiResponseMeta; gateway_at
       cacheStatus: upstream?.cacheStatus ?? 'network',
       fetchedAt: upstream?.fetchedAt ?? new Date(fetchedAt).toISOString(),
       sourceUrl: upstream?.sourceUrl || sourceUrl,
-      backend: 'gateway',
-      originBackend: upstream?.originBackend ?? upstream?.backend ?? 'gateway',
+      backend: transportBackend,
+      originBackend: upstream?.originBackend ?? upstream?.backend ?? transportBackend,
       networkAttempted: true,
       durationMs: attempts.reduce((sum, item) => sum + item.durationMs, 0),
       attempts
@@ -556,6 +780,151 @@ function mergeProducts(seed: OffProduct | undefined, product: OffProduct | undef
 function productToSearchHit(product: OffProduct | undefined): SearchHit {
   if (!product) return {};
   return { ...product };
+}
+
+function asDataSourceError(error: unknown): DataSourceError {
+  return error instanceof DataSourceError
+    ? error
+    : new DataSourceError(errorMessage(error), 'network', { cause: error });
+}
+
+function fallbackReasonFor(error: DataSourceError): ApiResponseMeta['fallbackReason'] {
+  if (error.kind === 'rate-limit') return 'rate-limit';
+  if (error.kind === 'timeout') return 'timeout';
+  if (error.kind === 'parse') return 'parse';
+  if (error.kind === 'http') return 'http';
+  return 'network';
+}
+
+function withDirectFallbackMeta(
+  response: SearchResponse,
+  priorAttempts: ApiAttemptDiagnostic[],
+  fallbackError?: DataSourceError,
+  fallbackReason?: ApiResponseMeta['fallbackReason']
+): SearchResponse {
+  const current = response.api_meta;
+  const attempts = mergeAttempts(priorAttempts, current?.attempts);
+  const responseBackend = response.source && response.source !== 'none'
+    ? response.source
+    : undefined;
+  return {
+    ...response,
+    api_meta: responseMeta(current?.cacheStatus ?? 'network', Date.parse(current?.fetchedAt ?? '') || Date.now(), current?.sourceUrl ?? '', {
+      ...current,
+      backend: current?.backend ?? responseBackend,
+      originBackend: current?.originBackend ?? responseBackend,
+      networkAttempted: attempts.some((attempt) => attempt.outcome !== 'cache-hit'),
+      durationMs: attempts.reduce((sum, attempt) => sum + attempt.durationMs, 0),
+      attempts,
+      fallbackReason: fallbackReason ?? (fallbackError ? fallbackReasonFor(fallbackError) : current?.fallbackReason),
+      fallbackStatus: fallbackError?.status ?? current?.fallbackStatus,
+      fallbackOrigin: fallbackError?.status === 503
+        ? 'remote-overload'
+        : fallbackError?.status === 429 ? 'remote-limit' : current?.fallbackOrigin,
+      retryAt: fallbackError?.retryAt ? new Date(fallbackError.retryAt).toISOString() : current?.retryAt
+    })
+  };
+}
+
+async function directSearchBackend(
+  backend: 'search-a-licious' | 'open-food-facts-legacy',
+  query: string,
+  pageSize: number,
+  signal: AbortSignal | undefined,
+  telemetryEnabled: boolean,
+  offAccount?: OffAccountCredentials | null
+): Promise<SearchResponse> {
+  const searchALicious = backend === 'search-a-licious';
+  const url = searchALicious
+    ? directSearchALiciousUrl(query, pageSize)
+    : directLegacySearchUrl(query, pageSize);
+  const requestUrl = searchALicious ? url : authenticatedOffRequestUrl(url, offAccount);
+  const network = await sharedNetwork<unknown>(
+    url,
+    'search',
+    searchALicious ? 'Search-a-licious' : 'Open Food Facts Legacy-Suche',
+    signal,
+    telemetryEnabled,
+    (requestSignal) => directJsonTransport(requestUrl, requestSignal, url),
+    searchALicious ? 4_500 : 7_000,
+    backend,
+    searchALicious || !offAccount ? '' : `off-user:${offAccount.userId}`
+  );
+  const raw = network.value;
+  const valid = raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+    && (searchALicious
+      ? (Array.isArray((raw as { hits?: unknown }).hits) || Array.isArray((raw as { products?: unknown }).products))
+      : Array.isArray((raw as { products?: unknown }).products));
+  const upstreamErrors = searchALicious && Array.isArray((raw as { errors?: unknown } | null)?.errors)
+    ? (raw as { errors: unknown[] }).errors
+    : [];
+  if (!valid || upstreamErrors.length > 0) {
+    const attempt: ApiAttemptDiagnostic = {
+      ...network.attempt,
+      outcome: 'parse-error',
+      errorName: 'UpstreamContractViolation',
+      errorMessage: upstreamErrors.length
+        ? 'Search-a-licious meldete einen API-Fehler.'
+        : 'Die Such-API lieferte keine gültige Trefferliste.'
+    };
+    throw new DataSourceError(attempt.errorMessage ?? 'Ungültige Suchantwort.', 'parse', {
+      status: network.attempt.status,
+      attempts: [attempt]
+    });
+  }
+  const normalized = searchALicious
+    ? normalizeIndexSearch(raw, query, 'search-a-licious')
+    : normalizeLegacySearch(raw, query);
+  return normalizeGatewayMeta(normalized, url, network.fetchedAt, network.attempt, backend);
+}
+
+async function searchDirectly(
+  query: string,
+  pageSize: number,
+  signal: AbortSignal | undefined,
+  telemetryEnabled: boolean,
+  offAccount?: OffAccountCredentials | null
+): Promise<SearchResponse> {
+  const attempts: ApiAttemptDiagnostic[] = [];
+  const errors: DataSourceError[] = [];
+  let reachableEmpty: SearchResponse | null = null;
+
+  for (const backend of ['search-a-licious', 'open-food-facts-legacy'] as const) {
+    try {
+      const response = await directSearchBackend(
+        backend,
+        query,
+        pageSize,
+        signal,
+        telemetryEnabled,
+        offAccount
+      );
+      const previousError = errors.at(-1);
+      const combined = withDirectFallbackMeta(
+        response,
+        attempts,
+        previousError,
+        reachableEmpty ? 'empty-result' : undefined
+      );
+      attempts.push(...(response.api_meta?.attempts ?? []));
+      if (combined.hits.length > 0 || backend === 'open-food-facts-legacy') return combined;
+      reachableEmpty = combined;
+    } catch (error) {
+      if (signal?.aborted) throwIfAborted(signal);
+      const typed = asDataSourceError(error);
+      errors.push(typed);
+      attempts.push(...typed.attempts);
+    }
+  }
+
+  if (reachableEmpty) return withDirectFallbackMeta(reachableEmpty, attempts, errors.at(-1));
+  const last = errors.at(-1);
+  throw new DataSourceError('Keine öffentliche Produktsuche war erreichbar.', last?.kind ?? 'network', {
+    status: last?.status,
+    attempts: mergeAttempts(attempts),
+    retryAt: last?.retryAt,
+    cause: last
+  });
 }
 
 export async function searchFoodCandidates(
@@ -599,6 +968,47 @@ export async function searchFoodCandidates(
       };
     }
     throw error;
+  }
+  if (!gateway) {
+    try {
+      const response = await searchDirectly(
+        query,
+        requestedPageSize,
+        signal,
+        cacheEnabled,
+        options.offAccount
+      );
+      if (cacheEnabled) {
+        const empty = response.hits.length === 0;
+        await storeCache<CachedSearch['response']>(
+          key,
+          response,
+          response.api_meta?.sourceUrl || OFF_BASE_URL,
+          {
+            freshMs: empty ? EMPTY_SEARCH_FRESH_MS : SEARCH_FRESH_MS,
+            staleMs: empty ? EMPTY_SEARCH_STALE_MS : SEARCH_STALE_MS
+          }
+        );
+        throwIfAborted(signal);
+      }
+      return response;
+    } catch (error) {
+      if (signal?.aborted) throwIfAborted(signal);
+      if (!stale) throw error;
+      const typed = asDataSourceError(error);
+      return {
+        ...stale,
+        api_meta: {
+          ...(stale.api_meta ?? responseMeta('stale-cache', Date.now(), OFF_BASE_URL)),
+          cacheStatus: 'stale-cache',
+          networkAttempted: true,
+          attempts: mergeAttempts(typed.attempts, stale.api_meta?.attempts),
+          fallbackReason: fallbackReasonFor(typed),
+          fallbackStatus: typed.status,
+          retryAt: typed.retryAt ? new Date(typed.retryAt).toISOString() : undefined
+        }
+      };
+    }
   }
   const url = buildGatewaySearchUrl(gateway, query, requestedPageSize);
   const client = createGatewayClient({
@@ -710,6 +1120,167 @@ export async function searchFoodCandidatesOutcome(
   }
 }
 
+async function directProductVersion(
+  version: 'v3.6' | 'v2',
+  code: string,
+  signal: AbortSignal | undefined,
+  telemetryEnabled: boolean,
+  offAccount?: OffAccountCredentials | null
+): Promise<OffProductResponse> {
+  const backend: ApiBackend = version === 'v3.6' ? 'open-food-facts-v3' : 'open-food-facts-v2';
+  const url = directProductUrl(version, code);
+  const requestUrl = authenticatedOffRequestUrl(url, offAccount);
+  const network = await sharedNetwork<unknown>(
+    url,
+    'product',
+    version === 'v3.6' ? 'Open Food Facts API v3.6' : 'Open Food Facts API v2',
+    signal,
+    telemetryEnabled,
+    (requestSignal) => directJsonTransport(requestUrl, requestSignal, url),
+    version === 'v3.6' ? 5_000 : 6_000,
+    backend,
+    offAccount ? `off-user:${offAccount.userId}` : ''
+  );
+  const raw = network.value;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    const attempt: ApiAttemptDiagnostic = {
+      ...network.attempt,
+      outcome: 'parse-error',
+      errorName: 'UpstreamContractViolation',
+      errorMessage: `Open Food Facts API ${version} lieferte keinen gültigen Produktvertrag.`
+    };
+    throw new DataSourceError(attempt.errorMessage ?? 'Ungültige Produktantwort.', 'parse', {
+      status: network.attempt.status,
+      attempts: [attempt]
+    });
+  }
+  const response = version === 'v3.6'
+    ? adaptV3ProductResponse(raw)
+    : adaptV2ProductResponse(raw);
+  if (response.product && !/^\d{7,14}$/.test(String(response.product.code ?? ''))) {
+    const attempt: ApiAttemptDiagnostic = {
+      ...network.attempt,
+      outcome: 'parse-error',
+      errorName: 'UpstreamContractViolation',
+      errorMessage: `Open Food Facts API ${version} lieferte ein Produkt ohne gültigen Barcode.`
+    };
+    throw new DataSourceError(attempt.errorMessage ?? 'Ungültiger Produktvertrag.', 'parse', {
+      status: network.attempt.status,
+      attempts: [attempt]
+    });
+  }
+  if (!response.product) {
+    const attempt: ApiAttemptDiagnostic = {
+      ...network.attempt,
+      outcome: 'http-error',
+      status: 404,
+      errorName: 'ProductNotFound',
+      errorMessage: 'Für diesen Barcode wurde kein Produkt gefunden.'
+    };
+    throw new DataSourceError(attempt.errorMessage ?? 'Produkt nicht gefunden.', 'http', {
+      status: 404,
+      attempts: [attempt]
+    });
+  }
+  return normalizeGatewayMeta(response, url, network.fetchedAt, network.attempt, backend);
+}
+
+function combinedProductResponse(
+  primary: OffProductResponse | null,
+  compatibility: OffProductResponse,
+  priorAttempts: ApiAttemptDiagnostic[],
+  primaryError?: DataSourceError
+): OffProductResponse {
+  const product = mergeProducts(compatibility.product, primary?.product);
+  const attempts = mergeAttempts(
+    priorAttempts,
+    primary?.api_meta?.attempts,
+    compatibility.api_meta?.attempts
+  );
+  const selectedMeta = primary?.api_meta ?? compatibility.api_meta;
+  return {
+    ...compatibility,
+    ...(primary ?? {}),
+    status: String(primary?.status ?? compatibility.status ?? (product ? 'success' : 'failure')),
+    code: String(primary?.code ?? compatibility.code ?? product?.code ?? ''),
+    product,
+    api_meta: responseMeta('network', Date.now(), selectedMeta?.sourceUrl ?? '', {
+      ...selectedMeta,
+      backend: selectedMeta?.backend ?? (primary ? 'open-food-facts-v3' : 'open-food-facts-v2'),
+      originBackend: selectedMeta?.originBackend ?? (primary ? 'open-food-facts-v3' : 'open-food-facts-v2'),
+      networkAttempted: true,
+      durationMs: attempts.reduce((sum, attempt) => sum + attempt.durationMs, 0),
+      attempts,
+      fallbackReason: primaryError ? fallbackReasonFor(primaryError) : selectedMeta?.fallbackReason,
+      fallbackStatus: primaryError?.status ?? selectedMeta?.fallbackStatus,
+      fallbackOrigin: primaryError?.status === 503
+        ? 'remote-overload'
+        : primaryError?.status === 429 ? 'remote-limit' : selectedMeta?.fallbackOrigin
+    })
+  };
+}
+
+async function productDirectly(
+  code: string,
+  mode: ProductApiMode,
+  signal: AbortSignal | undefined,
+  telemetryEnabled: boolean,
+  offAccount?: OffAccountCredentials | null
+): Promise<OffProductResponse> {
+  if (mode === 'v3') return directProductVersion('v3.6', code, signal, telemetryEnabled, offAccount);
+  if (mode === 'v2') return directProductVersion('v2', code, signal, telemetryEnabled, offAccount);
+
+  const attempts: ApiAttemptDiagnostic[] = [];
+  let primary: OffProductResponse | null = null;
+  let primaryError: DataSourceError | undefined;
+  try {
+    primary = await directProductVersion('v3.6', code, signal, telemetryEnabled, offAccount);
+    attempts.push(...(primary.api_meta?.attempts ?? []));
+    if (hasCarbohydrateData(primary.product)) return primary;
+  } catch (error) {
+    if (signal?.aborted) throwIfAborted(signal);
+    primaryError = asDataSourceError(error);
+    attempts.push(...primaryError.attempts);
+  }
+
+  try {
+    const compatibility = await directProductVersion('v2', code, signal, telemetryEnabled, offAccount);
+    return combinedProductResponse(primary, compatibility, attempts, primaryError);
+  } catch (error) {
+    if (signal?.aborted) throwIfAborted(signal);
+    const compatibilityError = asDataSourceError(error);
+    attempts.push(...compatibilityError.attempts);
+    if (primary?.product) {
+      return {
+        ...primary,
+        api_meta: {
+          ...(primary.api_meta ?? responseMeta('network', Date.now(), directProductUrl('v3.6', code))),
+          attempts: mergeAttempts(attempts, primary.api_meta?.attempts),
+          fallbackReason: fallbackReasonFor(compatibilityError),
+          fallbackStatus: compatibilityError.status,
+          fallbackOrigin: compatibilityError.status === 503
+            ? 'remote-overload'
+            : compatibilityError.status === 429 ? 'remote-limit' : undefined
+        }
+      };
+    }
+    throw new DataSourceError(
+      compatibilityError.status === 404 && primaryError?.status === 404
+        ? 'Für diesen Barcode wurde kein Produkt gefunden.'
+        : 'Produktdetails konnten über OFF v3.6 und v2 nicht geladen werden.',
+      compatibilityError.kind,
+      {
+        status: compatibilityError.status === 404 && primaryError?.status === 404
+          ? 404
+          : compatibilityError.status,
+        attempts: mergeAttempts(attempts),
+        retryAt: compatibilityError.retryAt,
+        cause: compatibilityError
+      }
+    );
+  }
+}
+
 export async function getProductByBarcode(
   code: string,
   signal?: AbortSignal,
@@ -758,6 +1329,44 @@ export async function getProductByBarcode(
       };
     }
     throw error;
+  }
+  if (!gateway) {
+    try {
+      const canonical = await productDirectly(
+        normalizedCode,
+        mode,
+        signal,
+        cacheEnabled,
+        options.offAccount
+      );
+      if (cacheEnabled && canonical.product) {
+        await storeCache<CachedProduct['response']>(
+          key,
+          canonical,
+          canonical.api_meta?.sourceUrl || OFF_BASE_URL,
+          { freshMs: PRODUCT_FRESH_MS, staleMs: PRODUCT_STALE_MS }
+        );
+        throwIfAborted(signal);
+      }
+      return { ...canonical, product: mergeProducts(options.seedProduct, canonical.product) };
+    } catch (error) {
+      if (signal?.aborted) throwIfAborted(signal);
+      if (!stale) throw error;
+      const typed = asDataSourceError(error);
+      return {
+        ...stale,
+        product: mergeProducts(options.seedProduct, stale.product),
+        api_meta: {
+          ...(stale.api_meta ?? responseMeta('stale-cache', Date.now(), OFF_BASE_URL)),
+          cacheStatus: 'stale-cache',
+          networkAttempted: true,
+          attempts: mergeAttempts(typed.attempts, stale.api_meta?.attempts),
+          fallbackReason: fallbackReasonFor(typed),
+          fallbackStatus: typed.status,
+          retryAt: typed.retryAt ? new Date(typed.retryAt).toISOString() : undefined
+        }
+      };
+    }
   }
   // The persistent snapshot must never depend on a caller-specific search seed.
   const sourceUrl = buildGatewayProductUrl(gateway, normalizedCode, false, mode);

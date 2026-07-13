@@ -81,9 +81,9 @@ describe('generated versioned data gateway contract', () => {
     ]);
     expect(document['x-kh-generator']).toMatchObject({
       appVersion: packageJson.version, gatewayApiVersion: '1',
-      deploymentMode: 'full-stack', gatewayRuntime: 'node',
-      gatewayRequiredForGlobalSearch: true,
-      browserUpstreamPolicy: 'gateway-only', localCooldownAllowed: false,
+      deploymentMode: 'dual-lane', gatewayRuntime: 'node',
+      gatewayRequiredForGlobalSearch: false,
+      browserUpstreamPolicy: 'direct-off-or-configured-gateway', localCooldownAllowed: false,
       maximumDirectSearchBackendsPerAction: 2, productHydrationFanOutAllowed: false
     });
     expect(document['x-kh-generator']).not.toHaveProperty('appOnlyRelease');

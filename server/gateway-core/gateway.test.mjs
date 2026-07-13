@@ -42,6 +42,27 @@ describe('GatewayCore search', () => {
     expect(new URL(urls[0]).pathname).toBe('/cgi/search.pl');
   });
 
+  it('uses configured public Search-a-licious as auto primary without an export index', async () => {
+    const requests = [];
+    const core = gateway(async (url, init) => {
+      requests.push({ url: String(url), init });
+      return response({ hits: [{ code: '4000417025005', product_name: 'Bifi' }], count: 1 });
+    }, {
+      SEARCH_INDEX_URL: '',
+      SEARCH_A_LICIOUS_URL: 'https://search.openfoodfacts.org/search'
+    });
+
+    const result = await core.search('Bifi', 10);
+    expect(requests).toHaveLength(1);
+    expect(requests[0].url).toBe('https://search.openfoodfacts.org/search');
+    expect(requests[0].init.method).toBe('POST');
+    expect(result).toMatchObject({
+      source: 'search-a-licious',
+      hits: [{ code: '4000417025005', product_name: 'Bifi' }],
+      api_meta: { originBackend: 'search-a-licious' }
+    });
+  });
+
   it('requires an explicit URL for public Search-a-licious diagnostics', async () => {
     const fetchFn = vi.fn();
     const core = gateway(fetchFn, { SEARCH_INDEX_URL: '', SEARCH_A_LICIOUS_URL: '' });

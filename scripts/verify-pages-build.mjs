@@ -115,12 +115,11 @@ if (rawExpectedGateway && !appJavaScript.includes(rawExpectedGateway)) fail('Der
 if (!appJavaScript.includes('/api/v1/search')) fail('Der statische Build enthält keinen versionierten Gateway-Suchpfad /api/v1/search.');
 if (!appJavaScript.includes('/api/v1/product/')) fail('Der statische Build enthält keinen versionierten Gateway-Produktpfad /api/v1/product/.');
 if (appJavaScript.includes('boost_phrase')) fail('Der statische App-Build soll keinen zusätzlichen Search-a-licious-Phrase-Boost senden.');
-for (const forbidden of [
-  'https://search.openfoodfacts.org',
-  'https://world.openfoodfacts.org/cgi/search.pl',
-  'https://world.openfoodfacts.org/api/'
+for (const required of [
+  'https://search.openfoodfacts.org/search',
+  'https://world.openfoodfacts.org/'
 ]) {
-  if (appJavaScript.includes(forbidden)) fail(`Direkter Browser-Upstream ist verboten: ${forbidden}`);
+  if (!appJavaScript.includes(required)) fail(`Direkter Pages-Upstream fehlt: ${required}`);
 }
 if (!appJavaScript.includes(appVersion)) fail(`Der App-Build enthält die package.json-Version ${appVersion} nicht.`);
 for (const forbidden of ['OPENAI_API_KEY', 'OFF_USER_AGENT', 'process.env.OFF_USER_AGENT']) {
@@ -135,12 +134,12 @@ if (!diagnosticJavaScript.includes('/api/v1/health')) fail('Das Diagnosewerkzeug
 if (!diagnosticJavaScript.includes('^\\d{7,14}$')) fail('Das Diagnosewerkzeug akzeptiert den vertraglichen 7-stelligen UPC-E-Grenzfall nicht.');
 if (diagnosticJavaScript.includes('boost_phrase')) fail('Das Diagnosewerkzeug muss denselben kompakten Suchpfad ohne Phrase-Boost testen.');
 if (!diagnosticJavaScript.includes(`const APP_VERSION = '${appVersion}'`)) fail('Das Diagnosewerkzeug enthält nicht die aktuelle Paketversion.');
-for (const forbidden of [
-  'https://search.openfoodfacts.org',
+for (const required of [
+  'https://search.openfoodfacts.org/search',
   'https://world.openfoodfacts.org/cgi/search.pl',
   'https://world.openfoodfacts.org/api/'
 ]) {
-  if (diagnosticJavaScript.includes(forbidden)) fail(`Das Diagnosewerkzeug umgeht den Gateway: ${forbidden}`);
+  if (!diagnosticJavaScript.includes(required)) fail(`Das Diagnosewerkzeug enthält die direkte Lane nicht: ${required}`);
 }
 
 const contract = JSON.parse(await fs.readFile(path.join(pagesDir, contractFile), 'utf8'));
@@ -149,12 +148,14 @@ const generator = contract?.qualityAndTooling?.generatorPipeline;
 if (generator?.authoritativeInput !== 'contracts/source/search-api.contract.mjs') fail('Der Runtime-Vertrag nennt nicht die kanonische Generatorquelle.');
 if (generator?.clientGenerator !== 'Orval fetch') fail('Der Runtime-Vertrag nennt nicht den Orval-Fetch-Generator.');
 if (contract?.architecture?.portableGatewayRuntime !== 'node-express-container'
-  || contract?.architecture?.optionalAdapters?.length !== 0) {
-  fail('Der Runtime-Vertrag enthält einen nicht gepflegten Plattformadapter.');
+  || contract?.architecture?.optionalAdapters?.length !== 0
+  || contract?.architecture?.browserDataAccess !== 'direct-off-or-configured-gateway'
+  || contract?.architecture?.primarySearch !== 'public-search-a-licious') {
+  fail('Der Runtime-Vertrag bildet die direkte Pages-Lane und den optionalen Gateway nicht korrekt ab.');
 }
 const openapi = JSON.parse(await fs.readFile(path.join(pagesDir, 'api-docs/search-api.openapi.json'), 'utf8'));
 if (openapi?.openapi !== '3.1.0' || openapi?.info?.version !== appVersion) fail('Die eingebettete OpenAPI-Datei passt nicht zur App-Version.');
 if (openapi?.['x-kh-generator']?.maximumDirectSearchBackendsPerAction !== 2) fail('Die OpenAPI-KH-Regel für maximal zwei Suchbackends fehlt.');
-if (openapi?.['x-kh-generator']?.browserUpstreamPolicy !== 'gateway-only') fail('Die OpenAPI-KH-Regel für Gateway-only fehlt.');
+if (openapi?.['x-kh-generator']?.browserUpstreamPolicy !== 'direct-off-or-configured-gateway') fail('Die OpenAPI-KH-Regel für beide API-Lanes fehlt.');
 
-console.log(`GitHub-Pages-Build v${appVersion} geprüft: ${htmlFiles.length} HTML-Dateien, ${referenceCount} lokale/externe Referenzen, ${manifest.icons.length} Manifest-Icons, precachte Begleitseiten und Gateway-only API-Pfade sind vorhanden.`);
+console.log(`GitHub-Pages-Build v${appVersion} geprüft: ${htmlFiles.length} HTML-Dateien, ${referenceCount} lokale/externe Referenzen, ${manifest.icons.length} Manifest-Icons, direkte OFF- sowie optionale Gateway-Pfade sind vorhanden.`);
