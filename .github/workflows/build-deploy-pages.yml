@@ -52,7 +52,13 @@ jobs:
         run: python3 scripts/validate-catalog-artifacts.py
 
       - name: Build production PWA
-        run: npm run build
+        shell: bash
+        run: |
+          set +e
+          npm run build > build-output.log 2>&1
+          status=$?
+          tail -n 160 build-output.log
+          exit "$status"
 
       - name: Verify offline runtime artifact
         shell: bash
