@@ -37,7 +37,7 @@ function record(overrides: Partial<CatalogUnitCalibration> = {}): CatalogUnitCal
 }
 
 describe('catalog calibration derivation', () => {
-  it('derives group weight and current carbohydrate totals without rounding', () => {
+  it('derives group weight and both carbohydrate totals without rounding', () => {
     const result = deriveGroupCalibration(10, 24, 12, 72);
     expect(result).toEqual({
       measuredCount: 10,
@@ -101,6 +101,16 @@ describe('catalog calibration identity and persistence', () => {
       schemaVersion: 2,
       calibrationId: 'legacy',
       derivedUnitWeightG: 21.5
+    })).toBeNull();
+  });
+
+  it('rejects nutrition snapshots even when attached to a schema v3 record', () => {
+    expect(normalizeCatalogCalibration({
+      ...record(),
+      nutritionSnapshot: {
+        carbohydratesPer100g: 49.5,
+        derivedCarbsPerUnitG: 10.6425
+      }
     })).toBeNull();
   });
 
