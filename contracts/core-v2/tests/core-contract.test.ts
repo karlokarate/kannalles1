@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { catalogDiagnostics, CatalogFailure, toCatalogFailure } from '../../../src/lib/catalog/catalogErrors';
 import type {
-  CatalogCountability,
   CatalogDiagnosticValue,
   CatalogDiagnostics,
   CatalogFailureCode,
@@ -24,7 +23,6 @@ import type {
 } from '../../../src/lib/catalog/catalogDomain';
 
 type FrozenCatalogDomainExportContract = {
-  CatalogCountability: CatalogCountability;
   CatalogDiagnosticValue: CatalogDiagnosticValue;
   CatalogDiagnostics: CatalogDiagnostics;
   CatalogFailureCode: CatalogFailureCode;
@@ -125,13 +123,21 @@ describe('frozen catalog-native core boundary', () => {
     expect(status.slotStates).toEqual({ a: 'active', b: 'verified' });
   });
 
-  it('redacts credentials from messages, technical details and structured values', () => {
+  it('redacts complete authorization and cookie header values without credential suffixes', () => {
+    const technical = [
+      'Authorization: Basic dXNlcjpwYXNz',
+      'Authorization: ApiKey abc123',
+      'Proxy-Authorization: Basic abc123',
+      'Cookie: session=secret; theme=dark',
+      'Set-Cookie: session=secret; Path=/; HttpOnly'
+    ].join('\n');
+
     const failure = new CatalogFailure('CATALOG_MANIFEST_INVALID', 'token=visible-in-input', {
       operation: 'manifest',
       activeSlot: 'a',
       attemptedSlot: 'b',
       rollbackSlot: 'a',
-      technical: 'Authorization: Bearer abc.def password=hunter2',
+      technical,
       details: {
         password: 'hunter2',
         note: 'api_key=12345',
@@ -140,12 +146,47 @@ describe('frozen catalog-native core boundary', () => {
     });
 
     expect(failure.message).not.toContain('visible-in-input');
-    expect(failure.diagnostics.technical).not.toContain('abc.def');
-    expect(failure.diagnostics.technical).not.toContain('hunter2');
+    expect(failure.diagnostics.technical).toBe([
+      'Authorization: [redacted]',
+      'Authorization: [redacted]',
+      'Proxy-Authorization: [redacted]',
+      'Cookie: [redacted]',
+      'Set-Cookie: [redacted]'
+    ].join('\n'));
+    expect(failure.diagnostics.technical).not.toContain('dXNlcjpwYXNz');
+    expect(failure.diagnostics.technical).not.toContain('abc123');
+    expect(failure.diagnostics.technical).not.toContain('session=secret');
     expect(failure.diagnostics.details).not.toHaveProperty('password');
     expect(failure.diagnostics.details.note).toBe('api_key=[redacted]');
     expect(failure.diagnostics.details.status).toBe(401);
     expect(failure.diagnostics.rollbackSlot).toBe('a');
+  });
+
+  it('does not retain a raw cause on CatalogFailure or any serializable public property', () => {
+    const secret = 'dXNlcjpwYXNz';
+    const rawCause = Object.assign(new Error(`Authorization: Basic ${secret}`), {
+      headers: { authorization: `Basic ${secret}` },
+      sqliteInternal: { filename: '/private/catalog.sqlite' }
+    });
+
+    const wrapped = toCatalogFailure(
+      rawCause,
+      'CATALOG_WORKER_FAILED',
+      'Katalog-Worker fehlgeschlagen.',
+      { operation: 'initialize' }
+    );
+
+    expect('cause' in wrapped).toBe(false);
+    expect((wrapped as Error & { cause?: unknown }).cause).toBeUndefined();
+    expect(wrapped.diagnostics.technical).toBe('Error: Authorization: [redacted]');
+
+    const publicSnapshot = Object.fromEntries(
+      Object.getOwnPropertyNames(wrapped).map((key) => [key, (wrapped as unknown as Record<string, unknown>)[key]])
+    );
+    const serialized = JSON.stringify(publicSnapshot);
+    expect(serialized).not.toContain(secret);
+    expect(serialized).not.toContain('/private/catalog.sqlite');
+    expect(serialized).not.toContain('headers');
   });
 
   it('preserves an existing CatalogFailure and wraps unknown failures', () => {

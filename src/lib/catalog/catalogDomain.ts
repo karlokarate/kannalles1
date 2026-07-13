@@ -33,8 +33,6 @@ export type CatalogUnitKind =
   | 'slice'
   | 'package';
 
-export type CatalogCountability = 'countable' | 'non_countable' | 'unknown';
-
 /** Exact evidence-source vocabulary decoded from the Production-v1 metadata bits. */
 export type CatalogUnitEvidenceSource =
   | 'none'

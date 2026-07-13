@@ -5,7 +5,6 @@
  * directly from src/lib/catalog/catalogDomain.ts.
  */
 export type {
-  CatalogCountability,
   CatalogDiagnosticValue,
   CatalogDiagnostics,
   CatalogFailureCode,

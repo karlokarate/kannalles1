@@ -14,16 +14,19 @@ export interface CatalogFailureOptions {
   readonly rollbackSlot?: CatalogSlotId | null;
   readonly catalogVersion?: string | null;
   readonly details?: Readonly<Record<string, CatalogDiagnosticValue>>;
+  /** Input-only context used to derive a redacted technical string; never retained. */
   readonly cause?: unknown;
   readonly occurredAt?: string;
 }
 
 const SENSITIVE_DETAIL_KEY = /(?:pass(?:word)?|token|secret|authorization|cookie|credential|api[-_]?key|user[-_]?id)/i;
+const SENSITIVE_HEADER = /\b(Authorization|Proxy-Authorization|Cookie|Set-Cookie)\s*:\s*[^\r\n]*/gi;
 const SENSITIVE_ASSIGNMENT = /((?:pass(?:word)?|token|secret|authorization|cookie|credential|api[-_]?key|user[-_]?id)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi;
 const BEARER_TOKEN = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
 
 function redactText(value: string): string {
   return value
+    .replace(SENSITIVE_HEADER, '$1: [redacted]')
     .replace(BEARER_TOKEN, 'Bearer [redacted]')
     .replace(SENSITIVE_ASSIGNMENT, '$1[redacted]');
 }
@@ -46,7 +49,10 @@ function errorTechnical(error: unknown): string {
   return redactText(typeof error === 'string' ? error : 'Unknown catalog failure');
 }
 
-/** Typed, serializable catalog failure that never exposes raw runtime objects. */
+/**
+ * Typed, serializable catalog failure. Raw causes are consumed only to derive a
+ * redacted technical string and are never retained on the public error object.
+ */
 export class CatalogFailure extends Error {
   readonly code: CatalogFailureCode;
   readonly diagnostics: CatalogDiagnostics;
@@ -69,10 +75,6 @@ export class CatalogFailure extends Error {
       catalogVersion: options.catalogVersion ?? null,
       details: redactDetails(options.details)
     };
-
-    if (options.cause !== undefined) {
-      (this as Error & { cause?: unknown }).cause = options.cause;
-    }
   }
 }
 
