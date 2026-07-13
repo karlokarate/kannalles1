@@ -1,143 +1,61 @@
 {
-  "suite": "kh-checker-core-acceptance",
-  "version": "2.1.0",
+  "suite": "kh-checker-offline-hard-cutover-acceptance",
+  "version": "3.0.0",
   "cases": [
     {
-      "id": "search-primary-fails-fallback-succeeds",
-      "given": {
-        "catalog": "ready",
-        "query": "Kinder Bueno"
-      },
-      "expect": {
-        "status": "resolved",
-        "networkRequests": 0,
-        "rawExceptionInUi": false,
-        "retryDisabled": false
-      }
+      "id": "catalog-first-install",
+      "given": {"activeSlot": null, "manifest": "valid", "catalogArtifact": "valid", "query": "Kinder Bueno"},
+      "expect": {"status": "resolved", "activeSlot": "a_or_b", "productNetworkRequests": 0, "rawExceptionInUi": false}
     },
     {
-      "id": "search-all-fail-stale-cache",
-      "given": {
-        "browserOnline": false,
-        "catalog": "ready"
-      },
-      "expect": {
-        "cacheStatus": "fresh-cache",
-        "statusNot": "temporarily_unavailable",
-        "networkRequests": 0
-      }
+      "id": "catalog-reopen-offline",
+      "given": {"browserOnline": false, "activeVerifiedSlot": "a", "query": "Kinder Bueno"},
+      "expect": {"status": "resolved", "catalogArtifactRequests": 0, "productNetworkRequests": 0}
     },
     {
-      "id": "search-all-fail-no-cache",
-      "given": {
-        "catalog": "integrity-error"
-      },
-      "expect": {
-        "status": "temporarily_unavailable",
-        "retryAllowedImmediately": true,
-        "localCountdown": false,
-        "networkRequests": 0
-      }
+      "id": "catalog-corrupt-inactive-update-rolls-back",
+      "given": {"activeVerifiedSlot": "a", "attemptedSlot": "b", "attemptedArtifact": "sha256_mismatch"},
+      "expect": {"status": "ready", "activeSlot": "a", "diagnosticCode": "CATALOG_HASH_MISMATCH", "retryAllowedImmediately": true}
+    },
+    {
+      "id": "catalog-no-valid-slot-unavailable",
+      "given": {"activeSlot": null, "catalog": "integrity_error"},
+      "expect": {"status": "temporarily_unavailable", "retryAllowedImmediately": true, "localCountdown": false, "productNetworkRequests": 0}
     },
     {
       "id": "kinder-bueno-default-single-bar",
-      "given": {
-        "query": "Kinder Bueno",
-        "carbohydratesPer100g": 49.5,
-        "evidence": [
-          "2 x 21.5 g",
-          "package 43 g"
-        ]
-      },
-      "expect": {
-        "selectedUnit": "bar",
-        "unitWeightG": 21.5,
-        "carbsPerUnitG": 10.6425,
-        "firstSelectorOption": "bar",
-        "packageStillAvailable": true
-      }
+      "given": {"query": "Kinder Bueno", "carbohydratesPer100g": 49.5, "evidence": ["2 x 21.5 g", "package 43 g"]},
+      "expect": {"selectedUnit": "bar", "unitWeightG": 21.5, "carbsPerUnitG": 10.6425, "firstSelectorOption": "bar", "packageStillAvailable": true}
     },
     {
       "id": "explicit-unit-never-replaced",
-      "given": {
-        "query": "12 Salzstangen",
-        "requestedUnit": "piece",
-        "serving": "30 g",
-        "unitWeightEvidence": null
-      },
-      "expect": {
-        "status": "needs_unit_calibration",
-        "selectedUnit": "piece",
-        "totalCarbsG": null
-      }
+      "given": {"query": "12 Salzstangen", "requestedUnit": "piece", "serving": "30 g", "unitWeightEvidence": null},
+      "expect": {"status": "needs_unit_calibration", "selectedUnit": "piece", "totalCarbsG": null}
     },
     {
       "id": "group-weighing-derivation",
-      "given": {
-        "requestedAmount": 12,
-        "measuredCount": 10,
-        "measuredTotalWeightG": 24,
-        "carbohydratesPer100g": 72
-      },
-      "expect": {
-        "unitWeightG": 2.4,
-        "carbsPerUnitG": 1.728,
-        "requestedTotalWeightG": 28.8,
-        "requestedTotalCarbsG": 20.736
-      }
+      "given": {"requestedAmount": 12, "measuredCount": 10, "measuredTotalWeightG": 24, "carbohydratesPer100g": 72},
+      "expect": {"unitWeightG": 2.4, "carbsPerUnitG": 1.728, "requestedTotalWeightG": 28.8, "requestedTotalCarbsG": 20.736}
     },
     {
       "id": "saved-calibration-reused",
-      "given": {
-        "scope": "barcode",
-        "barcode": "12345678",
-        "unit": "piece",
-        "savedUnitWeightG": 2.4,
-        "currentCarbohydratesPer100g": 73
-      },
-      "expect": {
-        "firstSelectorOptionSource": "user-calibration",
-        "unitWeightG": 2.4,
-        "carbsPerUnitG": 1.752
-      }
+      "given": {"scope": "barcode", "barcode": "12345678", "unit": "piece", "savedUnitWeightG": 2.4, "currentCarbohydratesPer100g": 73},
+      "expect": {"firstSelectorOptionSource": "user-calibration", "unitWeightG": 2.4, "carbsPerUnitG": 1.752}
     },
     {
       "id": "current-nutrition-replaces-snapshot",
-      "given": {
-        "savedUnitWeightG": 21.5,
-        "snapshotCarbohydratesPer100g": 49.5,
-        "currentCarbohydratesPer100g": 50
-      },
-      "expect": {
-        "authoritativeWeightG": 21.5,
-        "carbsPerUnitG": 10.75
-      }
+      "given": {"savedUnitWeightG": 21.5, "snapshotCarbohydratesPer100g": 49.5, "currentCarbohydratesPer100g": 50},
+      "expect": {"authoritativeWeightG": 21.5, "carbsPerUnitG": 10.75}
     },
     {
       "id": "calibration-does-not-cross-package-boundary",
-      "given": {
-        "saved": {
-          "unit": "piece",
-          "weightG": 2.4
-        },
-        "requestedUnit": "package"
-      },
-      "expect": {
-        "calibrationApplied": false
-      }
+      "given": {"saved": {"unit": "piece", "weightG": 2.4}, "requestedUnit": "package"},
+      "expect": {"calibrationApplied": false}
     },
     {
       "id": "nutella-not-forced-to-piece",
-      "given": {
-        "query": "Nutella",
-        "countability": "non_countable",
-        "manufacturerServingG": 15
-      },
-      "expect": {
-        "selectedUnit": "portion",
-        "selectedWeightG": 15,
-        "needsUnitCalibration": false
-      }
+      "given": {"query": "Nutella", "countability": "non_countable", "manufacturerServingG": 15},
+      "expect": {"selectedUnit": "portion", "selectedWeightG": 15, "needsUnitCalibration": false}
     }
   ]
 }
