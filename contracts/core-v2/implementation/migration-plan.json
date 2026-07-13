@@ -1,42 +1,34 @@
 {
-  "plan": "kh-checker-calibration-v2-migration",
-  "targetDbVersion": 3,
-  "steps": [
-    {
-      "order": 1,
-      "action": "create_or_upgrade_calibrations_store",
-      "indexes": [
-        "scopeKey",
-        "barcode",
-        "canonicalProductUnit",
-        "updatedAt"
-      ]
-    },
-    {
-      "order": 2,
-      "action": "migrate_legacy_piece_calibration",
-      "mapping": {
-        "schemaVersion": 2,
-        "scope": "barcode if barcode exists else exact_product",
-        "scopeKey": "barcode|unit OR canonicalName|brand|unit",
-        "derivedUnitWeightG": "legacy.weightG",
-        "measurement.measuredCount": "legacy.measuredPieces or 1",
-        "measurement.measuredTotalWeightG": "legacy.measuredTotalWeightG or legacy.weightG",
-        "measurement.mode": "group_weighing if measuredPieces >= 2 else single_unit"
-      }
-    },
-    {
-      "order": 3,
-      "action": "retain_legacy_history_and_api_cache"
-    },
-    {
-      "order": 4,
-      "action": "replace_single_getCalibration_with_lookupCalibrationChain"
-    },
-    {
-      "order": 5,
-      "action": "inject_calibration_option_before_other_portion_options"
-    }
+  "plan": "kh-checker-offline-hard-cutover",
+  "version": "1.0.0",
+  "authority": "docs/offline-cutover/implementation-plan.json",
+  "compatibilityPolicy": {
+    "backwardCompatibilityLayer": false,
+    "dualProductAuthority": false,
+    "onlineProductFallback": false,
+    "rollbackToLegacyArchitecture": false
+  },
+  "preserveOnlyCurrentUserData": [
+    "valid_schema_v2_unit_calibrations",
+    "user_decimal_setting",
+    "user_history_when_enabled",
+    "user_favorites"
   ],
-  "rollback": "Do not delete legacy records until migrated record is written and read back successfully."
+  "discardWithoutImportOrNetworkUse": [
+    "legacy_product_api_cache",
+    "legacy_search_cache",
+    "legacy_gateway_url",
+    "legacy_off_credentials",
+    "legacy_ai_credentials",
+    "legacy_backend_diagnostics"
+  ],
+  "orderedSteps": [
+    {"order": 1, "owner": "atlas", "action": "freeze_catalog_native_domain_and_override_contradictory_contracts"},
+    {"order": 2, "owner": "forge", "action": "replace_catalog_runtime_with_manifest_driven_atomic_a_b_opfs_lifecycle"},
+    {"order": 3, "owner": "helix", "action": "replace_legacy_resolver_architecture_with_pure_catalog_evidence_resolution"},
+    {"order": 4, "owner": "lumen", "action": "replace_app_settings_and_user_data_boundaries_without_online_product_fields"},
+    {"order": 5, "owner": "sentinel", "action": "prove_real_browser_runtime_and_remove_obsolete_dependencies"},
+    {"order": 6, "owner": "owner", "action": "delete_superseded_legacy_tree_after_import_scan_and_integrated_replacement"}
+  ],
+  "catalogRollback": "rollback is limited to the previously verified inactive/active catalog slot; no legacy product runtime may be reactivated"
 }

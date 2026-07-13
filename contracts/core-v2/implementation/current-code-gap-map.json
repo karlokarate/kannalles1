@@ -1,64 +1,60 @@
 {
   "document": "current-code-gap-map",
-  "version": "3.0.0",
-  "observedVersion": "2.2.4 offline SQLite cutover branch",
+  "version": "4.0.0",
+  "observedBranchPoint": "1f6aa59e41c7153784d4fed0fdc8c67d36dce2b3",
+  "authority": "docs/offline-cutover/implementation-plan.json",
   "items": [
     {
-      "capability": "verified_offline_catalog_search",
-      "status": "implemented",
+      "capability": "catalog_native_domain_boundary",
+      "status": "implemented_by_atlas",
       "evidence": [
-        "Catalog/catalog-runtime.generated.ts: generated SSOT owns GTIN, metadata, image, FTS and deterministic search-order codecs",
-        "src/lib/catalog/catalog.worker.ts: same-origin manifest, SHA-256, SQLite identity/schema/count verification, OPFS import and read-only FTS/product lookup",
-        "scripts/validate-catalog-artifacts.py: production bundle hash, schema, FTS, safe-number and smoke-search gates",
-        "contracts/core-v2/tests/acceptance-integrity.test.ts: product search resolves from the mocked local catalog with zero product-network requests"
+        "src/lib/catalog/catalogDomain.ts",
+        "src/lib/catalog/catalogErrors.ts"
       ]
     },
     {
-      "capability": "no_product_network_runtime",
-      "status": "implemented",
-      "evidence": [
-        "src/lib/api.ts: search and barcode lookup use only catalogClient",
-        "src/lib/aiClient.ts: legacy AI signature delegates to the local parser without fetch",
-        "src/lib/gatewayUrl.ts: browser runtime ignores persisted legacy gateway settings",
-        ".github/workflows/build-deploy-pages.yml: product URLs are rejected from built app assets"
+      "capability": "manifest_projection_atomic_a_b_worker_client",
+      "status": "pending_forge",
+      "mustReplace": [
+        "src/lib/catalog/catalogProtocol.ts",
+        "src/lib/catalog/catalogClient.ts",
+        "src/lib/catalog/catalog.worker.ts"
       ]
     },
     {
-      "capability": "typed_catalog_failure_and_immediate_retry",
-      "status": "implemented",
-      "evidence": [
-        "src/lib/api.ts: worker, hash, schema and integrity failures map to SearchOutcome temporarily_unavailable",
-        "src/lib/api.test.ts: catalog integrity failure returns a typed outcome with retryAllowedImmediately=true",
-        "src/offline-catalog.css: obsolete API detail fields are removed from the main flow while the primary retry control remains"
+      "capability": "catalog_evidence_unit_resolution",
+      "status": "pending_helix",
+      "mustReplace": ["src/lib/resolver.ts"],
+      "mustPreserveAlgorithms": [
+        "explicit_user_unit_precedence",
+        "smallest_proven_edible_unit_first",
+        "group_weighing_without_early_rounding",
+        "calibration_scope_isolation"
       ]
     },
     {
-      "capability": "group_weighing",
-      "status": "implemented",
-      "evidence": [
-        "src/lib/resolver.ts: countability is explicit on CalculationResult",
-        "src/App.tsx: ResultScreen exposes group weighing for countable units and persists the confirmed measurement",
-        "contracts/core-v2/tests/acceptance-integrity.test.ts: group-weighing-derivation executes deriveGroupCalibration without premature rounding"
+      "capability": "catalog_native_app_and_local_user_data",
+      "status": "pending_lumen",
+      "mustReplace": [
+        "src/App.tsx",
+        "src/lib/storage.ts",
+        "src/types.ts"
       ]
     },
     {
-      "capability": "persistent_calibration",
-      "status": "implemented",
-      "evidence": [
-        "src/lib/calibration.ts: schemaVersion 2 records, barcode/exact/generic lookup keys and deterministic conflict selection",
-        "src/lib/storage.ts: versioned IndexedDB plus local fallback migration, saveCalibration and findCalibration",
-        "contracts/core-v2/tests/acceptance-integrity.test.ts: saved-calibration-reused reloads by scope chain and injects the restored weight"
+      "capability": "real_browser_sqlite_wasm_opfs_proof",
+      "status": "pending_sentinel",
+      "forbiddenEvidence": [
+        "mocked_catalog_client",
+        "source_transformer",
+        "css_concealment",
+        "legacy_api_adapter_success"
       ]
     },
     {
-      "capability": "smallest_proven_unit_default",
-      "status": "implemented",
-      "evidence": [
-        "Catalog/catalog-codecs.v1.json: provenUnit and defaultUnit semantic contracts",
-        "src/lib/api.ts: decoded proven bar/slice/piece/portion evidence is projected into the existing resolver contract",
-        "src/lib/resolver.ts: prepareExactPortionOptions orders a proven smallest edible unit before package/mass alternatives",
-        "contracts/core-v2/tests/acceptance-integrity.test.ts: Bueno, explicit piece, calibration, package-boundary and Nutella cases execute production resolution"
-      ]
+      "capability": "legacy_tree_deletion",
+      "status": "blocked_until_integrated_replacement_and_import_scan",
+      "owner": "owner"
     }
   ]
 }

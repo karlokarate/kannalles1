@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kh-checker.local/schemas/search-outcome.schema.json",
-  "title": "KH Checker SearchOutcome",
+  "title": "KH Checker Catalog SearchOutcome",
   "type": "object",
   "required": [
     "requestId",
@@ -48,7 +48,7 @@
     "sourceMode": {
       "type": "string",
       "enum": [
-        "api",
+        "catalog",
         "clinic"
       ]
     },
@@ -65,65 +65,109 @@
       ]
     },
     "diagnostics": {
-      "type": "object",
+      "type": [
+        "object",
+        "null"
+      ],
       "required": [
-        "networkAttempted",
-        "cacheStatus",
-        "attempts"
+        "code",
+        "operation",
+        "message",
+        "technical",
+        "occurredAt",
+        "retryAllowedImmediately",
+        "activeSlot",
+        "attemptedSlot",
+        "rollbackSlot",
+        "catalogVersion",
+        "details"
       ],
       "properties": {
-        "networkAttempted": {
-          "type": "boolean"
+        "code": {
+          "type": "string",
+          "pattern": "^CATALOG_[A-Z0-9_]+$"
         },
-        "cacheStatus": {
+        "operation": {
           "type": "string",
           "enum": [
-            "none",
-            "fresh-cache",
-            "stale-cache",
-            "network"
+            "initialize",
+            "manifest",
+            "download",
+            "validate",
+            "install",
+            "activate",
+            "open",
+            "search",
+            "product_lookup",
+            "rollback"
           ]
         },
-        "attempts": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": [
-              "backend",
-              "outcome"
-            ],
-            "properties": {
-              "backend": {
-                "type": "string"
-              },
-              "outcome": {
-                "type": "string",
-                "enum": [
-                  "success",
-                  "cache-hit",
-                  "network-error",
-                  "timeout",
-                  "http-error",
-                  "rate-limit",
-                  "parse-error",
-                  "aborted"
-                ]
-              },
-              "status": {
-                "type": "integer"
-              },
-              "message": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
-          }
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "technical": {
+          "type": "string"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
         },
         "retryAllowedImmediately": {
           "const": true
+        },
+        "activeSlot": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "a",
+            "b",
+            null
+          ]
+        },
+        "attemptedSlot": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "a",
+            "b",
+            null
+          ]
+        },
+        "catalogVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "rollbackSlot": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "a",
+            "b",
+            null
+          ]
         }
       },
-      "additionalProperties": true
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

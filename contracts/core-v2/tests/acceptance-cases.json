@@ -1,42 +1,79 @@
 {
-  "suite": "kh-checker-core-acceptance",
-  "version": "2.1.0",
+  "suite": "kh-checker-offline-hard-cutover-acceptance",
+  "version": "3.1.0",
   "cases": [
     {
-      "id": "search-primary-fails-fallback-succeeds",
+      "id": "catalog-first-install",
       "given": {
-        "catalog": "ready",
+        "activeSlot": null,
+        "manifest": "valid",
+        "catalogArtifact": "valid",
         "query": "Kinder Bueno"
       },
       "expect": {
         "status": "resolved",
-        "networkRequests": 0,
-        "rawExceptionInUi": false,
-        "retryDisabled": false
+        "activeSlot": "a_or_b",
+        "productNetworkRequests": 0,
+        "rawExceptionInUi": false
       }
     },
     {
-      "id": "search-all-fail-stale-cache",
+      "id": "catalog-reopen-offline",
       "given": {
         "browserOnline": false,
-        "catalog": "ready"
+        "activeVerifiedSlot": "a",
+        "query": "Kinder Bueno"
       },
       "expect": {
-        "cacheStatus": "fresh-cache",
-        "statusNot": "temporarily_unavailable",
-        "networkRequests": 0
+        "status": "resolved",
+        "catalogArtifactRequests": 0,
+        "productNetworkRequests": 0
       }
     },
     {
-      "id": "search-all-fail-no-cache",
+      "id": "catalog-corrupt-inactive-update-rolls-back",
       "given": {
-        "catalog": "integrity-error"
+        "activeVerifiedSlot": "a",
+        "attemptedSlot": "b",
+        "attemptedArtifact": "sha256_mismatch"
+      },
+      "expect": {
+        "status": "ready",
+        "activeSlot": "a",
+        "diagnosticCode": "CATALOG_HASH_MISMATCH",
+        "retryAllowedImmediately": true
+      }
+    },
+    {
+      "id": "catalog-no-valid-slot-unavailable",
+      "given": {
+        "activeSlot": null,
+        "catalog": "integrity_error"
       },
       "expect": {
         "status": "temporarily_unavailable",
         "retryAllowedImmediately": true,
         "localCountdown": false,
-        "networkRequests": 0
+        "productNetworkRequests": 0
+      }
+    },
+    {
+      "id": "catalog-image-reference-without-url",
+      "given": {
+        "productCode": "4008400321622",
+        "imageKeyId": 1,
+        "imageKey": "front_de",
+        "revision": 17,
+        "resolution": 200
+      },
+      "expect": {
+        "imageReference": {
+          "keyId": 1,
+          "key": "front_de",
+          "revision": 17,
+          "resolution": 200
+        },
+        "prebuiltUrlPresent": false
       }
     },
     {

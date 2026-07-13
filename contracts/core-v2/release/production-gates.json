@@ -1,21 +1,41 @@
 {
-  "release": "KH Checker core behavior",
-  "version": "2.0.0",
+  "release": "KH Checker offline hard cutover",
+  "version": "3.1.0",
   "allMustPass": true,
   "gates": [
     {
+      "id": "single-product-authority",
+      "check": "exactly one verified Production-v1 SQLite slot serves product reads",
+      "severity": "blocker"
+    },
+    {
+      "id": "zero-product-network",
+      "check": "search and selected-product resolution issue zero remote product requests",
+      "severity": "blocker"
+    },
+    {
+      "id": "atomic-catalog-activation",
+      "check": "inactive slot is fully validated before atomic activation and failed updates retain only the prior verified authority",
+      "severity": "blocker"
+    },
+    {
       "id": "search-outcome-totality",
-      "check": "every search action returns one allowed SearchOutcome status",
+      "check": "every search action returns one allowed typed outcome",
       "severity": "blocker"
     },
     {
-      "id": "no-unhandled-ui-errors",
-      "check": "no rejected search promise reaches React render path",
+      "id": "catalog-diagnostics",
+      "check": "raw failures are redacted into CatalogDiagnostics and immediate retry remains available",
       "severity": "blocker"
     },
     {
-      "id": "no-local-cooldown",
-      "check": "retry is never disabled by local request telemetry",
+      "id": "sqlite-order-visible",
+      "check": "application code does not rerank SQLite search results",
+      "severity": "blocker"
+    },
+    {
+      "id": "catalog-image-reference-only",
+      "check": "SQLite projection exposes keyId, key, revision and resolution but no prebuilt image URL",
       "severity": "blocker"
     },
     {
@@ -25,7 +45,12 @@
     },
     {
       "id": "no-silent-unit-substitution",
-      "check": "explicit piece/bar/slice requests never resolve through portion or package",
+      "check": "explicit piece, bar and slice requests never resolve through portion or package",
+      "severity": "blocker"
+    },
+    {
+      "id": "no-unit-weight-guess",
+      "check": "unknown countable-unit weight returns needs_unit_calibration",
       "severity": "blocker"
     },
     {
@@ -35,22 +60,22 @@
     },
     {
       "id": "calibration-persistence",
-      "check": "saved calibration survives reload and app update migration",
+      "check": "saved authoritative unit weight survives reload and combines with current carbohydrates-per-100g",
       "severity": "blocker"
     },
     {
-      "id": "current-carbs-recalculation",
-      "check": "saved unit weight is combined with current carbohydrates-per-100g",
+      "id": "no-legacy-credentials",
+      "check": "runtime settings, diagnostics and storage contain no OFF or remote-AI credentials",
       "severity": "blocker"
     },
     {
-      "id": "regression-fixtures",
-      "check": "Bueno, BiFi, Salzstangen, bread slice, Nutella and generic cooked foods pass",
+      "id": "no-concealment-or-transform",
+      "check": "no CSS concealment or source transformer substitutes for deleting legacy UI or imports",
       "severity": "blocker"
     },
     {
-      "id": "direct-off-account",
-      "check": "personal OFF credentials can be persisted by explicit user action, are used only for direct OFF requests, and are redacted from diagnostics and API caches",
+      "id": "real-browser-proof",
+      "check": "built app passes non-mocked SQLite-WASM and OPFS tests in the declared browser matrix",
       "severity": "blocker"
     }
   ]

@@ -1,92 +1,33 @@
 {
   "contract": "kh-checker-unit-resolution",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "countability": {
-    "values": [
-      "countable",
-      "non_countable",
-      "unknown"
-    ],
-    "countableExamples": [
-      "Riegel",
-      "Scheibe",
-      "Salzstange",
-      "Bonbon",
-      "Keks",
-      "Cracker"
-    ],
-    "nonCountableExamples": [
-      "Nutella",
-      "Honig",
-      "Reis gekocht",
-      "Nudeln gekocht",
-      "Milch"
-    ],
-    "rule": "Countability may be established only from explicit requested unit, controlled food lexicon, explicit product text, or stored calibration."
+    "values": ["countable", "non_countable", "unknown"],
+    "countableExamples": ["Riegel", "Scheibe", "Salzstange", "Bonbon", "Keks", "Cracker"],
+    "nonCountableExamples": ["Nutella", "Honig", "Reis gekocht", "Nudeln gekocht", "Milch"],
+    "rule": "Countability may be established only from explicit requested unit, controlled food lexicon, proven CatalogUnitEvidence, or stored user calibration."
   },
   "hardInvariants": [
     "explicit_requested_unit_is_never_silently_replaced",
     "one_portion_is_not_one_piece_without_semantic_evidence",
     "package_unit_is_never_equivalent_to_edible_unit",
     "smaller_proven_unit_always_ranks_before_package",
-    "unknown_countable_unit_weight_yields_needs_unit_calibration"
+    "unknown_countable_unit_weight_yields_needs_unit_calibration",
+    "legacy_OFF_fields_are_not_read_outside_CatalogProduct",
+    "generic_consensus_requires_explicit_user_authorized_generic_scope"
   ],
   "defaultPriority": [
-    {
-      "rank": 10,
-      "source": "explicit_user_request",
-      "condition": "requested unit is explicit and safely resolvable"
-    },
-    {
-      "rank": 20,
-      "source": "user_calibration_barcode",
-      "condition": "same barcode and canonical edible unit"
-    },
-    {
-      "rank": 30,
-      "source": "explicit_single_unit",
-      "condition": "text states one unit and its gram weight"
-    },
-    {
-      "rank": 40,
-      "source": "explicit_multipack_unit_weight",
-      "condition": "text states N x X g for the edible unit"
-    },
-    {
-      "rank": 50,
-      "source": "count_and_net_weight",
-      "condition": "count and total net weight refer to same product package"
-    },
-    {
-      "rank": 60,
-      "source": "user_calibration_exact_product",
-      "condition": "same canonical product, brand and unit"
-    },
-    {
-      "rank": 70,
-      "source": "generic_consensus",
-      "condition": "at least two independent compatible explicit products"
-    },
-    {
-      "rank": 80,
-      "source": "manufacturer_serving",
-      "condition": "serving text semantically names exactly one edible unit"
-    },
-    {
-      "rank": 90,
-      "source": "single_package",
-      "condition": "the package itself is the smallest edible unit"
-    },
-    {
-      "rank": 100,
-      "source": "mass_or_volume",
-      "condition": "food is non-countable or user selected grams/millilitres"
-    },
-    {
-      "rank": 110,
-      "source": "needs_unit_calibration",
-      "condition": "food is countable but no reliable unit weight exists"
-    }
+    {"rank": 10, "source": "explicit_user_request", "condition": "requested unit is explicit and safely resolvable"},
+    {"rank": 20, "source": "user_calibration_barcode", "condition": "same barcode and canonical edible unit"},
+    {"rank": 30, "source": "explicit_single_unit", "condition": "CatalogUnitEvidence proves one edible unit and its base value"},
+    {"rank": 40, "source": "explicit_multipack_unit_weight", "condition": "CatalogUnitEvidence proves N x X base units for the edible unit"},
+    {"rank": 50, "source": "count_and_net_weight", "condition": "explicit count and total net value refer to the same product package"},
+    {"rank": 60, "source": "user_calibration_exact_product", "condition": "same canonical product, brand and unit"},
+    {"rank": 70, "source": "generic_consensus", "condition": "user explicitly authorized generic scope and at least two independent compatible products provide explicit evidence"},
+    {"rank": 80, "source": "manufacturer_serving", "condition": "serving semantically names exactly one edible unit"},
+    {"rank": 90, "source": "single_package", "condition": "the package itself is proven to be the smallest edible unit"},
+    {"rank": 100, "source": "mass_or_volume", "condition": "food is non-countable or user selected grams or millilitres"},
+    {"rank": 110, "source": "needs_unit_calibration", "condition": "food is countable but no reliable unit value exists"}
   ],
   "selectorOrdering": [
     "recommended_smallest_edible_unit",
@@ -104,6 +45,7 @@
     "packagings_number_of_units",
     "one_pcs_when_context_means_one_sales_package",
     "image_based_weight_guess",
-    "language_model_typical_weight"
+    "language_model_typical_weight",
+    "legacy_OFF_field_not_projected_as_proven_CatalogUnitEvidence"
   ]
 }

@@ -1,17 +1,19 @@
 {
   "contract": "kh-checker-search-execution",
-  "version": "3.0.0",
+  "version": "4.1.0",
+  "authority": {
+    "productCatalog": "Catalog/catalog-manifest.v1.json plus its verified Production-v1 SQLite artifact",
+    "activeReadAuthority": "exactly_one_verified_catalog_slot",
+    "compatibilityAlias": null,
+    "networkProductFallback": false
+  },
   "input": {
     "rawInput": "string",
     "canonicalQuery": "string",
     "sourceMode": [
-      "api",
+      "catalog",
       "clinic"
     ],
-    "sourceModeCompatibility": {
-      "api": "deprecated_internal_name_for_offline_catalog_until_next_domain_schema_major",
-      "networkProductAccess": false
-    },
     "requestedPageSize": [
       10,
       15,
@@ -34,10 +36,13 @@
       "step": "catalog_readiness",
       "rules": [
         "load_versioned_manifest_from_same_origin",
-        "reuse_verified_opfs_catalog_before_download",
+        "reuse_verified_active_opfs_slot_before_download",
+        "install_only_into_inactive_slot",
         "deduplicate_catalog_initialization",
-        "verify_size_sha256_application_id_user_version_schema_and_product_count_before_activation",
-        "never_activate_partial_or_unverified_catalog"
+        "verify_size_sha256_application_id_user_version_schema_integrity_fts_and_product_count_before_activation",
+        "atomically_switch_single_active_slot_only_after_full_validation",
+        "rollback_to_previous_verified_slot_when_inactive_install_fails",
+        "never_activate_partial_unverified_or_corrupt_catalog"
       ]
     },
     {
@@ -47,6 +52,7 @@
         "execute_contentless_fts5_query_inside_dedicated_worker",
         "use_generated_runtime_ssot_for_fts_escaping_and_sql",
         "sort_exact_name_then_prefix_then_contains_then_popularity_then_name_then_product_id",
+        "preserve_sqlite_order_as_visible_result_order",
         "issue_zero_product_network_requests",
         "return_empty_only_after_reachable_catalog_query"
       ]
@@ -55,9 +61,11 @@
       "order": 4,
       "step": "offline_product_resolution",
       "rules": [
-        "read_selected_product_from_same_sqlite_catalog",
+        "read_selected_product_from_same_active_sqlite_catalog",
         "use_generated_gtin_and_rescue_codecs",
         "decode_nutrition_basis_unit_evidence_and_image_key_from_generated_ssot",
+        "project_CatalogImageReference_keyId_key_revision_and_resolution_without_url",
+        "project_losslessly_into_CatalogProduct",
         "never_fan_out_product_detail_requests",
         "never_replace_missing_barcode_with_unrelated_product"
       ]
@@ -68,10 +76,11 @@
       "rules": [
         "preserve_explicit_user_unit",
         "prefer_user_calibration_for_matching_scope_and_unit",
-        "prefer_proven_catalog_unit_over_serving_and_package",
+        "prefer_proven_CatalogUnitEvidence_over_serving_and_package",
         "keep_package_and_mass_options_available",
         "return_needs_unit_calibration_for_countable_unit_without_proven_weight",
-        "never_guess_piece_weight"
+        "never_guess_piece_weight",
+        "never_read_legacy_OFF_fields_outside_CatalogProduct"
       ]
     },
     {
@@ -79,9 +88,10 @@
       "step": "typed_outcome",
       "rules": [
         "never_propagate_raw_worker_or_sqlite_exception_to_render_tree",
+        "map_failures_to_CatalogFailure_and_CatalogDiagnostics",
         "retry_button_remains_enabled",
         "no_local_cooldown",
-        "catalog_integrity_or_runtime_failure_maps_to_temporarily_unavailable"
+        "catalog_missing_invalid_locked_or_unsupported_maps_to_temporarily_unavailable"
       ]
     }
   ],
@@ -90,7 +100,7 @@
     "hits_but_ambiguous": "needs_product_choice",
     "product_and_nutrition_but_no_requested_unit_weight": "needs_unit_calibration",
     "reachable_catalog_with_no_hits": "not_found",
-    "catalog_missing_invalid_locked_or_unsupported": "temporarily_unavailable"
+    "no_verified_readable_catalog": "temporarily_unavailable"
   },
   "networkBudgets": {
     "catalogManifestRequestsPerInitialization": {
@@ -103,14 +113,13 @@
       "scope": "same_origin_download_only_when_version_or_hash_changed",
       "hardLocalLock": false
     },
-    "searchRequestsPerAction": {
+    "productSearchRequestsPerAction": {
       "maximum": 0,
-      "scope": "product_network",
-      "hardLocalLock": false
+      "scope": "all_remote_product_search_services"
     },
     "selectedProductDetailRequests": {
       "maximum": 0,
-      "scope": "product_network"
+      "scope": "all_remote_product_detail_services"
     },
     "remoteAiRequestsPerAction": {
       "maximum": 0

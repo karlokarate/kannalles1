@@ -1,12 +1,18 @@
 {
   "contract": "kh-checker-critical-fields",
-  "version": "2.0.0",
+  "version": "3.1.0",
   "normativeKeywords": [
     "MUST",
     "MUST_NOT",
     "SHOULD",
     "MAY"
   ],
+  "authority": {
+    "productData": "verified_production_v1_sqlite_catalog",
+    "search": "one_active_catalog_slot",
+    "networkProductFallback": false,
+    "dualAuthority": false
+  },
   "fields": {
     "search": {
       "requiredOutcomeStates": [
@@ -17,21 +23,27 @@
         "temporarily_unavailable"
       ],
       "MUST": [
-        "canonicalize_query_before_cache_and_network",
-        "reuse_fresh_cache_before_network",
-        "deduplicate_identical_in_flight_requests",
-        "attempt_at_most_two_search_backends_per_user_action",
-        "use_stale_cache_when_all_backends_fail_and_cache_is_available",
+        "canonicalize_query_before_local_catalog_search",
+        "initialize_or_reuse_verified_catalog_before_query",
+        "query_exactly_one_active_catalog_slot",
+        "preserve_sqlite_result_order_without_application_reranking",
+        "deduplicate_identical_in_flight_catalog_requests",
         "return_typed_outcome_instead_of_throwing_to_ui",
         "allow_immediate_manual_retry",
-        "show_original_backend_diagnostics_in_technical_details"
+        "show_original_redacted_catalog_diagnostics_in_technical_details",
+        "issue_zero_product_search_or_product_detail_network_requests",
+        "project_catalog_image_reference_without_prebuilt_url"
       ],
       "MUST_NOT": [
         "install_local_cooldown",
         "disable_retry_due_to_local_request_counter",
         "issue_search_requests_while_user_is_typing",
-        "fan_out_product_detail_requests_for_all_candidates",
-        "replace_no_result_with_unrelated_product"
+        "call_remote_ai_for_parsing_or_product_resolution",
+        "fallback_to_search_a_licious_off_legacy_off_v2_or_off_v3",
+        "read_from_two_catalog_authorities_for_one_user_action",
+        "activate_partial_unverified_or_corrupt_catalog",
+        "replace_no_result_with_unrelated_product",
+        "expose_prebuilt_image_url_from_sqlite_projection"
       ]
     },
     "unitResolution": {
@@ -50,7 +62,8 @@
         "interpret_bare_serving_quantity_as_piece_weight",
         "interpret_packaging_unit_count_as_edible_piece_count",
         "guess_typical_piece_weight",
-        "select_package_when_smaller_proven_unit_exists"
+        "select_package_when_smaller_proven_unit_exists",
+        "tunnel_legacy_off_fields_around_catalog_unit_evidence"
       ]
     },
     "calibration": {
