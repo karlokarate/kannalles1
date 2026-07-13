@@ -46,8 +46,8 @@ jobs:
       - name: Install locked SQLite-WASM runtime
         run: npm ci --prefix Catalog/runtime --no-audit --no-fund
 
-      - name: Validate catalog artifacts
-        run: python3 scripts/validate-catalog-artifacts.py --allow-benchmark
+      - name: Validate production catalog artifacts
+        run: python3 scripts/validate-catalog-artifacts.py
 
       - name: Build production PWA
         run: npm run build
@@ -58,9 +58,12 @@ jobs:
           set -euo pipefail
           test -s dist/catalog/kh-checker-dach.sqlite
           test -s dist/catalog/manifest.json
+          test -s dist/catalog/catalog-codecs.v1.json
+          test -s dist/catalog/catalog-image-keys.v2.json
           test -s dist/vendor/sqlite/index.mjs
           test -s dist/vendor/sqlite/sqlite3.wasm
-          test "$(stat -c %s dist/catalog/kh-checker-dach.sqlite)" -gt 20000000
+          test "$(stat -c %s dist/catalog/kh-checker-dach.sqlite)" -eq 25227264
+          test "$(sha256sum dist/catalog/kh-checker-dach.sqlite | cut -d' ' -f1)" = "df177ab7545b13b39f40f1c2474adeb1501b19a44a82bf04838b4fd2e819458d"
           if grep -R --line-number --fixed-strings "search.openfoodfacts.org" dist/assets; then
             echo "FEHLER: Online-Produktsuche ist noch im produktiven App-Bundle enthalten."
             exit 1
@@ -102,6 +105,7 @@ jobs:
             echo
             echo "- URL: ${PAGE_URL}"
             echo "- Commit: ${GITHUB_SHA}"
+            echo "- Catalog: production-v1 · 317579 products · 25227264 bytes"
             echo "- Product source: deployed SQLite → OPFS → SQLite-WASM worker"
             echo "- Online OFF/Search-a-licious product access: disabled"
           } >> "${GITHUB_STEP_SUMMARY}"
