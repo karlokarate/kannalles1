@@ -1,4 +1,5 @@
 import type {
+  ApiAttemptDiagnostic,
   OffAccountCredentials,
   OffProduct,
   OffProductResponse,
@@ -13,7 +14,11 @@ import {
   getOfflineCatalogProduct,
   searchOfflineCatalog
 } from './catalog/catalogClient';
-import type { CatalogProductRecord } from './catalog/catalogProtocol';
+import type {
+  CatalogBasis,
+  CatalogProductRecord,
+  CatalogUnitKind
+} from './catalog/catalogProtocol';
 import { correctCommonFoodTypos } from './query';
 import { clearApiGovernor, getApiUsageSnapshot } from './apiGovernor';
 
@@ -28,7 +33,8 @@ export const SEARCH_FIELDS = [
   'product_quantity_unit',
   'serving_size',
   'serving_quantity',
-  'nutriments'
+  'nutriments',
+  'image_front_url'
 ] as const;
 
 export interface SearchFoodOptions {
@@ -71,17 +77,23 @@ export { clearApiGovernor, getApiUsageSnapshot };
 
 export class DataSourceError extends Error {
   readonly status?: number;
-  readonly attempts = [];
+  readonly attempts: ApiAttemptDiagnostic[];
   readonly retryAt?: number;
 
   constructor(
     message: string,
     readonly kind: DataSourceErrorKind,
-    options: { status?: number; retryAt?: number; cause?: unknown } = {}
+    options: {
+      status?: number;
+      attempts?: ApiAttemptDiagnostic[];
+      retryAt?: number;
+      cause?: unknown;
+    } = {}
   ) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = 'DataSourceError';
     this.status = options.status;
+    this.attempts = options.attempts ?? [];
     this.retryAt = options.retryAt;
   }
 }
@@ -106,6 +118,7 @@ function asDataSourceError(error: unknown): DataSourceError {
     || code.includes('HASH')
     || code.includes('INTEGRITY')
     || code.includes('MANIFEST')
+    || code.includes('COUNT')
     ? 'parse'
     : 'configuration';
   return new DataSourceError(message || 'Die lokale Produktdatenbank ist nicht verfügbar.', kind, {
@@ -133,23 +146,101 @@ function positiveNumber(value: number | null): number | undefined {
   return value !== null && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
+function measureUnit(basis: CatalogBasis): 'g' | 'ml' {
+  return basis === 'volume' ? 'ml' : 'g';
+}
+
+function unitDisplayName(kind: CatalogUnitKind): string | null {
+  return ({
+    none: null,
+    mass: 'Gramm',
+    volume: 'Milliliter',
+    portion: 'Portion',
+    piece: 'Stück',
+    bar: 'Riegel',
+    slice: 'Scheibe',
+    package: 'Packung'
+  } as const)[kind];
+}
+
+function defaultUnitEvidence(kind: CatalogUnitKind): string[] {
+  if (kind === 'bar') return ['kh-catalog-unit-bar'];
+  if (kind === 'slice') return ['kh-catalog-unit-slice'];
+  if (kind === 'piece') return ['kh-catalog-unit-stick'];
+  return [];
+}
+
+function provenServing(record: CatalogProductRecord): {
+  description?: string;
+  value?: number;
+  basis?: CatalogBasis;
+} {
+  const provenValue = positiveNumber(record.provenUnitValue);
+  if (provenValue !== undefined && record.provenUnitBasis) {
+    const unit = measureUnit(record.provenUnitBasis);
+    const label = unitDisplayName(record.provenUnitKind);
+    return {
+      description: label && ['portion', 'piece', 'bar', 'slice'].includes(record.provenUnitKind)
+        ? `1 ${label} (${provenValue} ${unit})`
+        : `${provenValue} ${unit}`,
+      value: provenValue,
+      basis: record.provenUnitBasis
+    };
+  }
+  const servingValue = positiveNumber(record.servingValue);
+  if (servingValue !== undefined && record.servingBasis) {
+    const unit = measureUnit(record.servingBasis);
+    return {
+      description: `${servingValue} ${unit}`,
+      value: servingValue,
+      basis: record.servingBasis
+    };
+  }
+  return {};
+}
+
 function recordToHit(record: CatalogProductRecord): SearchHit {
-  const servingQuantity = positiveNumber(record.servingQuantityG);
-  const productQuantity = positiveNumber(record.productQuantityG);
+  const serving = provenServing(record);
+  const productQuantity = positiveNumber(record.productQuantityValue);
+  const productUnit = record.productQuantityBasis ? measureUnit(record.productQuantityBasis) : undefined;
+  const nutritionBasis = record.carbohydrateBasis === 'volume' ? '100ml' : '100g';
+  const nutriments = record.carbohydrateBasis === 'volume'
+    ? {
+        carbohydrates_100ml: record.carbohydratesPer100,
+        ...(record.carbohydrateSourcePrepared
+          ? { carbohydrates_prepared_100ml: record.carbohydratesPer100 }
+          : {})
+      }
+    : {
+        carbohydrates_100g: record.carbohydratesPer100,
+        ...(record.carbohydrateSourcePrepared
+          ? { carbohydrates_prepared_100g: record.carbohydratesPer100 }
+          : {})
+      };
+  const categories = [
+    ...defaultUnitEvidence(record.defaultUnitKind),
+    ...defaultUnitEvidence(record.provenUnitKind)
+  ];
+
   return {
     code: record.code,
     product_name: record.name,
     brands: record.brand ?? undefined,
-    quantity: productQuantity === undefined ? undefined : `${productQuantity} g`,
+    quantity: productQuantity === undefined || !productUnit
+      ? undefined
+      : `${productQuantity} ${productUnit}`,
     product_quantity: productQuantity,
-    product_quantity_unit: productQuantity === undefined ? undefined : 'g',
-    serving_size: servingQuantity === undefined ? undefined : `${servingQuantity} g`,
-    serving_quantity: servingQuantity,
-    nutrition_data_per: '100g',
-    nutriments: {
-      carbohydrates_100g: record.carbohydratesPer100g
-    },
-    _score: record.rank === null ? undefined : -record.rank,
+    product_quantity_unit: productUnit,
+    serving_size: serving.description,
+    serving_quantity: serving.value,
+    nutrition_data_per: nutritionBasis,
+    nutrition_data_prepared_per: record.carbohydrateSourcePrepared ? nutritionBasis : undefined,
+    data_quality_errors_tags: record.hasQualityErrors ? ['kh-catalog:source-quality-warning'] : [],
+    categories_tags: categories,
+    nutriments,
+    image_front_url: record.imageUrl ?? undefined,
+    unique_scans_n: record.rankOrdinal,
+    _score: record.rankOrdinal,
     completeness: 1
   };
 }
@@ -165,8 +256,12 @@ function recordToProduct(record: CatalogProductRecord): OffProduct {
     product_quantity_unit: hit.product_quantity_unit,
     serving_size: hit.serving_size,
     serving_quantity: hit.serving_quantity,
-    nutrition_data_per: '100g',
-    nutriments: hit.nutriments
+    nutrition_data_per: hit.nutrition_data_per,
+    nutrition_data_prepared_per: hit.nutrition_data_prepared_per,
+    data_quality_errors_tags: hit.data_quality_errors_tags,
+    categories_tags: hit.categories_tags,
+    nutriments: hit.nutriments,
+    image_front_url: hit.image_front_url
   };
 }
 
@@ -200,7 +295,6 @@ export async function searchFoodCandidates(
       page: 1,
       page_size: limit,
       page_count: hits.length ? 1 : 0,
-      took: undefined,
       timed_out: false,
       warnings: null,
       errors: [],
