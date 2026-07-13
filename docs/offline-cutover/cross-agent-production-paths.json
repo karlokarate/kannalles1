@@ -1,0 +1,82 @@
+{
+  "document": "kh-checker-offline-cutover-cross-agent-production-paths",
+  "version": "1.0.0",
+  "generatedAtUtc": "2026-07-13T17:43:15Z",
+  "repository": "karlokarate/kannalles1",
+  "integrationBranch": "agent/offline-sqlite-cutover",
+  "parentCommit": "30c434019bc9ea62b3e2f45c0be3e384f2b6be59",
+  "rules": {
+    "readEntireFile": true,
+    "readBefore": ["session start","exported binding change","commit","rebase"],
+    "writeWithEveryImplementationCommit": true,
+    "reservedBlockOnly": true,
+    "appendEventsOnly": true,
+    "neverReformatWholeFile": true,
+    "eventIdFormat": "AGENT-STEP-NNN",
+    "secretsForbidden": true,
+    "ownerReadsBeforeCherryPick": true
+  },
+  "productionPaths": [
+    {"id":"catalog-install","route":["manifest","download","inactive OPFS slot","hash/schema/integrity/smoke","atomic pointer","rollback slot"],"agents":["forge","sentinel","lumen"]},
+    {"id":"text-search","route":["local parser","catalogClient","worker","CATALOG_SEARCH_SQL","ordered hits","eligibility","result"],"agents":["forge","helix","lumen","sentinel"]},
+    {"id":"barcode","route":["normalized barcode","generated GTIN codec","SQLite read","CatalogProduct","resolver"],"agents":["forge","helix","lumen","sentinel"]},
+    {"id":"unit-resolution","route":["CatalogUnitEvidence","calibration","catalogUnitResolver","PortionOptions","calculation"],"agents":["atlas","forge","helix","lumen","sentinel"]},
+    {"id":"diagnostics","route":["CatalogFailure","CatalogDiagnostics","CatalogIssueBanner","immediate retry"],"agents":["atlas","forge","lumen","sentinel"]},
+    {"id":"image","route":["gtin + imageRef","runtime URL composition","optional image cache","ProductImage"],"agents":["forge","lumen","sentinel"]},
+    {"id":"quality","route":["manifest","validator","build","real E2E","Knip","dependency-cruiser","Pages verification"],"agents":["sentinel","owner"]}
+  ],
+  "ownerBlock": {
+    "ownerId": "owner",
+    "lastIntegrationCommit": "30c434019bc9ea62b3e2f45c0be3e384f2b6be59",
+    "notices": [
+      {"eventId":"OWNER-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","summary":"Five-agent control plane initialized; no runtime changes on integration branch before branch creation and owner review."}
+    ]
+  },
+  "agentBlocks": {
+    "atlas": {
+      "agentName":"Atlas",
+      "branch":"agent/offline-cutover-atlas-domain",
+      "lastReadAtUtc":null,
+      "lastRebasedOn":null,
+      "events":[
+        {"eventId":"ATLAS-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["ATLAS-100","ATLAS-110"],"summary":"Catalog-native domain types and contract overrides","affectedPaths":[],"consumers":["forge","helix","lumen","sentinel"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]}
+      ]
+    },
+    "forge": {
+      "agentName":"Forge",
+      "branch":"agent/offline-cutover-forge-runtime",
+      "lastReadAtUtc":null,
+      "lastRebasedOn":null,
+      "events":[
+        {"eventId":"FORGE-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["FORGE-200","FORGE-210","FORGE-220"],"summary":"Manifest, projection, A/B OPFS installer, worker and client","affectedPaths":[],"consumers":["atlas","helix","lumen","sentinel"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]}
+      ]
+    },
+    "helix": {
+      "agentName":"Helix",
+      "branch":"agent/offline-cutover-helix-resolution",
+      "lastReadAtUtc":null,
+      "lastRebasedOn":null,
+      "events":[
+        {"eventId":"HELIX-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["HELIX-300","HELIX-310","HELIX-320"],"summary":"Resolver extraction, unit evidence, eligibility and calibration semantics","affectedPaths":[],"consumers":["atlas","forge","lumen","sentinel"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]}
+      ]
+    },
+    "lumen": {
+      "agentName":"Lumen",
+      "branch":"agent/offline-cutover-lumen-ui",
+      "lastReadAtUtc":null,
+      "lastRebasedOn":null,
+      "events":[
+        {"eventId":"LUMEN-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["LUMEN-400","LUMEN-410","LUMEN-420"],"summary":"Offline App, catalog-native UI, settings and local user data","affectedPaths":[],"consumers":["atlas","forge","helix","sentinel"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]}
+      ]
+    },
+    "sentinel": {
+      "agentName":"Sentinel",
+      "branch":"agent/offline-cutover-sentinel-quality",
+      "lastReadAtUtc":null,
+      "lastRebasedOn":null,
+      "events":[
+        {"eventId":"SENTINEL-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["SENTINEL-500","SENTINEL-510","SENTINEL-520"],"summary":"Real browser proof, CI, architecture gates and final legacy deletion proposal","affectedPaths":[],"consumers":["atlas","forge","helix","lumen"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]}
+      ]
+    }
+  }
+}
