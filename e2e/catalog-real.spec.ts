@@ -76,6 +76,49 @@ test('löst den Bueno-Barcode auf die kleinste bewiesene Einheit auf und rechnet
   forbidden.assertNone();
 });
 
+test('zeigt Trefferbilder, nutzt Sprache für gekochten Reis und speichert eine eigene Riegel-Einheit automatisch', async ({ page }) => {
+  await page.addInitScript(() => {
+    class FakeSpeechRecognition {
+      lang = '';
+      interimResults = false;
+      continuous = false;
+      onresult: ((event: unknown) => void) | null = null;
+      onerror: ((event: unknown) => void) | null = null;
+      onend: (() => void) | null = null;
+      start() {
+        setTimeout(() => {
+          this.onresult?.({ results: [[{ transcript: 'Reis' }]] });
+          this.onend?.();
+        }, 0);
+      }
+    }
+    Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: FakeSpeechRecognition });
+  });
+  await openCatalogApp(page);
+  await expectCatalogReady(page);
+
+  await page.getByTestId('catalog-speech-search').click();
+  const generic = page.getByTestId('catalog-product');
+  await expect(generic).toContainText('Reis, gekocht');
+  await expect(generic).toContainText('BLS 4.0 · C352032');
+  await expect(generic).toHaveAttribute('data-carbs-per-100-g', '24.8');
+
+  await searchCatalog(page, 'Kinder Bueno');
+  await expect(page.getByTestId('catalog-search-results').locator('img').first()).toBeVisible();
+  await expect(page.getByTestId('catalog-product')).toBeVisible();
+  await expect(page.getByTestId('catalog-product')).not.toContainText(/mini/i);
+  await expect(page.getByTestId('catalog-unit-select').locator('option:checked')).toHaveAttribute('data-unit-kind', 'bar');
+
+  await searchCatalog(page, BUENO_GTIN);
+  await page.getByTestId('catalog-calibration-unit').selectOption('bar');
+  await page.getByTestId('catalog-calibration-count').fill('10');
+  await page.getByTestId('catalog-calibration-weight').fill('200');
+  await expect(page.getByTestId('catalog-calibration')).toContainText('20 g je Riegel gespeichert.');
+  await searchCatalog(page, BUENO_GTIN);
+  await expect(page.getByTestId('catalog-unit-select').locator('option:checked')).toHaveAttribute('data-unit-provenance', 'user-calibration');
+  await expect(page.getByTestId('catalog-unit-select').locator('option:checked')).toHaveAttribute('data-unit-weight-g', '20');
+});
+
 test('öffnet den bereits installierten Katalog offline und führt Text- sowie Barcodeabfragen aus', async ({ page, context }) => {
   const forbidden = collectForbiddenProductRequests(page);
   await openCatalogApp(page);

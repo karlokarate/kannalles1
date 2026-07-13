@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseCatalogQuery } from './app/queryParser';
-import { autoSelectionEligibility } from './app/catalogViewModel';
+import { autoSelectionEligibility, catalogProductImageUrl, selectDefaultCatalogCandidate } from './app/catalogViewModel';
 import type { CatalogSearchHit } from './lib/catalog/catalogDomain';
 import { catalogProductEligibility } from './lib/resolution/catalogResolution';
 import {
@@ -71,6 +71,14 @@ describe('Lumen hard-cutover state', () => {
       eligible: false,
       reason: 'choice-required'
     });
+  });
+
+  it('defaults to a proven regular bar with an image without preferring the lighter mini', () => {
+    const imageReference = { keyId: 1, key: 'front_de', revision: 3, resolution: 400 };
+    const regular = { ...hit, imageReference, resultIndex: 1 };
+    const mini = { ...hit, productId: 2, displayName: 'Kinder Bueno Mini', imageReference, unitEvidence: { ...hit.unitEvidence, provenSmallestUnit: { baseValue: 10, basis: 'mass' as const, unitKind: 'bar' as const, source: 'explicit_multipack_quantity' as const, smallestEdibleUnit: true as const } }, resultIndex: 0 };
+    expect(selectDefaultCatalogCandidate([mini, regular], 'Kinder Bueno', [true, true])).toBe(regular);
+    expect(catalogProductImageUrl(regular)).toContain('/400/840/032/2728/front_de.3.400.jpg');
   });
 
   it('persists only a minimal versioned session snapshot', () => {

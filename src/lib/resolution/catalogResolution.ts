@@ -358,6 +358,15 @@ function selectImplicitOption(
     return { option: calibratedSmallest, reason: 'calibration-preferred' };
   }
 
+  // A manually measured portion is an explicit user default too. Concrete
+  // products persist only one such calibration, so it must outrank inference.
+  const calibrated = options
+    .filter((option) => option.source === 'user_calibration' && option.baseValue !== null)
+    .sort((a, b) => a.priority - b.priority)[0];
+  if (calibrated) {
+    return { option: calibrated, reason: 'calibration-preferred' };
+  }
+
   const provenSmallest = options
     .filter((option) => option.smallestEdibleUnit && option.baseValue !== null)
     .sort((a, b) =>

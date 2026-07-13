@@ -22,8 +22,56 @@ function imageProductPath(code: string): string {
 /** Optional network image composition stays above the SQLite projection boundary. */
 export function catalogProductImageUrl(product: CatalogProduct): string | null {
   const image = product.imageReference;
-  if (!image) return null;
+  if (!image || !/^\d{8,14}$/.test(product.code)) return null;
   return `https://images.openfoodfacts.org/images/products/${imageProductPath(product.code)}/${image.key}.${image.revision}.${image.resolution}.jpg`;
+}
+
+const MINI_VARIANT = /\b(?:mini|minis|miniatur|bite|bites|snacksize|fun size)\b/;
+
+/**
+ * Chooses a product only when the catalog proves a normal edible unit for a
+ * sufficiently specific name. Numeric unit weight is intentionally not used:
+ * a "Mini" must not beat the regular bar merely because it weighs less.
+ */
+export function selectDefaultCatalogCandidate(
+  hits: readonly CatalogSearchHit[],
+  query: string,
+  eligible: readonly boolean[]
+): CatalogSearchHit | null {
+  const normalizedQuery = normalizedIdentityText(query);
+  const tokens = normalizedQuery.split(' ').filter(Boolean);
+  const eligibleHits = hits.filter((_, index) => eligible[index]);
+  if (eligibleHits.length === 1) return eligibleHits[0];
+  if (tokens.length < 2) return null;
+
+  return eligibleHits
+    .filter((hit) => {
+      const name = normalizedIdentityText(hit.displayName);
+      const proven = hit.unitEvidence.provenSmallestUnit;
+      return tokens.every((token) => name.includes(token))
+        && !MINI_VARIANT.test(name)
+        && Boolean(hit.imageReference)
+        && Boolean(proven && ['piece', 'bar', 'slice'].includes(proven.unitKind));
+    })
+    .sort((a, b) => {
+      const aName = normalizedIdentityText(a.displayName);
+      const bName = normalizedIdentityText(b.displayName);
+      const score = (name: string) => (name === normalizedQuery ? 100 : 0)
+        + (name.startsWith(normalizedQuery) ? 30 : 0)
+        - Math.max(0, name.length - normalizedQuery.length);
+      return score(bName) - score(aName) || a.resultIndex - b.resultIndex;
+    })[0] ?? null;
+}
+
+export function inferredCalibrationUnit(product: CatalogProduct): Extract<RequestedUnit, 'piece' | 'bar' | 'slice' | 'portion'> {
+  const proven = product.unitEvidence.provenSmallestUnit?.unitKind;
+  if (proven === 'piece' || proven === 'bar' || proven === 'slice') return proven;
+  const defaultUnit = product.unitEvidence.defaultUnitKind;
+  if (calibratableRequestedUnit(defaultUnit)) return defaultUnit;
+  const name = normalizedIdentityText(product.displayName);
+  if (/\b(?:riegel|bar)\b/.test(name)) return 'bar';
+  if (/\b(?:scheibe|scheiben|slice)\b/.test(name)) return 'slice';
+  return 'piece';
 }
 
 export function normalizedIdentityText(value: string): string {

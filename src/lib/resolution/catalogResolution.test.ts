@@ -207,6 +207,21 @@ describe('structured catalog unit resolution', () => {
     expect(resolution.options[0]).toMatchObject({ unit: 'bar', source: 'user_calibration', baseValue: 21 });
   });
 
+  it('uses a personally calibrated portion as the next implicit default', () => {
+    const portion: MatchingUnitCalibration = {
+      calibrationId: 'personal-portion',
+      scope: 'catalog-product',
+      unit: 'portion',
+      measuredCount: 10,
+      measuredTotalWeightG: 300,
+      updatedAt: '2026-07-13T12:00:00.000Z',
+      active: true
+    };
+    const resolution = resolveCatalogUnits(bueno(), request('g', false), [portion]);
+    expect(resolution.options[0]).toMatchObject({ unit: 'portion', source: 'user_calibration', baseValue: 30 });
+    expect(resolution.reason).toBe('calibration-preferred');
+  });
+
   it('does not reuse a different calibrated unit for an explicit request', () => {
     const pieceCalibration: MatchingUnitCalibration = {
       calibrationId: 'piece-only',

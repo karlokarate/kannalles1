@@ -200,7 +200,13 @@ export function saveCatalogCalibration(record: CatalogUnitCalibration): CatalogU
   const envelope = readEnvelope();
   envelope.calibrations = [
     normalized,
-    ...envelope.calibrations.filter((item) => item.scopeKey !== normalized.scopeKey)
+    ...envelope.calibrations.filter((item) => {
+      if (item.scopeKey === normalized.scopeKey) return false;
+      // One explicitly chosen default serving unit per concrete catalog product.
+      return !(normalized.scope === 'catalog-product'
+        && item.scope === 'catalog-product'
+        && item.identity.catalogProductId === normalized.identity.catalogProductId);
+    })
   ];
   writeEnvelope(envelope);
   return normalized;
