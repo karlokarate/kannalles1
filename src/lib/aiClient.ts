@@ -1,37 +1,18 @@
-import { createGatewayClient } from '../generated/search-api';
 import type { ParsedFoodRequest } from '../types';
-import { evidencedOffBarcodes, normalizeOffBarcode } from './barcode';
 import { parseFoodRequestLocal } from './parser';
 
+/**
+ * Offline cutover: parsing is deliberately local-only. The signature is kept
+ * temporarily so persisted settings and existing callers cannot re-enable a
+ * hidden network path.
+ */
 export async function parseFoodRequestWithAi(
   rawInput: string,
-  gatewayUrl: string,
+  _gatewayUrl: string,
   signal?: AbortSignal
 ): Promise<ParsedFoodRequest> {
-  const client = createGatewayClient({
-    baseUrl: gatewayUrl,
-    defaultInit: { credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer' }
-  });
-  const { data: parsed } = await client.parse({ input: rawInput }, { signal });
-  const localEvidence = parseFoodRequestLocal(rawInput);
-  if (localEvidence.status !== 'parsed') return { ...localEvidence, rawInput };
-  const normalizedAiBarcode = normalizeOffBarcode(parsed.barcode);
-  const barcodeEvidence = evidencedOffBarcodes(rawInput);
-  if (parsed.barcode !== null && (!normalizedAiBarcode || !barcodeEvidence.has(normalizedAiBarcode))) {
-    return { ...localEvidence, rawInput };
+  if (signal?.aborted) {
+    throw signal.reason ?? new DOMException('Anfrage abgebrochen.', 'AbortError');
   }
-  const evidencedBarcode = localEvidence.barcode ?? normalizedAiBarcode;
-  return {
-    ...parsed,
-    rawInput,
-    barcode: evidencedBarcode,
-    resolutionMode: evidencedBarcode ? 'barcode' : parsed.resolutionMode,
-    amount: {
-      ...parsed.amount,
-      value: localEvidence.amount.valueExplicit ? localEvidence.amount.value : parsed.amount.value,
-      unit: localEvidence.amount.unitExplicit ? localEvidence.amount.unit : parsed.amount.unit,
-      valueExplicit: localEvidence.amount.valueExplicit,
-      unitExplicit: localEvidence.amount.unitExplicit
-    }
-  };
+  return parseFoodRequestLocal(rawInput);
 }
