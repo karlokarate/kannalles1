@@ -6,23 +6,30 @@ function readContract(name: string) {
 }
 
 describe('normative core-contract consistency', () => {
-  it('keeps direct and gateway lanes explicit and cache identities lane-aware', () => {
+  it('makes the verified SQLite catalog authoritative and product-network budgets zero', () => {
     const contract = readContract('search-execution.contract.json') as {
       pipeline: Array<{ step: string; rules: string[] }>;
       networkBudgets: {
-        browserGatewayRequestsPerAction: { maximum: number };
-        browserDirectRequestsPerAction: { maximum: number };
+        searchRequestsPerAction: { maximum: number; scope: string };
+        selectedProductDetailRequests: { maximum: number };
+        remoteAiRequestsPerAction: { maximum: number };
       };
     };
-    const cache = contract.pipeline.find((step) => step.step === 'query_cache')?.rules ?? [];
-    const primary = contract.pipeline.find((step) => step.step === 'primary_search')?.rules ?? [];
-    expect(cache).toContain('browser_cache_key_includes_runtime_lane_identity');
-    expect(cache).toContain('gateway_cache_key_includes_effective_upstream_backend_identity');
-    expect(cache).not.toContain('use_backend_independent_canonical_key');
-    expect(primary).toContain('empty_gateway_selects_direct_search_a_licious');
-    expect(primary).toContain('configured_gateway_is_authoritative_for_the_whole_action');
-    expect(contract.networkBudgets.browserGatewayRequestsPerAction.maximum).toBe(1);
-    expect(contract.networkBudgets.browserDirectRequestsPerAction.maximum).toBe(2);
+    const readiness = contract.pipeline.find((step) => step.step === 'catalog_readiness')?.rules ?? [];
+    const search = contract.pipeline.find((step) => step.step === 'offline_search')?.rules ?? [];
+    const product = contract.pipeline.find((step) => step.step === 'offline_product_resolution')?.rules ?? [];
+    expect(readiness).toContain('verify_size_sha256_application_id_user_version_schema_and_product_count_before_activation');
+    expect(readiness).toContain('never_activate_partial_or_unverified_catalog');
+    expect(search).toContain('issue_zero_product_network_requests');
+    expect(search).toContain('sort_exact_name_then_prefix_then_contains_then_popularity_then_name_then_product_id');
+    expect(product).toContain('never_fan_out_product_detail_requests');
+    expect(contract.networkBudgets.searchRequestsPerAction).toEqual({
+      maximum: 0,
+      scope: 'product_network',
+      hardLocalLock: false
+    });
+    expect(contract.networkBudgets.selectedProductDetailRequests.maximum).toBe(0);
+    expect(contract.networkBudgets.remoteAiRequestsPerAction.maximum).toBe(0);
   });
 
   it('describes the calibration management UI that actually exists', () => {
@@ -39,25 +46,36 @@ describe('normative core-contract consistency', () => {
     expect(contract.lifecycle).not.toHaveProperty('userCanDelete');
   });
 
-  it('allows user-approved direct OFF credentials without weakening operator-secret boundaries', () => {
+  it('retires personal OFF credentials from every productive data path', () => {
     const contract = readContract('off-account.contract.json') as {
-      persistence: Record<string, unknown>;
-      directRequestUse: Record<string, unknown>;
+      runtimePolicy: Record<string, unknown>;
+      migration: Record<string, unknown>;
+      catalogUpdateTransport: Record<string, unknown>;
       nonNegotiableRedaction: Record<string, unknown>;
     };
-    expect(contract.persistence).toMatchObject({
-      userProvidedCredentialsAllowed: true,
-      cleartextBrowserPersistenceAllowed: true,
-      mustNotBeRejectedBySecretOrReleaseGates: true
+    expect(contract.runtimePolicy).toMatchObject({
+      productSearchUsesCredentials: false,
+      productLookupUsesCredentials: false,
+      searchALiciousEnabled: false,
+      offLegacyEnabled: false,
+      offProductApiEnabled: false,
+      gatewayEnabled: false,
+      remoteAiEnabled: false
     });
-    expect(contract.directRequestUse).toMatchObject({
-      searchALiciousReceivesCredentials: false,
-      configuredGatewayReceivesCredentials: false,
-      offLegacyAndProductReadsReceiveCredentials: true
+    expect(contract.migration).toMatchObject({
+      legacyCredentialsMustNeverBeReadForProductOperations: true,
+      legacyCredentialsMustNeverBeTransmitted: true,
+      authenticationFunctionFailsClosed: true
+    });
+    expect(contract.catalogUpdateTransport).toMatchObject({
+      sameOriginOnly: true,
+      offAccountCredentialsUsed: false,
+      productQueryTermsTransmitted: false,
+      barcodesTransmitted: false
     });
     expect(contract.nonNegotiableRedaction).toMatchObject({
       diagnosticsContainPassword: false,
-      apiCacheContainsCredentialedRequestUrl: false,
+      catalogMetadataContainsCredentials: false,
       buildTimeEnvironmentContainsUserCredentials: false
     });
   });
