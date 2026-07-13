@@ -30,6 +30,7 @@ if (/contents:\s*write/iu.test(text) || /git\s+(?:push|commit)/iu.test(text)) {
 const pinnedActions = {
   'actions/checkout': '9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0',
   'actions/setup-node': '48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e',
+  'actions/upload-artifact': 'bbbca2ddaa5d8feaa63e36b76fdaad77386f024f',
   'actions/configure-pages': '45bfe0192ca1faeb007ade9deae92b16b8254a0d',
   'actions/upload-pages-artifact': 'fc324d3547104276b827a68afc52ff2a11cc49c9',
   'actions/deploy-pages': 'cd2ce8fcbc39b97be8ca5fce6e763baed58fa128'
@@ -80,6 +81,12 @@ if (!text.includes('VITE_DATA_GATEWAY_URL: ""')) {
 }
 if (!text.includes('Online OFF/Search-a-licious product access: disabled')) {
   throw new Error('Deployment summary must state that online product access is disabled.');
+}
+const failureLog = build.steps.find((step) => String(step?.uses ?? '').startsWith('actions/upload-artifact@'));
+if (failureLog?.if !== 'failure()'
+  || failureLog?.with?.name !== 'offline-build-output'
+  || failureLog?.with?.path !== 'build-output.log') {
+  throw new Error('Compiler failures must upload the concise offline-build-output artifact.');
 }
 const configure = build.steps.find((step) => String(step?.uses ?? '').startsWith('actions/configure-pages@'));
 const upload = build.steps.find((step) => String(step?.uses ?? '').startsWith('actions/upload-pages-artifact@'));
