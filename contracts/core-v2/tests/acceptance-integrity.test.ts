@@ -1,12 +1,21 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createGatewayCore } from '../../../server/gateway-core/gateway.mjs';
-import { createPersistencePorts } from '../../../server/gateway-core/redis-port.mjs';
 import type { OffProduct, ParsedFoodRequest, SearchHit } from '../../../src/types';
+import type { CatalogProductRecord } from '../../../src/lib/catalog/catalogProtocol';
+
+vi.mock('../../../src/lib/catalog/catalogClient', () => ({
+  searchOfflineCatalog: vi.fn(),
+  getOfflineCatalogProduct: vi.fn(),
+  cancelOfflineCatalogRequests: vi.fn()
+}));
+
+import {
+  getOfflineCatalogProduct,
+  searchOfflineCatalog
+} from '../../../src/lib/catalog/catalogClient';
 import {
   cancelPendingApiRequests,
   clearApiGovernor,
-  searchFoodCandidates,
   searchFoodCandidatesOutcome
 } from '../../../src/lib/api';
 import {
@@ -20,10 +29,8 @@ import {
   resolveGenericCandidates
 } from '../../../src/lib/resolver';
 import {
-  clearApiCache,
   clearCalibrations,
   findCalibration,
-  getApiCacheStats,
   saveCalibration
 } from '../../../src/lib/storage';
 
@@ -33,7 +40,6 @@ const suite = JSON.parse(readFileSync(new URL('./acceptance-cases.json', import.
   cases: Array<{ id: string; given: Record<string, unknown>; expect: Record<string, unknown> }>;
 };
 const byId = new Map(suite.cases.map((entry) => [entry.id, entry]));
-const GATEWAY = 'https://gateway.acceptance.example/';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -43,22 +49,6 @@ class MemoryStorage implements Storage {
   key(index: number) { return [...this.values.keys()][index] ?? null; }
   removeItem(key: string) { this.values.delete(key); }
   setItem(key: string, value: string) { this.values.set(key, String(value)); }
-}
-
-function response(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' }
-  });
-}
-
-function gatewayMeta(sourceUrl: string, originBackend = 'search-index') {
-  return {
-    cacheStatus: 'network', cacheLayer: 'none', gatewayCacheStatus: 'network',
-    fetchedAt: new Date(Date.now()).toISOString(), sourceUrl,
-    backend: 'gateway', originBackend, networkAttempted: true,
-    durationMs: 1, attempts: []
-  };
 }
 
 function request(
@@ -82,12 +72,34 @@ const buenoHit: SearchHit = {
   nutriments: { carbohydrates_100g: 49.5 }
 };
 
+const catalogBueno: CatalogProductRecord = {
+  code: '4008400321622',
+  name: 'Kinder Bueno',
+  brand: 'Kinder',
+  carbohydratesPer100: 49.5,
+  carbohydrateBasis: 'mass',
+  carbohydrateSourcePrepared: false,
+  servingValue: 43,
+  servingBasis: 'mass',
+  productQuantityValue: 43,
+  productQuantityBasis: 'mass',
+  provenUnitValue: 21.5,
+  provenUnitKind: 'bar',
+  provenUnitSource: 'explicitServingCount',
+  provenUnitBasis: 'mass',
+  defaultUnitKind: 'bar',
+  imageUrl: null,
+  hasQualityErrors: false,
+  rankOrdinal: 1000
+};
+
 beforeEach(async () => {
   vi.stubGlobal('localStorage', new MemoryStorage());
   vi.stubGlobal('indexedDB', undefined);
+  vi.mocked(searchOfflineCatalog).mockReset();
+  vi.mocked(getOfflineCatalogProduct).mockReset();
   cancelPendingApiRequests();
   clearApiGovernor();
-  await clearApiCache();
   await clearCalibrations();
 });
 
@@ -96,7 +108,6 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   cancelPendingApiRequests();
   clearApiGovernor();
-  await clearApiCache();
   await clearCalibrations();
 });
 
@@ -115,61 +126,48 @@ describe('normative v2 acceptance cases bound to production code', () => {
       'nutella-not-forced-to-piece'
     ];
     expect(suite.suite).toBe('kh-checker-core-acceptance');
+    expect(suite.version).toBe('2.1.0');
     expect(bound.sort()).toEqual(suite.cases.map((entry) => entry.id).sort());
   });
 
-  it('[search-primary-fails-fallback-succeeds] executes owned-index → OFF fallback once', async () => {
+  it('[search-primary-fails-fallback-succeeds] resolves from the local catalog with zero product-network requests', async () => {
     const fixture = byId.get('search-primary-fails-fallback-succeeds');
-    const calls: string[] = [];
-    const core = createGatewayCore({
-      version: '2.2.4',
-      ports: createPersistencePorts({ url: '' }),
-      env: { SEARCH_INDEX_URL: 'https://index.example/search', GATEWAY_DEADLINE_MS: '1000' },
-      fetchFn: async (url) => {
-        calls.push(String(url));
-        if (String(url).startsWith('https://index.example')) {
-          return response({ errors: [{ message: 'index unavailable' }] });
-        }
-        return response({ products: [{ code: '4000417025005' }], count: 1, page: 1, page_size: 10 });
-      }
-    });
-    const result = await core.search('Fallback fixture', 10);
-    expect(calls).toHaveLength(fixture?.expect.networkRequests as number);
-    expect(result.source).toBe('open-food-facts-legacy');
-    expect(result.hits).toHaveLength(1);
-    expect(result.gateway_attempts.map((attempt) => attempt.outcome)).toEqual(['parse-error', 'success']);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.mocked(searchOfflineCatalog).mockResolvedValue([catalogBueno]);
+
+    const outcome = await searchFoodCandidatesOutcome('Kinder Bueno', 10);
+
+    expect(outcome.status).toBe(fixture?.expect.status);
+    expect(outcome.candidates).toHaveLength(1);
+    expect(outcome.diagnostics.networkAttempted).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(fixture?.expect.networkRequests as number);
   });
 
-  it('[search-all-fail-stale-cache] returns a visible stale reserve after refresh failure', async () => {
+  it('[search-all-fail-stale-cache] remains available offline because the installed catalog is authoritative', async () => {
     const fixture = byId.get('search-all-fail-stale-cache');
-    let now = Date.parse('2026-07-12T00:00:00.000Z');
-    vi.spyOn(Date, 'now').mockImplementation(() => now);
-    const fetchMock = vi.fn(async () => response({
-      hits: [{ code: '4000417025005' }], count: 1, source: 'search-index',
-      query_used: 'Stale acceptance', gateway_attempts: [],
-      api_meta: gatewayMeta('https://index.example/search')
-    }));
+    const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    await searchFoodCandidates('Stale acceptance', 10, undefined, { gatewayUrl: GATEWAY });
-    expect(await getApiCacheStats(now)).toMatchObject({ entries: 1, freshEntries: 1, staleEntries: 0 });
-    now += 2 * 24 * 60 * 60 * 1000;
-    expect(await getApiCacheStats(now)).toMatchObject({ entries: 1, freshEntries: 0, staleEntries: 1 });
-    fetchMock.mockRejectedValueOnce(new TypeError('network down'));
-    const outcome = await searchFoodCandidatesOutcome('Stale acceptance', 10, undefined, { gatewayUrl: GATEWAY });
+    vi.mocked(searchOfflineCatalog).mockResolvedValue([catalogBueno]);
+
+    const outcome = await searchFoodCandidatesOutcome('Kinder Bueno', 10);
+
     expect(outcome.status).not.toBe(fixture?.expect.statusNot);
     expect(outcome.diagnostics.cacheStatus).toBe(fixture?.expect.cacheStatus);
-    expect(outcome.result?.api_meta?.fallbackReason).toBe('network');
+    expect(fetchMock).toHaveBeenCalledTimes(fixture?.expect.networkRequests as number);
   });
 
-  it('[search-all-fail-no-cache] ends in a typed immediately retryable state', async () => {
+  it('[search-all-fail-no-cache] maps catalog integrity failure to an immediately retryable typed state', async () => {
     const fixture = byId.get('search-all-fail-no-cache');
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('network down'); }));
-    const outcome = await searchFoodCandidatesOutcome('No-cache acceptance', 10, undefined, {
-      gatewayUrl: GATEWAY,
-      cacheEnabled: false
-    });
+    vi.mocked(searchOfflineCatalog).mockRejectedValue(
+      Object.assign(new Error('SQLite quick_check fehlgeschlagen'), { code: 'CATALOG_INTEGRITY_FAILED' })
+    );
+
+    const outcome = await searchFoodCandidatesOutcome('No-cache acceptance', 10);
+
     expect(outcome.status).toBe(fixture?.expect.status);
     expect(outcome.diagnostics.retryAllowedImmediately).toBe(fixture?.expect.retryAllowedImmediately);
+    expect(outcome.diagnostics.networkAttempted).toBe(false);
     expect(outcome.diagnostics).not.toHaveProperty('localCountdown');
   });
 
@@ -178,7 +176,8 @@ describe('normative v2 acceptance cases bound to production code', () => {
     const product: OffProduct = {
       ...buenoHit,
       quantity: '2 x 21.5 g', product_quantity: 43, product_quantity_unit: 'g',
-      serving_size: '21.5 g', serving_quantity: 21.5
+      serving_size: '1 Riegel (21.5 g)', serving_quantity: 21.5,
+      categories_tags: ['kh-catalog-unit-bar']
     };
     const result = buildExactResult(request('Kinder Bueno', 'Kinder Bueno', 1, 'portion', false), buenoHit, product, null);
     expect(result.unit).toBe(fixture?.expect.selectedUnit);
