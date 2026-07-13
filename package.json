@@ -51,7 +51,7 @@
     "check:bundle": "node scripts/check-bundle-budget.mjs",
     "monitor:gateway": "node scripts/monitor-gateway.mjs",
     "check:workflow": "node scripts/validate-workflow.mjs",
-    "check:catalog": "python3 scripts/validate-catalog-artifacts.py --allow-benchmark",
+    "check:catalog": "python3 scripts/validate-catalog-artifacts.py",
     "prepare:sqlite-runtime": "node scripts/ensure-sqlite-runtime.mjs",
     "predev": "npm run prepare:sqlite-runtime && npm run prepare:public",
     "prebuild": "npm run prepare:sqlite-runtime && npm run prepare:public",
