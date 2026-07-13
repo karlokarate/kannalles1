@@ -32,9 +32,8 @@ export interface ApiUsageSnapshot {
 
 const STORAGE_KEY = 'kh-checker-v2.2-api-telemetry';
 
-// This is intentionally an observation window, not a claimed quota. The
-// gateway may be deployed with different per-client budgets and owns all
-// Search-a-licious/OFF limits.
+// This is intentionally an observation window, not a claimed quota. OFF,
+// Search-a-licious or an optional gateway own the effective remote limits.
 const CONFIG: Record<ApiBucket, BucketConfig> = {
   search: { windowMs: 60_000, label: 'Produktsuche' },
   product: { windowMs: 60_000, label: 'Produktdetails' }

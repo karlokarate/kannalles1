@@ -180,6 +180,9 @@ img { max-width: 100%; display: block; }
 .settings-card label.toggle-row { flex-direction: row; align-items: center; justify-content: space-between; min-height: 42px; }
 .toggle-row input { width: 48px; min-height: 28px; accent-color: var(--green); }
 .setting-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.off-account-form { display: grid; gap: 12px; }
+.off-account-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.off-account-actions .primary-button, .off-account-actions .secondary-button { flex: 1 1 190px; }
 .setting-warning { padding: 9px 10px; border: 1px solid #e4c17a; border-radius: 11px; background: #fff8e8; color: #725714; }
 .settings-card input[aria-invalid="true"] { border-color: #c8862d; box-shadow: 0 0 0 3px rgba(200, 134, 45, .1); }
 .danger-zone .secondary-button { color: var(--danger); border-color: #e3b6b6; }

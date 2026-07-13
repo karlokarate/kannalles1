@@ -1,20 +1,20 @@
 # P0–P2 Audit-/Fix-Matrix
 
-Stand: 2026-07-12. Diese Matrix beschreibt den produktiven Stand nach der Repository-, Contract-, UX- und Upstream-API-Prüfung. `geschlossen` bedeutet: im Produktionscode umgesetzt und durch passende Contract-, Unit-, Build-, Browser- oder Runtime-Evidenz abgedeckt. Externe Inbetriebnahmen sind separat aufgeführt.
+Stand: 2026-07-13. Diese Matrix beschreibt den produktiven Dual-Lane-Stand nach der Repository-, Contract-, UX- und Upstream-API-Prüfung. `geschlossen` bedeutet: im Produktionscode umgesetzt und durch passende Contract-, Unit-, Build-, Browser- oder Runtime-Evidenz abgedeckt. Externe Inbetriebnahmen sind separat aufgeführt.
 
 ## Geschlossene Findings
 
 | Prio | Finding / Sollzustand | Status | Evidenz |
 |---|---|---|---|
-| P0 | OFF v3.6 `nutrition.aggregated_set` und v2 in ein stabiles internes DTO abbilden | geschlossen | `server/gateway-core/adapters/`; Fixture- und Handler-Tests für 100 g, 100 ml, serving, prepared und ungültige Werte |
-| P0 | Produktstatus, Fehler und Metadaten vor der Browserausgabe normalisieren | geschlossen | generierte Zod-Schemas und Gateway-Handlertests |
+| P0 | OFF v3.6 `nutrition.aggregated_set` und v2 in ein stabiles internes DTO abbilden | geschlossen | gemeinsamer `server/gateway-core/off-adapters.mjs`; Fixture-, Direct-Client- und Gatewaytests |
+| P0 | Produktstatus, Fehler und Metadaten vor der Browserausgabe normalisieren | geschlossen | gemeinsamer Projektionsadapter sowie typisierte Direct-/Gateway-Grenzen |
 | P0 | Eine gemeinsame, runtime-neutrale Gateway-Core ohne Orchestrierungsduplikate | geschlossen | `server/gateway-core/`; ein Express-Produktionsadapter in `server/index.mjs` |
-| P0 | Browser greift ausschließlich über den versionierten Gateway-Client zu | geschlossen | `/api/v1`, generierter Client, Pages-/Release-Gates gegen direkte OFF-, Search-a-licious- und OpenAI-Aufrufe |
+| P0 | Direkte Pages-Lane und autoritative Gateway-Lane ohne Mischfallback | geschlossen | Runtime-Auswahl über leere/gesetzte Gateway-URL, Contract- und Clienttests |
 | P0 | Sichtbare Loading-, Empty-, Error-, Offline-, Rate-limit- und Konfigurationszustände | geschlossen | typisierte Search-State-Machine und Cross-Browser-E2E |
 | P0 | Sofortiger Retry statt lokaler künstlicher Cooldowns | geschlossen | Contract-Invariante und UI-/API-Tests |
-| P0 | Eigener Search-a-licious/OFF-Export-Index ist Primärpfad; OFF Legacy nur Reserve | geschlossen | `SEARCH_INDEX_URL`, `compose.production.yml`, Modus- und Fallbacktests |
-| P0 | Verteilter Cache, Single-Flight, Limiter, Circuits und absolute Deadline | geschlossen | Redis-getrennte Cache-/Koordinationsrollen, Fake-Timer-, Fehler- und Health-Tests |
-| P0 | OFF-Read-Requests ohne Login, Cookie oder Browser-Secret | geschlossen | Gateway-Core und Secret-/Pages-Gates |
+| P0 | Search-a-licious direkt primär; OFF Legacy genau einmal als Reserve | geschlossen | echte CORS-Prüfung, Direct-Client- und Fallbacktests |
+| P0 | Cache, Single-Flight und begrenzte Deadlines in beiden Lanes | geschlossen | Browsercache/-Deduplizierung sowie optionale Redis-Gatewaykoordination |
+| P0 | Optionales persönliches OFF-Konto ohne Gateway: Loginprüfung, lokale Persistenz und Nutzung nur an OFF | geschlossen | Settings-UX, offizieller `/cgi/auth.pl`-POST, Direct-Client-/Redaktionstests und eigener Core-Vertrag |
 | P0 | Versionierter Health-/Deployment-Contract | geschlossen | generiertes `HealthResponse` und Live-Container-Health |
 | P0 | Stale ZIPs, Hotfix-Patches und doppelte Release-Skripte nicht mehr deployen | geschlossen | bereinigter Releasebaum und plattformneutrale Node-Gates |
 | P0 | Manuelle Mengen in g/ml nur endlich und größer null; sichere Nährwertauflösung | geschlossen | `manual`, `nutrition`, `resolver` und Grenzwerttests |
@@ -25,25 +25,23 @@ Stand: 2026-07-12. Diese Matrix beschreibt den produktiven Stand nach der Reposi
 | P1 | Lucene-Eingabe, Barcode-Normalisierung und Backend-URLs sind abgesichert | geschlossen | Query-Builder-, Barcode- und SSRF-/Redirect-Tests |
 | P1 | Versionierte lokale Repositories mit Memory → IndexedDB → kontrolliertem Fallback | geschlossen | Wire→Domain-Validierung, Migration, Korruption, Quota, Tombstones und Mehrschlüsseltests |
 | P1 | Persistenzfehler verändern ein berechnetes Ergebnis nicht | geschlossen | Unit-/Browser-Fehlertests |
-| P1 | Verlauf, Kalibrierung und API-Offlinedaten haben getrennte Privacy-Opt-ins und Limits | geschlossen | Settings-, Storage- und Offline-Tests |
+| P1 | Verlauf, Kalibrierung, API-Offlinedaten und optionale OFF-Zugangsdaten haben transparente lokale Lebenszyklen | geschlossen | Settings-, Storage-, Auth- und Offline-Tests |
 | P1 | Root-Recovery, Browser-History, Fokus, Scroll und zugängliche Busy-/Ergebniszustände | geschlossen | Error Boundary und Playwright/Axe-Suite |
 | P1 | OFF-Attribution, Quelle, Datenalter und Safety-Hinweis sind sichtbar | geschlossen | Ergebnis-UI und Attributionstests |
 | P2 | Progressive Browsermatrix, Mobile-/Touch-Layouts und reduzierte Bewegung | geschlossen | Chromium/Android, Firefox und WebKit/iPhone-Projekte; CSS-Baseline und Fallback-Hinweis |
 | P2 | PWA App-Shell, kontrolliertes Offline-Caching und Update-Prompt | geschlossen | Workbox-Konfiguration und PWA-E2E |
 | P2 | Bundle-, Contract-, Secret-, Dependency- und Container-Sicherheitsgates | geschlossen | `npm run check`, `npm audit`, Gitleaks und Trivy |
-| P2 | Vendor-neutrales Deployment ohne Vercel-Abhängigkeit | geschlossen | distroless Express-Container, Compose und statischer Pages-Build; Vercel-Adapter/-Config entfernt |
+| P2 | Direkte Pages-Produktion ohne Vercel, vorbereitete Gateway-Ausweichlane | geschlossen | schlanker Pages-Build, optionaler Express-Core und dokumentierte Vercel-Umschaltkriterien |
 
 ## Noch offene Betriebs- und Abnahmeaufgaben
 
-Diese Punkte benötigen keine weitere Vercel- oder Browser-Runtime-Architektur, müssen aber vor einem echten Produktions-Rollout in der Zielumgebung erledigt werden:
+Diese Punkte bleiben als laufende Betriebsbeobachtung beziehungsweise als bedingte Lane-B-Aufgaben offen:
 
-1. Den vollständigen OFF-Export in den eigenen Search-a-licious-Cluster importieren, den inkrementellen Updater aktivieren und Importdauer, Datenalter sowie Speicherbedarf messen.
-2. In Staging eine echte `search_api=search-index`-Suche, einen kontrollierten Index-/Redis-Ausfall und mindestens zwei parallele Gateway-Instanzen testen. Die lokalen Preflight-, Unit- und Einzelinstanz-Runtime-Gates ersetzen diesen Betriebsnachweis nicht.
-3. Produktionswerte für `OFF_USER_AGENT`, `OFF_CONTACT_EMAIL`, `GATEWAY_CLIENT_SALT`, TLS/Reverse-Proxy, `CORS_ORIGINS`, Redis-Persistenz/Backups und optional `OPENAI_API_KEY` sicher bereitstellen.
-4. Den optionalen AI-Pfad mit einem echten Produktions-Key gegen Budget-, Kosten-, 429- und Schemafehler testen; ohne Key bleibt der lokale Parser bewusst funktionsfähig.
-5. Externes Monitoring/Alerting für `/api/v1/health`, Suchlatenz, Circuit-Zustände, 429/5xx und Indexalter an den gewählten Hoster anbinden.
-6. Reale Geräte-Smoke-Tests auf den offiziell unterstützten Mindestversionen durchführen. Noch ältere oder exotische Browser erhalten eine Fallback-Meldung; eine Garantie für buchstäblich jeden historischen Browser ist technisch nicht seriös.
-7. Für ARM64 muss gegebenenfalls ein eigener, commit-gepinnter Search-a-licious-Imagebuild veröffentlicht werden; das aktuell geprüfte Upstream-API-Image ist amd64-spezifisch.
+1. Lane A regelmäßig auf realem Android/Chromium, iOS/WebKit und Firefox gegen CORS, 429 und 5xx prüfen; einzelne temporäre Upstream-5xx sind kein Architekturfehler.
+2. OFF verlangt für identifizierbare Apps einen eigenen `User-Agent`, den Browser-JavaScript nicht setzen darf. Beobachten, ob OFF direkte Browserzugriffe künftig deswegen ablehnt.
+3. Wenn eines der Kriterien aus `docs/DECISION-DUAL-API-LANES.md` reproduzierbar eintritt, dünne Vercel-Routen auf den bestehenden Core setzen, `DATA_GATEWAY_URL` aktivieren und Lane A vollständig abschalten.
+4. Den optionalen AI-Pfad erst in Lane B mit Produktions-Key, Salt, Redis-Budgets, Kosten-, 429- und Schemafehlern abnehmen; ohne Gateway bleibt der lokale Parser Standard.
+5. Eine Garantie für buchstäblich jeden historischen Browser ist technisch nicht seriös; Browser unterhalb der dokumentierten Mindestbaseline erhalten den statischen Fallback.
 
 ## Reproduzierbare Abnahme
 
@@ -60,4 +58,4 @@ trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 kh-checker-ga
 DATA_GATEWAY_URL=https://<staging-gateway> npm run check:gateway
 ```
 
-Für den produktiven Search-Index kommen `npm run check:search-index`, der vollständige Import, eine reale Indexsuche und die Ausfalltests aus Punkt 2 hinzu.
+Die Container-/Gateway-Kommandos sind nur für Lane B erforderlich. Lane A benötigt keinen OFF-Export und keinen Search-Index-Import.

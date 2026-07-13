@@ -72,8 +72,10 @@ const runtimeContract = JSON.parse(readFileSync(
   'utf8'
 ));
 if (runtimeContract.architecture?.portableGatewayRuntime !== 'node-express-container'
-  || runtimeContract.architecture?.optionalAdapters?.length !== 0) {
-  throw new Error('Runtime contract must remain vendor-neutral Node/Express without platform adapters.');
+  || runtimeContract.architecture?.optionalAdapters?.length !== 0
+  || runtimeContract.architecture?.browserDataAccess !== 'direct-off-or-configured-gateway'
+  || runtimeContract.architecture?.primarySearch !== 'public-search-a-licious') {
+  throw new Error('Runtime contract must describe direct OFF access with the optional vendor-neutral gateway lane.');
 }
 for (const activeFile of ['package.json', 'server/index.mjs', 'compose.yml', 'Dockerfile']) {
   if (/\bvercel\b/iu.test(readFileSync(path.join(root, activeFile), 'utf8'))) {
@@ -86,5 +88,5 @@ console.log(JSON.stringify({
   pythonSyntaxFiles: 3,
   bashChecked: bashProbe.status === 0,
   launcherContracts: ['windows', 'linux-macos', 'termux'],
-  backendPlatform: 'vendor-neutral-node-express'
+  runtimeLanes: ['direct-browser', 'optional-vendor-neutral-node-express']
 }));

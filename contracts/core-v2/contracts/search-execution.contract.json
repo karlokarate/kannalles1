@@ -1,6 +1,6 @@
 {
   "contract": "kh-checker-search-execution",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "input": {
     "rawInput": "string",
     "canonicalQuery": "string",
@@ -28,9 +28,9 @@
       "order": 2,
       "step": "query_cache",
       "rules": [
-        "browser_cache_key_includes_configured_gateway_identity",
+        "browser_cache_key_includes_runtime_lane_identity",
         "gateway_cache_key_includes_effective_upstream_backend_identity",
-        "accept_only_contract_valid_gateway_responses",
+        "normalize_and_validate_direct_or_gateway_responses",
         "return_fresh_hit_without_network"
       ]
     },
@@ -38,17 +38,19 @@
       "order": 3,
       "step": "primary_search",
       "rules": [
-        "browser_calls_only_the_configured_versioned_gateway",
-        "browser_never_calls_open_food_facts_or_search_a_licious_directly",
-        "gateway_uses_the_configured_own_search_index_first"
+        "empty_gateway_selects_direct_search_a_licious",
+        "optional_personal_off_credentials_are_used_only_for_world_openfoodfacts_requests",
+        "configured_gateway_is_authoritative_for_the_whole_action",
+        "gateway_lane_uses_its_configured_search_backend"
       ]
     },
     {
       "order": 4,
       "step": "single_fallback",
       "rules": [
-        "gateway_falls_back_to_open_food_facts_only_if_own_index_failed_or_returned_zero_hits",
-        "maximum_total_upstream_search_requests_per_gateway_action_is_two"
+        "direct_lane_falls_back_once_to_open_food_facts_legacy",
+        "gateway_lane_owns_its_internal_fallback",
+        "maximum_total_search_requests_per_action_is_two"
       ]
     },
     {
@@ -77,13 +79,21 @@
     "no_source_and_no_cache": "temporarily_unavailable"
   },
   "networkBudgets": {
+    "offAccountVerification": {
+      "maximum": 1,
+      "scope": "explicit settings action, not a search action"
+    },
     "browserGatewayRequestsPerAction": {
       "maximum": 1,
       "hardLocalLock": false
     },
+    "browserDirectRequestsPerAction": {
+      "maximum": 2,
+      "hardLocalLock": false
+    },
     "searchRequestsPerAction": {
       "maximum": 2,
-      "scope": "gateway_upstream_requests",
+      "scope": "selected_runtime_lane",
       "hardLocalLock": false
     },
     "selectedProductDetailRequests": {

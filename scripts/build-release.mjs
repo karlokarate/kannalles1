@@ -24,7 +24,7 @@ if (process.env.RELEASE_SKIP_CHECK === '1') throw new Error('RELEASE_SKIP_CHECK 
 const buildDate = new Date(epoch * 1000).toISOString();
 const prevalidated = process.env.RELEASE_PREVALIDATED === '1';
 const deployment = validateDeploymentProfile(
-  process.env.RELEASE_DEPLOYMENT_PROFILE || 'manual-only',
+  process.env.RELEASE_DEPLOYMENT_PROFILE || 'direct-pages',
   process.env.VITE_DATA_GATEWAY_URL || ''
 );
 if (prevalidated && process.env.RELEASE_BROWSER_GATE !== 'passed_at_build') {
@@ -126,10 +126,10 @@ try {
     sourceArchive: { file: sourceArchive, sha256: await sha256(sourceZip), embedded: false },
     runtime: {
       staticAssetHostingRequiresApplicationServer: false,
-      browserDataAccess: 'gateway-only',
-      gatewayRuntimeRequiredForGlobalSearch: true,
-      gatewayOptionalForManualAndOfflineUse: true,
-      primarySearchProvider: 'self-hosted-search-index',
+      browserDataAccess: 'direct-off-or-configured-gateway',
+      gatewayRuntimeRequiredForGlobalSearch: false,
+      gatewayOptionalForDirectSearch: true,
+      primarySearchProvider: 'public-search-a-licious',
       searchFallback: 'open-food-facts-legacy',
       nativeAndroidApk: false
     },

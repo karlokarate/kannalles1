@@ -682,7 +682,7 @@ export function getGatewayOpenApiDocument() {
       title: 'KH Checker data gateway API',
       version: APP_VERSION,
       description:
-        'Kanonischer Vertrag des versionierten Daten-Gateways. Die statische PWA bleibt für manuelle und lokale Funktionen ohne Gateway nutzbar; globale Suche läuft ausschließlich über diese API.'
+        'Kanonischer Vertrag des optionalen versionierten Daten-Gateways. Die statische PWA kann die offiziellen OFF-Dienste direkt nutzen oder vollständig auf diese API umschalten.'
     },
     jsonSchemaDialect: 'https://json-schema.org/draft/2020-12/schema',
     security: [],
@@ -705,11 +705,13 @@ export function getGatewayOpenApiDocument() {
       gatewayApiVersion: GATEWAY_API_VERSION,
       authoritativeSource: 'contracts/source/search-api.contract.mjs',
       appVersion: APP_VERSION,
-      deploymentMode: 'full-stack',
-      gatewayRequiredForGlobalSearch: true,
-      gatewayOptionalForManualAndOfflineUse: true,
+      deploymentMode: 'dual-lane',
+      gatewayRequiredForGlobalSearch: false,
+      gatewayOptionalForDirectSearch: true,
       gatewayRuntime: 'node',
-      browserUpstreamPolicy: 'gateway-only',
+      browserUpstreamPolicy: 'direct-off-or-configured-gateway',
+      directBrowserSearchOrder: ['search-a-licious', 'open-food-facts-legacy'],
+      directBrowserProductOrder: ['open-food-facts-v3.6', 'open-food-facts-v2'],
       legacyCompatibilityAliases: {
         '/api/health': '/api/v1/health',
         '/api/search': '/api/v1/search',

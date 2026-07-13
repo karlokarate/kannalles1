@@ -1874,7 +1874,7 @@ components:
           type: number
       type: object
 info:
-  description: Kanonischer Vertrag des versionierten Daten-Gateways. Die statische PWA bleibt für manuelle und lokale Funktionen ohne Gateway nutzbar; globale Suche läuft ausschließlich über diese API.
+  description: Kanonischer Vertrag des optionalen versionierten Daten-Gateways. Die statische PWA kann die offiziellen OFF-Dienste direkt nutzen oder vollständig auf diese API umschalten.
   title: KH Checker data gateway API
   version: 2.2.4
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
@@ -2173,11 +2173,17 @@ webhooks: {}
 x-kh-generator:
   appVersion: 2.2.4
   authoritativeSource: contracts/source/search-api.contract.mjs
-  browserUpstreamPolicy: gateway-only
-  deploymentMode: full-stack
+  browserUpstreamPolicy: direct-off-or-configured-gateway
+  deploymentMode: dual-lane
+  directBrowserProductOrder:
+    - open-food-facts-v3.6
+    - open-food-facts-v2
+  directBrowserSearchOrder:
+    - search-a-licious
+    - open-food-facts-legacy
   gatewayApiVersion: "1"
-  gatewayOptionalForManualAndOfflineUse: true
-  gatewayRequiredForGlobalSearch: true
+  gatewayOptionalForDirectSearch: true
+  gatewayRequiredForGlobalSearch: false
   gatewayRuntime: node
   legacyCompatibilityAliases:
     /api/ai/parse: /api/v1/ai/parse

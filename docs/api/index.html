@@ -1,15 +1,23 @@
 <!doctype html>
-<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>KH Checker data gateway API 2.2.4</title><style>body{font:16px/1.5 system-ui,sans-serif;max-width:1100px;margin:auto;padding:2rem;color:#17221d}h1{line-height:1.15}table{border-collapse:collapse;width:100%;overflow:auto;display:block}th,td{border:1px solid #cbd5cf;padding:.55rem;text-align:left;vertical-align:top}th{background:#eef4f0}code{white-space:nowrap}pre{white-space:pre-wrap;background:#f5f7f6;padding:1rem;border-radius:.5rem}</style></head><body><h1>KH Checker data gateway API</h1><p>Version <strong>2.2.4</strong> · OpenAPI 3.1.0</p><p>Kanonischer Vertrag des versionierten Daten-Gateways. Die statische PWA bleibt für manuelle und lokale Funktionen ohne Gateway nutzbar; globale Suche läuft ausschließlich über diese API.</p><table><thead><tr><th>Methode</th><th>Pfad</th><th>operationId</th><th>Beschreibung</th><th>Statuscodes</th></tr></thead><tbody><tr><td><code>POST</code></td><td><code>/api/v1/ai/parse</code></td><td>parseFoodRequest</td><td>Mehrdeutige Nutzereingabe optional strukturieren</td><td>200, 400, 413, 429, 500, 502, 503, 504</td></tr>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>KH Checker data gateway API 2.2.4</title><style>body{font:16px/1.5 system-ui,sans-serif;max-width:1100px;margin:auto;padding:2rem;color:#17221d}h1{line-height:1.15}table{border-collapse:collapse;width:100%;overflow:auto;display:block}th,td{border:1px solid #cbd5cf;padding:.55rem;text-align:left;vertical-align:top}th{background:#eef4f0}code{white-space:nowrap}pre{white-space:pre-wrap;background:#f5f7f6;padding:1rem;border-radius:.5rem}</style></head><body><h1>KH Checker data gateway API</h1><p>Version <strong>2.2.4</strong> · OpenAPI 3.1.0</p><p>Kanonischer Vertrag des optionalen versionierten Daten-Gateways. Die statische PWA kann die offiziellen OFF-Dienste direkt nutzen oder vollständig auf diese API umschalten.</p><table><thead><tr><th>Methode</th><th>Pfad</th><th>operationId</th><th>Beschreibung</th><th>Statuscodes</th></tr></thead><tbody><tr><td><code>POST</code></td><td><code>/api/v1/ai/parse</code></td><td>parseFoodRequest</td><td>Mehrdeutige Nutzereingabe optional strukturieren</td><td>200, 400, 413, 429, 500, 502, 503, 504</td></tr>
 <tr><td><code>GET</code></td><td><code>/api/v1/health</code></td><td>gatewayHealth</td><td>Status und Capabilities des Daten-Gateways lesen</td><td>200, 503</td></tr>
 <tr><td><code>GET</code></td><td><code>/api/v1/product/{code}</code></td><td>productByBarcode</td><td>Nur das ausgewählte Produkt hydratisieren</td><td>200, 400, 404, 413, 429, 500, 502, 503, 504</td></tr>
 <tr><td><code>GET</code></td><td><code>/api/v1/search</code></td><td>searchProducts</td><td>Produkte über das explizit konfigurierte Gateway suchen</td><td>200, 400, 413, 429, 500, 502, 503, 504</td></tr></tbody></table><h2>Generatorregeln</h2><pre>{
   &quot;appVersion&quot;: &quot;2.2.4&quot;,
   &quot;authoritativeSource&quot;: &quot;contracts/source/search-api.contract.mjs&quot;,
-  &quot;browserUpstreamPolicy&quot;: &quot;gateway-only&quot;,
-  &quot;deploymentMode&quot;: &quot;full-stack&quot;,
+  &quot;browserUpstreamPolicy&quot;: &quot;direct-off-or-configured-gateway&quot;,
+  &quot;deploymentMode&quot;: &quot;dual-lane&quot;,
+  &quot;directBrowserProductOrder&quot;: [
+    &quot;open-food-facts-v3.6&quot;,
+    &quot;open-food-facts-v2&quot;
+  ],
+  &quot;directBrowserSearchOrder&quot;: [
+    &quot;search-a-licious&quot;,
+    &quot;open-food-facts-legacy&quot;
+  ],
   &quot;gatewayApiVersion&quot;: &quot;1&quot;,
-  &quot;gatewayOptionalForManualAndOfflineUse&quot;: true,
-  &quot;gatewayRequiredForGlobalSearch&quot;: true,
+  &quot;gatewayOptionalForDirectSearch&quot;: true,
+  &quot;gatewayRequiredForGlobalSearch&quot;: false,
   &quot;gatewayRuntime&quot;: &quot;node&quot;,
   &quot;legacyCompatibilityAliases&quot;: {
     &quot;/api/ai/parse&quot;: &quot;/api/v1/ai/parse&quot;,

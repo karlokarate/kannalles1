@@ -6,21 +6,21 @@
     "version": "__KH_APP_VERSION__",
     "artifact": "static-pwa",
     "manualAndOfflineWithoutGateway": true,
-    "gatewayRequiredForGlobalSearch": true
+    "gatewayRequiredForGlobalSearch": false
   },
   "architecture": {
-    "browserDataAccess": "gateway-only",
+    "browserDataAccess": "direct-off-or-configured-gateway",
     "canonicalApiPrefix": "/api/v1",
-    "primarySearch": "self-hosted-search-index",
+    "primarySearch": "public-search-a-licious",
     "searchFallback": "open-food-facts-legacy",
-    "publicSearchALicious": "explicit-diagnostics-only",
+    "publicSearchALicious": "direct-primary",
     "productPrimary": "open-food-facts-v3.6",
     "productCompatibilityFallback": "open-food-facts-v2",
-    "distributedCoordination": "isolated-redis",
-    "distributedResponseCache": "separate-redis-fail-soft",
+    "distributedCoordination": "gateway-lane-only",
+    "distributedResponseCache": "gateway-lane-only",
     "portableGatewayRuntime": "node-express-container",
     "optionalAdapters": [],
-    "deploymentProfiles": ["manual-only", "full-app"]
+    "deploymentProfiles": ["direct-pages", "gateway"]
   },
   "api": {
     "health": "GET /api/v1/health",
@@ -49,14 +49,21 @@
     "requiredBrowsers": [
       "chromium-desktop", "chromium-android", "firefox-desktop", "webkit-iphone"
     ],
-    "directUpstreamUrlInBrowserBundle": "release-blocker",
-    "liveGatewayGate": "https-health-coordination-own-index-search-canary"
+    "directUpstreamUrlInBrowserBundle": "required-for-direct-pages",
+    "liveGatewayGate": "required-only-for-gateway-profile"
   },
   "privacy": {
-    "searchTermsAndBarcodesDestination": "configured-data-gateway",
+    "searchTermsAndBarcodesDestination": "official-off-services-or-configured-data-gateway",
     "productImagesMayLoadDirectlyFrom": "images.openfoodfacts.org",
     "imageCdnReceivesIpAndRequestedUrl": true,
-    "frontendSecretsAllowed": false,
+    "bundledOperatorSecretsAllowed": false,
+    "userProvidedOffCredentials": {
+      "localPersistenceAllowed": true,
+      "cleartextAtRestAllowedByExplicitUserDecision": true,
+      "directOffRequestsOnly": true,
+      "searchALiciousOrGatewayDeliveryAllowed": false,
+      "diagnosticOrApiCacheInclusionAllowed": false
+    },
     "historyConsentDoesNotImplyCacheConsent": true
   },
   "safety": {

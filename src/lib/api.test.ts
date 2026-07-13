@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DataSourceError,
+  authenticateOffAccount,
   cancelPendingApiRequests,
   clearApiGovernor,
   getProductByBarcode,
@@ -74,16 +75,123 @@ afterEach(async () => {
   await clearApiCache();
 });
 
-describe('generated gateway-only search client', () => {
-  it('returns a configuration error without attempting any public origin', async () => {
-    const fetchMock = vi.fn();
+describe('direct OFF account authentication', () => {
+  it('validates credentials with the official POST login API without putting the password in the URL', async () => {
+    let requestedUrl = '';
+    let requestedInit: RequestInit | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      requestedUrl = String(input);
+      requestedInit = init;
+      return jsonResponse({
+        status: 1,
+        user_id: 'kh-user',
+        user: { name: 'KH User' }
+      });
+    }));
+
+    await expect(authenticateOffAccount({ userId: ' kh-user ', password: 'p&ss word' }))
+      .resolves.toEqual({ userId: 'kh-user', name: 'KH User' });
+    expect(requestedUrl).toBe('https://world.openfoodfacts.org/cgi/auth.pl');
+    expect(requestedUrl).not.toContain('p%26ss');
+    expect(requestedInit?.method).toBe('POST');
+    const body = new URLSearchParams(String(requestedInit?.body));
+    expect(body.get('user_id')).toBe('kh-user');
+    expect(body.get('password')).toBe('p&ss word');
+    expect(body.get('body')).toBe('1');
+    expect(body.get('no_log')).toBe('1');
+    expect(requestedInit?.credentials).toBe('omit');
+  });
+
+  it('rejects e-mail addresses before contacting OFF and maps rejected credentials', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ status: 0 }, 403));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(authenticateOffAccount({ userId: 'mail@example.org', password: 'secret' }))
+      .rejects.toMatchObject({ kind: 'http', status: 400 });
+    expect(fetchMock).not.toHaveBeenCalled();
+    await expect(authenticateOffAccount({ userId: 'kh-user', password: 'wrong' }))
+      .rejects.toMatchObject({ kind: 'http', status: 401 });
+  });
+});
+
+describe('direct and optional-gateway search client', () => {
+  it('uses Search-a-licious directly when no gateway is configured', async () => {
+    let requestedUrl = '';
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      requestedUrl = String(input);
+      return jsonResponse({
+        hits: [{ code: '4000000000001', product_name_de: 'Bifi' }],
+        count: 1
+      });
+    });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(searchFoodCandidates('Bifi', 10)).rejects.toMatchObject({
-      name: 'DataSourceError',
-      kind: 'configuration'
+    const response = await searchFoodCandidates('Bifi', 10);
+    const requested = new URL(requestedUrl);
+    expect(requested.origin).toBe('https://search.openfoodfacts.org');
+    expect(requested.pathname).toBe('/search');
+    expect(requested.searchParams.get('q')).toBe('Bifi');
+    expect(response).toMatchObject({
+      source: 'search-a-licious',
+      hits: [{ code: '4000000000001', product_name_de: 'Bifi' }],
+      api_meta: { originBackend: 'search-a-licious' }
     });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to OFF Legacy after a Search-a-licious network/CORS failure', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.hostname === 'search.openfoodfacts.org') throw new TypeError('Failed to fetch');
+      return jsonResponse({
+        products: [{ code: '4000000000002', product_name: 'Legacy result' }],
+        count: 1,
+        page: 1,
+        page_size: 10
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await searchFoodCandidates('Fallback', 10);
+    expect(response.source).toBe('open-food-facts-legacy');
+    expect(response.hits[0]?.code).toBe('4000000000002');
+    expect(response.api_meta).toMatchObject({
+      originBackend: 'open-food-facts-legacy',
+      fallbackReason: 'network'
+    });
+    expect(response.api_meta?.attempts?.map((attempt) => attempt.backend)).toEqual([
+      'search-a-licious',
+      'open-food-facts-legacy'
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses a connected account only for the direct OFF fallback and keeps diagnostics credential-free', async () => {
+    const requestedUrls: string[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      requestedUrls.push(url.toString());
+      if (url.hostname === 'search.openfoodfacts.org') throw new TypeError('Failed to fetch');
+      return jsonResponse({
+        products: [{ code: '4000000000007', product_name: 'Authenticated legacy result' }],
+        count: 1,
+        page: 1,
+        page_size: 10
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await searchFoodCandidates('Account fallback', 10, undefined, {
+      offAccount: { userId: 'kh-user', password: 'p&ss word', verifiedAt: new Date().toISOString() }
+    });
+    const searchALicious = new URL(requestedUrls[0] ?? '');
+    const legacy = new URL(requestedUrls[1] ?? '');
+    expect(searchALicious.searchParams.has('user_id')).toBe(false);
+    expect(searchALicious.searchParams.has('password')).toBe(false);
+    expect(legacy.searchParams.get('user_id')).toBe('kh-user');
+    expect(legacy.searchParams.get('password')).toBe('p&ss word');
+    expect(legacy.searchParams.get('no_log')).toBe('1');
+    expect(JSON.stringify(response.api_meta)).not.toContain('p&ss word');
+    expect(response.api_meta?.attempts?.at(-1)?.url).not.toContain('password');
   });
 
   it('uses only the configured gateway and generated v1 search path', async () => {
@@ -93,13 +201,19 @@ describe('generated gateway-only search client', () => {
       return jsonResponse(searchPayload([{ code: '4000000000001', product_name_de: 'Bifi' }]));
     }));
 
-    const response = await searchFoodCandidates('Bifi', 15, undefined, { gatewayUrl: GATEWAY });
+    const response = await searchFoodCandidates('Bifi', 15, undefined, {
+      gatewayUrl: GATEWAY,
+      offAccount: { userId: 'must-not-leak', password: 'gateway secret', verifiedAt: new Date().toISOString() }
+    });
     const url = new URL(requestedUrl);
     expect(url.origin).toBe('https://gateway.example');
     expect(url.pathname).toBe('/base/api/v1/search');
     expect(url.searchParams.get('q')).toBe('Bifi');
     expect(url.searchParams.get('page_size')).toBe('15');
     expect(url.searchParams.get('search_api')).toBe('auto');
+    expect(url.searchParams.has('user_id')).toBe(false);
+    expect(url.searchParams.has('password')).toBe(false);
+    expect(requestedUrl).not.toContain('gateway secret');
     expect(response.source).toBe('search-index');
     expect(response.api_meta?.backend).toBe('gateway');
   });
@@ -267,7 +381,101 @@ describe('generated gateway-only search client', () => {
   });
 });
 
-describe('generated gateway-only product client', () => {
+describe('direct and optional-gateway product client', () => {
+  it('uses OFF v3.6 directly and maps its current nutrition schema', async () => {
+    let requestedUrl = '';
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      requestedUrl = String(input);
+      return jsonResponse({
+        status: 'success',
+        code: '3017620422003',
+        product: {
+          code: '3017620422003',
+          product_name: 'Nutella',
+          nutrition: {
+            aggregated_set: {
+              per: '100g',
+              preparation: 'as_sold',
+              nutrients: { carbohydrates: { value: 57.5, unit: 'g' } }
+            }
+          }
+        }
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await getProductByBarcode('3017620422003');
+    const requested = new URL(requestedUrl);
+    expect(requested.origin).toBe('https://world.openfoodfacts.org');
+    expect(requested.pathname).toBe('/api/v3.6/product/3017620422003');
+    expect(response.product?.nutriments?.carbohydrates_100g).toBe(57.5);
+    expect(response.api_meta?.originBackend).toBe('open-food-facts-v3');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses connected OFF credentials for direct product reads but redacts transport metadata', async () => {
+    let requestedUrl = '';
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      requestedUrl = String(input);
+      return jsonResponse({
+        status: 'success',
+        code: '3017620422003',
+        product: {
+          code: '3017620422003',
+          product_name: 'Nutella',
+          nutriments: { carbohydrates_100g: 57.5 }
+        }
+      });
+    }));
+
+    const response = await getProductByBarcode('3017620422003', undefined, {
+      productApiMode: 'v3',
+      offAccount: { userId: 'kh-user', password: 'secret value', verifiedAt: new Date().toISOString() }
+    });
+    const requested = new URL(requestedUrl);
+    expect(requested.searchParams.get('user_id')).toBe('kh-user');
+    expect(requested.searchParams.get('password')).toBe('secret value');
+    expect(requested.searchParams.get('no_log')).toBe('1');
+    expect(response.api_meta?.sourceUrl).not.toContain('password');
+    expect(JSON.stringify(response.api_meta)).not.toContain('secret value');
+  });
+
+  it('enriches a partial v3.6 product exactly once through OFF v2', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.includes('/api/v3.6/product/')) {
+        return jsonResponse({
+          status: 'success',
+          code: '4006381333931',
+          product: { code: '4006381333931', product_name: 'V3 name' }
+        });
+      }
+      return jsonResponse({
+        status: 1,
+        code: '4006381333931',
+        product: {
+          code: '4006381333931',
+          brands: 'V2 brand',
+          nutriments: { carbohydrates_100g: 42 }
+        }
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await getProductByBarcode('4006381333931');
+    expect(response.product).toMatchObject({
+      code: '4006381333931',
+      product_name: 'V3 name',
+      brands: 'V2 brand',
+      nutriments: { carbohydrates_100g: 42 }
+    });
+    expect(response.api_meta?.attempts?.map((attempt) => attempt.backend)).toEqual([
+      'open-food-facts-v3',
+      'open-food-facts-v2'
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('uses the generated v1 path and forwards strict product mode', async () => {
     let requestedUrl = '';
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -278,11 +486,15 @@ describe('generated gateway-only product client', () => {
     }));
     const response = await getProductByBarcode('3017620422003', undefined, {
       gatewayUrl: GATEWAY,
-      productApiMode: 'v3'
+      productApiMode: 'v3',
+      offAccount: { userId: 'must-not-leak', password: 'gateway secret', verifiedAt: new Date().toISOString() }
     });
     const url = new URL(requestedUrl);
     expect(url.pathname).toBe('/base/api/v1/product/3017620422003');
     expect(url.searchParams.get('product_api')).toBe('v3');
+    expect(url.searchParams.has('user_id')).toBe(false);
+    expect(url.searchParams.has('password')).toBe(false);
+    expect(requestedUrl).not.toContain('gateway secret');
     expect(response.product?.product_name).toBe('Nutella');
   });
 

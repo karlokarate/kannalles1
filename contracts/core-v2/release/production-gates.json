@@ -47,6 +47,11 @@
       "id": "regression-fixtures",
       "check": "Bueno, BiFi, Salzstangen, bread slice, Nutella and generic cooked foods pass",
       "severity": "blocker"
+    },
+    {
+      "id": "direct-off-account",
+      "check": "personal OFF credentials can be persisted by explicit user action, are used only for direct OFF requests, and are redacted from diagnostics and API caches",
+      "severity": "blocker"
     }
   ]
 }

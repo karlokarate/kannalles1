@@ -10,16 +10,21 @@ GITHUB
 ------
 1. Aktuellen Source-Stand inklusive Lockfile einchecken.
 2. Actions öffnen.
-3. Workflow "Build, validate and deploy KH Checker PWA" ohne Eingaben starten.
-4. Nur ein vollständig neu gebauter und validierter Kandidat wird veröffentlicht.
+3. Workflow "Build and deploy KH Checker to Pages" ohne Eingaben starten.
+4. Der Workflow baut die PWA aus Source und Lockfile und veröffentlicht sie.
 5. Nach erfolgreichem Workflow die ausgegebene Pages-Seite öffnen.
 
 LAUFZEIT
 --------
-GitHub Pages liefert nur die statischen App-Dateien. Manuelle Berechnung und
-lokale Daten funktionieren ohne Server. Neue globale Produktsuche läuft nur
-über ein konfiguriertes Daten-Gateway; direkte Browserzugriffe auf OFF oder
-Search-a-licious sind verboten. Primärbetrieb ist ein eigener Suchindex.
+GitHub Pages liefert die statischen App-Dateien. Ohne Gateway nutzt der Browser
+Search-a-licious direkt und OFF Legacy als einmalige Reserve; Produktdetails
+kommen aus OFF v3.6 und bei Bedarf v2. Eine Gateway-URL aktiviert die getrennte
+zweite Lane für die gesamte Anfrage.
+
+Optional kannst du unter Einstellungen dein persönliches Open-Food-Facts-Konto
+verbinden. Benutzername und Passwort werden nach erfolgreicher OFF-Prüfung lokal
+in diesem Browserprofil gespeichert und nur bei direkten OFF-Anfragen verwendet.
+Search-a-licious und ein konfigurierter Gateway erhalten diese Daten nicht.
 
 INSTALLATION
 ------------
@@ -41,15 +46,14 @@ stellt diesen automatisch bereit.
 FEHLER UND CACHE
 ----------------
 Die App zeigt einen strukturierten, sicher bereinigten Endpunktfehler, sperrt
-keinen manuellen Retry und nutzt im Auto-Modus den eigenen Index primär sowie
-OFF Legacy kontrolliert als Reserve. Die öffentliche Search-a-licious-Instanz
-ist nur ein expliziter Diagnosemodus. Bereits lokal gespeicherte Produkte,
+keinen manuellen Retry und nutzt Search-a-licious primär sowie OFF Legacy
+kontrolliert als Reserve. Bereits lokal gespeicherte Produkte,
 Kalibrierungen und Berechnungen bleiben verfügbar.
 
 DATENSCHUTZ
 -----------
-Suchbegriffe, Barcodes und Produktdaten-Anfragen gehen nur an das konfigurierte
-Gateway. Produktbilder können direkt von images.openfoodfacts.org geladen
+Im Direktbetrieb gehen Suchbegriffe und Barcodes an die offiziellen OFF-Dienste;
+mit Gateway gehen sie an dessen Betreiber. Produktbilder werden von images.openfoodfacts.org geladen
 werden; das Bild-CDN sieht dabei technisch IP-Adresse und Bild-URL. Offline
 verfügbar sind nur bereits gecachte App-Assets, Bilder und Daten.
 

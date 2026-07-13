@@ -126,7 +126,8 @@ const settings: AppSettings = {
   saveCalibrations: true,
   cacheApiData: true,
   dataGatewayUrl: 'https://gateway.example',
-  productApiMode: 'hybrid'
+  productApiMode: 'hybrid',
+  offAccount: null
 };
 
 const manual: ManualFormValues = {
@@ -171,6 +172,24 @@ describe('versioned fail-soft repositories', () => {
     await expect(loadSettings()).resolves.toEqual(settings);
     const envelope = JSON.parse(localStorage.getItem('kh-checker-settings-v3') ?? '{}') as { schemaVersion?: number };
     expect(envelope.schemaVersion).toBe(3);
+  });
+
+  it('persists and removes an explicitly connected OFF account with the settings repository', async () => {
+    const connected: AppSettings = {
+      ...settings,
+      offAccount: {
+        userId: 'kh-user',
+        password: 'locally approved password',
+        verifiedAt: '2026-07-13T09:00:00.000Z'
+      }
+    };
+    await saveSettings(connected);
+    await expect(loadSettings()).resolves.toEqual(connected);
+    expect(localStorage.getItem('kh-checker-settings-v3')).toContain('locally approved password');
+
+    await saveSettings({ ...connected, offAccount: null });
+    await expect(loadSettings()).resolves.toMatchObject({ offAccount: null });
+    expect(localStorage.getItem('kh-checker-settings-v3')).not.toContain('locally approved password');
   });
 
   it('keeps a newer local privacy opt-out authoritative over stale IDB and stale-tab writes', async () => {

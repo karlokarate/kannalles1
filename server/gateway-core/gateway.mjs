@@ -192,8 +192,8 @@ function buildConfig({ env, version }) {
     allowInternalHttp: String(env.SEARCH_INDEX_ALLOW_INSECURE_HTTP || '').trim() === '1',
     nodeEnv
   });
-  // Public Search-a-licious is an opt-in diagnostic backend, never an implicit
-  // production dependency. `auto` uses the owned index and OFF Legacy reserve.
+  // A configured private index wins. Without one, the public Search-a-licious
+  // endpoint is the primary search service and OFF Legacy remains the reserve.
   const searchALicious = configuredUrl(env.SEARCH_A_LICIOUS_URL, {
     component: 'searchALicious',
     nodeEnv
@@ -370,7 +370,7 @@ export class GatewayCore {
     if (!configured) {
       throw new GatewayError(
         kind === 'search-index'
-          ? 'Der eigene Suchindex ist nicht konfiguriert.'
+          ? 'Der Gateway-Suchindex ist nicht konfiguriert.'
           : 'Search-a-licious ist nicht explizit konfiguriert.',
         { status: 503, code: kind === 'search-index' ? 'SEARCH_INDEX_NOT_CONFIGURED' : 'SEARCH_A_LICIOUS_NOT_CONFIGURED' }
       );
@@ -381,14 +381,14 @@ export class GatewayCore {
   async #indexSearch(kind, query, pageSize, deadline) {
     this.#requireCoordinationForUpstream();
     if (kind === 'search-index' && !this.config.searchIndexUrl) {
-      throw new GatewayError('Der eigene Suchindex ist nicht konfiguriert.', {
+      throw new GatewayError('Der Gateway-Suchindex ist nicht konfiguriert.', {
         status: 503,
         code: 'SEARCH_INDEX_NOT_CONFIGURED'
       });
     }
     const url = this.#searchUrl(kind);
     const backend = kind;
-    const label = kind === 'search-index' ? 'Eigener Search-a-licious-Index' : 'Search-a-licious';
+    const label = kind === 'search-index' ? 'Konfigurierter Gateway-Suchindex' : 'Search-a-licious';
     const payload = {
       q: escapeSearchQuery(query),
       langs: ['de', 'en', 'main'],
@@ -501,7 +501,9 @@ export class GatewayCore {
       : mode === 'search-a-licious'
         ? 'search-a-licious'
         : mode === 'auto'
-          ? this.config.searchIndexUrl ? 'search-index' : null
+          ? this.config.searchIndexUrl
+            ? 'search-index'
+            : this.config.searchALiciousUrl ? 'search-a-licious' : null
           : null;
     const cacheKey = [
       'search',
@@ -712,8 +714,9 @@ export class GatewayCore {
   }
 
   async #searchIndexReadiness() {
-    if (!this.config.searchIndexUrl) return { status: 'disabled', reason: null };
-    const url = new URL(this.config.searchIndexUrl);
+    const configuredSearch = this.config.searchIndexUrl || this.config.searchALiciousUrl;
+    if (!configuredSearch) return { status: 'disabled', reason: null };
+    const url = new URL(configuredSearch);
     url.pathname = '/health';
     url.search = '';
     url.hash = '';
@@ -729,7 +732,7 @@ export class GatewayCore {
           Accept: 'application/json',
           'User-Agent': this.config.userAgent,
           From: this.config.contactEmail,
-          ...(this.config.searchIndexToken
+          ...(this.config.searchIndexUrl && this.config.searchIndexToken
             ? { Authorization: `Bearer ${this.config.searchIndexToken}` }
             : {})
         },
@@ -739,9 +742,9 @@ export class GatewayCore {
       await response.body?.cancel?.().catch?.(() => undefined);
       return response.ok
         ? { status: 'ready', reason: null }
-        : { status: 'unavailable', reason: 'Der eigene Suchindex meldet sich nicht ready.' };
+        : { status: 'unavailable', reason: 'Der konfigurierte Suchdienst meldet sich nicht ready.' };
     } catch {
-      return { status: 'unavailable', reason: 'Der eigene Suchindex-Healthcheck ist nicht erreichbar.' };
+      return { status: 'unavailable', reason: 'Der konfigurierte Suchdienst-Healthcheck ist nicht erreichbar.' };
     } finally {
       clearTimeout(timeout);
     }
@@ -758,8 +761,16 @@ export class GatewayCore {
         await runtime.run(() => true, this.config.redisCommandTimeoutMs).catch(() => undefined);
       }
     }));
+    const activeSearchKind = this.config.searchIndexUrl
+      ? 'search-index'
+      : this.config.searchALiciousUrl ? 'search-a-licious' : null;
+    const activeSearchIdentity = activeSearchKind === 'search-index'
+      ? this.config.backendIdentities.searchIndex
+      : this.config.backendIdentities.searchALicious;
     const [searchIndexCircuit, offLegacy, offProductV3, offProductV2, cacheEntries, searchReadiness] = await Promise.all([
-      this.coordinator.circuitStatus(`search-index:${this.config.backendIdentities.searchIndex}`),
+      activeSearchKind
+        ? this.coordinator.circuitStatus(`${activeSearchKind}:${activeSearchIdentity}`)
+        : Promise.resolve('closed'),
       this.coordinator.circuitStatus(`off-legacy:${this.config.backendIdentities.off}`),
       this.coordinator.circuitStatus(`off-v3:${this.config.backendIdentities.off}`),
       this.coordinator.circuitStatus(`off-v2:${this.config.backendIdentities.off}`),
@@ -769,7 +780,7 @@ export class GatewayCore {
     const redisStatus = this.redisRuntime.status();
     const cacheRedisStatus = this.cacheRuntime.status();
     const searchUnavailable = offLegacy === 'open'
-      && (!this.config.searchIndexUrl || searchIndexCircuit === 'open');
+      && (!activeSearchKind || searchIndexCircuit === 'open');
     const indexConfigError = this.config.configurationErrors.some((item) => item.component === 'searchIndex');
     const searchDiagnosticConfigError = this.config.configurationErrors.some(
       (item) => item.component === 'searchALicious'
@@ -797,7 +808,7 @@ export class GatewayCore {
     const degraded = !ready
       || distributedUnavailable
       || distributedCacheUnavailable
-      || !this.config.searchIndexUrl
+      || !activeSearchKind
       || searchReadiness.status === 'unavailable'
       || this.config.configurationErrors.length > 0;
     return {
@@ -829,7 +840,7 @@ export class GatewayCore {
       },
       capabilities: {
         aiParse: this.config.openaiConfigured,
-        searchIndex: Boolean(this.config.searchIndexUrl),
+        searchIndex: Boolean(activeSearchKind),
         offLegacyFallback: true,
         offProductV3: true,
         offProductV2: true,
@@ -854,7 +865,7 @@ export class GatewayCore {
               },
         searchIndex: indexConfigError
           ? { status: 'unavailable', reason: 'SEARCH_INDEX_URL ist ungültig oder unsicher konfiguriert.' }
-          : this.config.searchIndexUrl
+          : activeSearchKind
           ? {
               status: searchIndexCircuit === 'open' ? 'unavailable' : searchReadiness.status,
               reason: searchIndexCircuit === 'open'
@@ -868,8 +879,8 @@ export class GatewayCore {
           : {
               status: 'disabled',
               reason: searchDiagnosticConfigError
-                ? 'SEARCH_INDEX_URL fehlt und die optionale SEARCH_A_LICIOUS_URL-Diagnose ist ungültig; Auto nutzt OFF Legacy.'
-                : 'SEARCH_INDEX_URL ist nicht konfiguriert; OFF Legacy wird als Reserve genutzt.'
+                ? 'SEARCH_INDEX_URL fehlt und SEARCH_A_LICIOUS_URL ist ungültig; Auto nutzt OFF Legacy.'
+                : 'Kein primärer Suchdienst ist konfiguriert; Auto nutzt OFF Legacy.'
             },
         distributedCoordination: redisStatus.configured
           ? {
