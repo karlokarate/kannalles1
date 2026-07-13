@@ -4,6 +4,7 @@ import { formatCarbohydrates } from '../lib/settings';
 import { isGenericCatalogProduct } from '../lib/genericFoods';
 import { isClinicCatalogProduct } from '../lib/clinicCatalog';
 import { autoSelectionEligibility, catalogProductImageUrl, semanticUnitProvenance } from './catalogViewModel';
+import { DiabetesBolusPanel } from './DiabetesBolusPanel';
 import type { CatalogController } from './useCatalogController';
 
 function subtitle(brand: string | null, code: string): string { return [brand, code].filter(Boolean).join(' · '); }
@@ -16,10 +17,22 @@ function nutritionLabel(product: Parameters<typeof isClinicCatalogProduct>[0]): 
   return `${product.nutrition.carbohydratesPer100.toLocaleString('de-DE')} g KH / 100 ${product.nutrition.basis === 'mass' ? 'g' : 'ml'}`;
 }
 
+function ClinicTag({ compact = false }: { compact?: boolean }) {
+  return <span className={`clinic-tag${compact ? ' clinic-tag--compact' : ''}`}><img src={`${import.meta.env.BASE_URL}clinic/klinikum-leverkusen.svg`} alt="Klinikum Leverkusen" loading="lazy" decoding="async" /><b>KLINIK</b></span>;
+}
+
 function ProductImage({ src, alt, compact = false }: { src: string | null; alt: string; compact?: boolean }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   if (!src || failedSrc === src) return <span className={`product-image-fallback${compact ? ' product-image-fallback--compact' : ''}`} aria-hidden="true">▧</span>;
   return <img className={compact ? 'product-result__image' : undefined} src={src} alt={alt} width={compact ? 84 : 126} height={compact ? 84 : 126} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailedSrc(src)} />;
+}
+
+function EditableProductImage({ catalogSrc, localSrc, alt, onPhoto }: { catalogSrc: string | null; localSrc: string | null; alt: string; onPhoto: (file: File | null) => void }) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const effectiveCatalogSrc = catalogSrc && failedSrc !== catalogSrc ? catalogSrc : null;
+  if (localSrc) return <label className="product-photo-capture product-photo-capture--saved" title="Produktfoto ersetzen"><img src={localSrc} alt={alt} width="126" height="126" /><input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event: ChangeEvent<HTMLInputElement>) => { onPhoto(event.target.files?.[0] ?? null); event.target.value = ''; }} aria-label="Produktfoto ersetzen" /></label>;
+  if (effectiveCatalogSrc) return <img src={effectiveCatalogSrc} alt={alt} width="126" height="126" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailedSrc(effectiveCatalogSrc)} />;
+  return <label className="product-photo-capture" title="Produkt fotografieren"><span className="product-image-fallback" aria-hidden="true">▧</span><small>Foto hinzufügen</small><input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event: ChangeEvent<HTMLInputElement>) => { onPhoto(event.target.files?.[0] ?? null); event.target.value = ''; }} aria-label="Produkt fotografieren und lokal speichern" data-testid="catalog-product-photo" /></label>;
 }
 
 export function CalculatorScreen({ c }: { c: CatalogController }) {
@@ -31,9 +44,11 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
   const [amountValue, setAmountValue] = useState(String(c.request.amount));
   const [clinicBrowsePage, setClinicBrowsePage] = useState(0);
   const [calibrationOpen, setCalibrationOpen] = useState(false);
+  const [currentGlucose, setCurrentGlucose] = useState('');
   const productCardRef = useRef<HTMLElement | null>(null);
   const eligibleCount = c.search.candidates.filter((hit) => catalogProductEligibility(hit).eligible).length;
   const imageUrl = product ? catalogProductImageUrl(product) : null;
+  const localImageUrl = product ? c.catalogPhotoUrl(product.code) : null;
   const hasDefinedServing = Boolean(resolution?.options.some((option) => option.baseValue !== null && ['piece', 'bar', 'slice', 'portion'].includes(option.unit)));
   useEffect(() => { void c.search.query; setAmountValue(String(c.request.amount)); }, [c.request.amount, c.search.query]);
   useEffect(() => {
@@ -44,9 +59,10 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
     });
     return () => cancelAnimationFrame(frame);
   }, [product]);
-  useEffect(() => { if (product && !isGenericCatalogProduct(product) && !isClinicCatalogProduct(product)) setCalibrationOpen(!hasDefinedServing); }, [hasDefinedServing, product]);
+  useEffect(() => { if (product && !isGenericCatalogProduct(product) && (!isClinicCatalogProduct(product) || product.clinic.directCarbohydratesPerUnit === null)) setCalibrationOpen(!hasDefinedServing); }, [hasDefinedServing, product]);
   const clinicBrowsePageSize = 20;
   const clinicBrowse = c.clinicBrowseCandidates.slice(clinicBrowsePage * clinicBrowsePageSize, (clinicBrowsePage + 1) * clinicBrowsePageSize);
+  const carbohydratesForBolus = c.manualMode ? c.manualCalculation : calculation?.status === 'calculated' ? calculation.carbohydratesG : null;
 
   return (
     <section className="screen calculator-screen" aria-labelledby="calculator-title">
@@ -57,6 +73,8 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
           <button type="button" className={c.manualMode ? 'is-active' : ''} aria-pressed={c.manualMode} onClick={() => c.setManualMode(true)}>Manuell</button>
         </fieldset>
       </header>
+
+      {c.settings.diabeticProfileEnabled && (c.manualMode || !product) && <DiabetesBolusPanel settings={c.settings} carbohydratesG={carbohydratesForBolus} currentGlucose={currentGlucose} onCurrentGlucoseChange={setCurrentGlucose} />}
 
       {!c.manualMode ? <>
         <search><form className="search-card" onSubmit={submit} data-search-phase={c.search.phase}>
@@ -80,19 +98,20 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
             const eligible = catalogProductEligibility(hit).eligible;
             const auto = autoSelectionEligibility(hit, c.search.query, eligible, eligibleCount);
             return <button key={`${hit.productId}-${hit.resultIndex}`} type="button" className="product-result" data-testid="catalog-search-result" data-result-index={hit.resultIndex} data-rank-ordinal={hit.rankOrdinal} data-auto-select-eligible={String(auto.eligible)} data-catalog-eligible={String(eligible)} onClick={() => c.selectCandidate(hit)}>
-              <span className="result-position">{index + 1}</span><ProductImage src={c.settings.productImageMode === 'remote' ? catalogProductImageUrl(hit) : null} alt={hit.displayName} compact /><span className="result-copy"><strong>{hit.displayName}</strong><small>{isClinicCatalogProduct(hit) ? 'KLINIK · Klinikum Leverkusen' : subtitle(hit.brand, hit.code) || 'Ohne Markenangabe'}</small></span><span className="result-nutrition">{nutritionLabel(hit)}</span>
+              <span className="result-position">{index + 1}</span><ProductImage src={c.settings.productImageMode === 'remote' ? c.catalogPhotoUrl(hit.code) ?? catalogProductImageUrl(hit) : null} alt={hit.displayName} compact /><span className="result-copy"><strong>{hit.displayName}</strong>{isClinicCatalogProduct(hit) ? <ClinicTag compact /> : <small>{subtitle(hit.brand, hit.code) || 'Ohne Markenangabe'}</small>}</span><span className="result-nutrition">{nutritionLabel(hit)}</span>
             </button>;
           })}</div><nav className="pagination" aria-label="Weitere passende Produkte"><button type="button" className="button button--secondary" disabled={c.searchPage === 0} onClick={() => c.changeSearchPage(c.searchPage - 1)}>← Zurück</button><span>Seite {c.searchPage + 1}</span><button type="button" className="button button--secondary" disabled={!c.searchHasNext} onClick={() => c.changeSearchPage(c.searchPage + 1)}>Weiter →</button></nav>
         </section>}
 
-        {c.settings.clinicMode === 'clinic-only' && c.search.phase === 'idle' && <section className="results-panel clinic-browser" data-testid="clinic-catalog-browser"><div className="section-title-row"><div><span className="eyebrow">KLINIK ONLY</span><h2>Klinikkatalog durchsuchen</h2></div><span>{c.clinicBrowseCandidates.length} Einträge</span></div><div className="result-list">{clinicBrowse.map((hit, index) => <button key={hit.productId} type="button" className="product-result" onClick={() => c.selectCandidate(hit)}><span className="result-position">{clinicBrowsePage * clinicBrowsePageSize + index + 1}</span><ProductImage src={null} alt={hit.displayName} compact /><span className="result-copy"><strong>{hit.displayName}</strong><small>KLINIK · {hit.brand}</small></span><span className="result-nutrition">{nutritionLabel(hit)}</span></button>)}</div><nav className="pagination" aria-label="Klinikkatalog Seiten"><button type="button" className="button button--secondary" disabled={clinicBrowsePage === 0} onClick={() => setClinicBrowsePage((page) => Math.max(0, page - 1))}>← Zurück</button><span>Seite {clinicBrowsePage + 1} / {Math.ceil(c.clinicBrowseCandidates.length / clinicBrowsePageSize)}</span><button type="button" className="button button--secondary" disabled={(clinicBrowsePage + 1) * clinicBrowsePageSize >= c.clinicBrowseCandidates.length} onClick={() => setClinicBrowsePage((page) => page + 1)}>Weiter →</button></nav></section>}
+        {c.settings.clinicMode === 'clinic-only' && c.search.phase === 'idle' && <section className="results-panel clinic-browser" data-testid="clinic-catalog-browser"><div className="section-title-row"><div><span className="eyebrow">KLINIK ONLY</span><h2>Klinikkatalog durchsuchen</h2></div><span>{c.clinicBrowseCandidates.length} Einträge</span></div><div className="result-list">{clinicBrowse.map((hit, index) => <button key={hit.productId} type="button" className="product-result" onClick={() => c.selectCandidate(hit)}><span className="result-position">{clinicBrowsePage * clinicBrowsePageSize + index + 1}</span><ProductImage src={c.settings.productImageMode === 'remote' ? c.catalogPhotoUrl(hit.code) ?? catalogProductImageUrl(hit) : null} alt={hit.displayName} compact /><span className="result-copy"><strong>{hit.displayName}</strong><ClinicTag compact /></span><span className="result-nutrition">{nutritionLabel(hit)}</span></button>)}</div><nav className="pagination" aria-label="Klinikkatalog Seiten"><button type="button" className="button button--secondary" disabled={clinicBrowsePage === 0} onClick={() => setClinicBrowsePage((page) => Math.max(0, page - 1))}>← Zurück</button><span>Seite {clinicBrowsePage + 1} / {Math.ceil(c.clinicBrowseCandidates.length / clinicBrowsePageSize)}</span><button type="button" className="button button--secondary" disabled={(clinicBrowsePage + 1) * clinicBrowsePageSize >= c.clinicBrowseCandidates.length} onClick={() => setClinicBrowsePage((page) => page + 1)}>Weiter →</button></nav></section>}
 
         {product && resolution && <article ref={productCardRef} tabIndex={-1} className="product-card" data-testid="catalog-product" data-product-id={product.productId} data-gtin={product.code} data-amount={c.request.amount} data-carbs-per-100-g={product.nutrition.basis === 'mass' ? product.nutrition.carbohydratesPer100 : ''} data-carbs-per-100-ml={product.nutrition.basis === 'volume' ? product.nutrition.carbohydratesPer100 : ''} data-nutrition-basis={product.nutrition.basis} data-unit-resolution-status={resolution.status}>
           <div className="product-card__header">
-            {c.settings.productImageMode === 'remote' && <ProductImage src={imageUrl} alt={product.displayName} />}
-            <div><span className="eyebrow">{isClinicCatalogProduct(product) ? 'KLINIKWERT · Klinikum Leverkusen' : isGenericCatalogProduct(product) ? 'Generische Referenz · gekocht' : 'Katalogprodukt'}</span><h2>{product.displayName}</h2><p>{isClinicCatalogProduct(product) ? nutritionLabel(product) : isGenericCatalogProduct(product) ? product.brand : subtitle(product.brand, product.code)}</p></div>
+            {c.settings.productImageMode === 'remote' && <EditableProductImage catalogSrc={imageUrl} localSrc={localImageUrl} alt={product.displayName} onPhoto={(file) => { void c.setCatalogPhoto(file); }} />}
+            <div>{isClinicCatalogProduct(product) && <ClinicTag />}<span className="eyebrow">{isClinicCatalogProduct(product) ? 'Klinikwert' : isGenericCatalogProduct(product) ? 'Generische Referenz · gekocht' : 'Katalogprodukt'}</span><h2>{product.displayName}</h2><p>{isClinicCatalogProduct(product) ? nutritionLabel(product) : isGenericCatalogProduct(product) ? product.brand : subtitle(product.brand, product.code)}</p></div>
             <button type="button" className="favorite-button" aria-pressed={c.isFavorite} onClick={c.toggleFavorite}><span aria-hidden="true">{c.isFavorite ? '★' : '☆'}</span>{c.isFavorite ? 'Favorit' : 'Merken'}</button>
           </div>
+          {c.productPhotoMessage && <p className="product-photo-message inline-message" role="status">{c.productPhotoMessage}</p>}
           <div className="calculation-grid">
             {c.search.candidates.length > 1 && <label className="field field--wide variant-picker"><span>Produktvariante</span><select value={String(product.productId)} onChange={(event: ChangeEvent<HTMLSelectElement>) => { const next = c.search.candidates.find((candidate) => String(candidate.productId) === event.target.value); if (next) c.selectCandidate(next); }} data-testid="catalog-variant-select">{c.search.candidates.map((candidate) => <option key={candidate.productId} value={candidate.productId}>{candidate.displayName}{candidate.brand ? ` · ${candidate.brand}` : ''}</option>)}</select><small>Der beste Treffer ist vorausgewählt; alle Varianten bleiben direkt umschaltbar.</small></label>}
             <label className="field"><span>Menge</span><input type="number" min="0.01" max="10000" step="any" value={amountValue} onChange={(event: ChangeEvent<HTMLInputElement>) => { const value = event.target.value; setAmountValue(value); const amount = Number(value); if (value !== '' && Number.isFinite(amount) && amount > 0) c.setRequest((r) => ({ ...r, amount })); }} onBlur={() => { const amount = Number(amountValue); if (!Number.isFinite(amount) || amount <= 0) setAmountValue(String(c.request.amount)); }} data-testid="catalog-amount-input" />{selected && (selected.unit === 'g' || selected.unit === 'ml') && <div className="amount-slider"><input type="range" min="1" max={selected.unit === 'g' ? '400' : '1000'} step="1" value={Math.max(1, Math.min(selected.unit === 'g' ? 400 : 1000, Number(amountValue) || c.request.amount))} onChange={(event: ChangeEvent<HTMLInputElement>) => { const value = event.target.value; setAmountValue(value); c.setRequest((current) => ({ ...current, amount: Number(value) })); }} aria-label={`${selected.unit === 'g' ? 'Gramm' : 'Milliliter'}-Menge per Schieberegler`} data-testid="catalog-amount-slider" /><small><span>1 {selected.unit}</span><span>{selected.unit === 'g' ? '400 g' : '1.000 ml'}</span></small></div>}</label>
@@ -105,7 +124,9 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
             <span>Kohlenhydrate gesamt</span><strong>{formatCarbohydrates(calculation.carbohydratesG, c.settings.decimalPlaces)} g KH</strong><small>{isClinicCatalogProduct(product) && product.clinic.directCarbohydratesPerUnit !== null ? `Direkter Klinikwert · ${c.request.amount.toLocaleString('de-DE')} × ${product.clinic.directCarbohydratesPerUnit.toLocaleString('de-DE')} g KH je Stück` : `Intern ohne Zwischenrundung berechnet · ${c.request.amount.toLocaleString('de-DE')} × ${calculation.unitBaseValue?.toLocaleString('de-DE')} × ${product.nutrition.carbohydratesPer100.toLocaleString('de-DE')} / 100`}</small>{c.settings.saveHistory && <button type="button" className="button button--secondary" onClick={c.saveCurrent}>Im Verlauf speichern</button>}
           </section> : <section className="missing-calculation" data-testid="catalog-calculation" data-status={calculation?.status ?? 'not_calculable'}><strong>Für diese Einheit fehlt noch ein belastbares Gewicht.</strong><p>Du kannst die Einheit direkt unten durch gemeinsames Wiegen festlegen.</p></section>}
 
-          {product.nutrition.basis === 'mass' && !isGenericCatalogProduct(product) && !isClinicCatalogProduct(product) && <details className="calibration-card" open={calibrationOpen} onToggle={(event) => setCalibrationOpen(event.currentTarget.open)} data-testid="catalog-calibration" data-status="always-available">
+          {c.settings.diabeticProfileEnabled && <DiabetesBolusPanel settings={c.settings} carbohydratesG={carbohydratesForBolus} currentGlucose={currentGlucose} onCurrentGlucoseChange={setCurrentGlucose} />}
+
+          {product.nutrition.basis === 'mass' && !isGenericCatalogProduct(product) && (!isClinicCatalogProduct(product) || product.clinic.directCarbohydratesPerUnit === null) && <details className="calibration-card" open={calibrationOpen} onToggle={(event) => setCalibrationOpen(event.currentTarget.open)} data-testid="catalog-calibration" data-status="always-available">
             <summary><span><span className="eyebrow">Persönliche Standard-Einheit</span><strong>Serving-Einheit selbst abwiegen</strong></span><small>{hasDefinedServing ? 'Bereits definiert · bei Bedarf ändern' : 'Noch keine Portion definiert'}</small></summary>
             <div className="calibration-card__body"><p>Wiege eine frei wählbare Anzahl gemeinsam. Das Einzelgewicht wird automatisch berechnet, gespeichert, sofort ausgewählt und bei jeder späteren Suche als Standard verwendet.</p>
             <div className="calibration-fields"><label className="field"><span>Einheit</span><select value={c.calibrationUnit} onChange={(event: ChangeEvent<HTMLSelectElement>) => c.changeCalibrationUnit(event.target.value as typeof c.calibrationUnit)} data-testid="catalog-calibration-unit"><option value="piece">Stück</option><option value="bar">Riegel</option><option value="slice">Scheibe</option><option value="portion">Portion</option></select></label><label className="field"><span>Anzahl gemeinsam gewogen</span><input type="number" min="1" max="10000" step="1" value={c.calibrationCount} onChange={(event: ChangeEvent<HTMLInputElement>) => c.setCalibrationCount(event.target.value)} data-testid="catalog-calibration-count" /></label><label className="field"><span>Gesamtgewicht in g</span><input type="number" min="0.01" step="any" value={c.calibrationWeight} onChange={(event: ChangeEvent<HTMLInputElement>) => c.setCalibrationWeight(event.target.value)} placeholder="z. B. 28,8" data-testid="catalog-calibration-weight" /></label></div>

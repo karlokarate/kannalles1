@@ -9,6 +9,7 @@ import {
 test('App-Shell, Hauptnavigation und Startansicht bleiben zugänglich', async ({ page }) => {
   const forbidden = collectForbiddenProductRequests(page);
   await openAppShell(page);
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-visual-theme', 'comic');
 
   const navigation = page.getByRole('navigation', { name: 'Hauptnavigation' });
   await expect(navigation).toBeVisible();
@@ -55,6 +56,8 @@ test('lokale Einstellungen und manuelle Berechnung bleiben offline nutzbar', asy
   try {
     await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Einstellungen' })).toBeVisible();
+    await page.locator('input[name="visual-theme"][value="standard"]').check();
+    await expect(page.locator('.app-shell')).toHaveAttribute('data-visual-theme', 'standard');
     await page.getByRole('button', { name: 'Rechner', exact: true }).click();
     await page.getByRole('button', { name: 'Manuell', exact: true }).click();
     await page.getByLabel('KH pro 100 g').fill('12.5');
@@ -64,4 +67,29 @@ test('lokale Einstellungen und manuelle Berechnung bleiben offline nutzbar', asy
     await context.setOffline(false);
   }
   forbidden.assertNone();
+});
+
+test('segmentiertes Diabetikerprofil berechnet Korrektur allein und zusammen mit KH', async ({ page }) => {
+  await openAppShell(page);
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await page.getByTestId('diabetes-profile-toggle').check();
+  for (const input of await page.getByTestId('carbohydrate-ratio-input').all()) await input.fill('10');
+  for (const input of await page.getByTestId('correction-factor-input').all()) await input.fill('50');
+  for (const input of await page.getByTestId('target-glucose-input').all()) await input.fill('100');
+
+  await page.getByRole('button', { name: 'Rechner', exact: true }).click();
+  const panel = page.getByTestId('diabetes-bolus-panel');
+  await expect(panel).toBeVisible();
+  await page.getByTestId('current-glucose-input').fill('200');
+  await expect(page.getByTestId('correction-bolus')).toHaveText('+2,0 E');
+  await expect(page.getByTestId('total-bolus')).toHaveText('2,0 E');
+
+  await page.getByRole('button', { name: 'Manuell', exact: true }).click();
+  await page.getByLabel('KH pro 100 g').fill('40');
+  await page.getByLabel('Menge in g').fill('100');
+  await expect(page.getByTestId('carbohydrate-bolus')).toHaveText('4,0 E');
+  await expect(page.getByTestId('total-bolus')).toHaveText('6,0 E');
+  await page.getByTestId('current-glucose-input').fill('50');
+  await expect(page.getByTestId('correction-bolus')).toHaveText('-1,0 E');
+  await expect(page.getByTestId('total-bolus')).toHaveText('3,0 E');
 });

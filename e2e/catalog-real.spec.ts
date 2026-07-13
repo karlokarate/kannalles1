@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
 import {
   BUENO_GTIN,
   CATALOG_DATABASE_FILENAME,
@@ -97,6 +98,10 @@ test('zeigt Trefferbilder, nutzt Sprache für gekochten Reis und speichert eine 
   await openCatalogApp(page);
   await expectCatalogReady(page);
 
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await page.getByTestId('clinic-mode-select').selectOption('off');
+  await page.getByRole('button', { name: 'Rechner', exact: true }).click();
+
   await page.getByTestId('catalog-speech-search').click();
   const generic = page.getByTestId('catalog-product');
   await expect(generic).toContainText('Reis, gekocht');
@@ -140,9 +145,22 @@ test('priorisiert Klinikwerte im Hybridmodus und paginiert Klinik- sowie Gesamtk
   await expect(page.getByTestId('clinic-mode-select')).toHaveValue('hybrid');
   await page.getByRole('button', { name: 'Rechner', exact: true }).click();
   await searchCatalog(page, 'Grahambrot');
-  await expect(page.getByTestId('catalog-product')).toContainText('KLINIKWERT');
+  await expect(page.getByTestId('catalog-product')).toContainText(/Klinikwert/i);
+  await expect(page.getByTestId('catalog-product').getByAltText('Klinikum Leverkusen')).toBeVisible();
+  await page.getByTestId('catalog-product-photo').setInputFiles(fileURLToPath(new URL('../public-template/generic-foods/rice-cooked.png', import.meta.url)));
+  await expect(page.locator('.product-photo-message')).toContainText('Produktfoto lokal gespeichert');
+  await expect(page.getByTestId('catalog-product').getByAltText('Grahambrot')).toHaveAttribute('src', /^data:image\//);
+  await page.getByTestId('catalog-calibration-unit').selectOption('portion');
+  await page.getByTestId('catalog-calibration-count').fill('2');
+  await page.getByTestId('catalog-calibration-weight').fill('100');
+  await expect(page.getByTestId('catalog-calibration')).toContainText('50 g je Portion gespeichert.');
+  await searchCatalog(page, 'Grahambrot');
+  await expect(page.getByTestId('catalog-unit-select').locator('option:checked')).toHaveAttribute('data-unit-provenance', 'user-calibration');
+  await expect(page.getByTestId('catalog-product')).toHaveAttribute('data-amount', '1');
 
   await searchCatalog(page, 'Reis');
+  await expect(page.getByTestId('catalog-product')).toContainText(/Klinikwert/i);
+  await expect(page.getByTestId('catalog-product').getByAltText('Milchreis')).toBeVisible();
   await expect(page.getByTestId('catalog-search-results')).toHaveAttribute('data-result-count', '20');
   const pagination = page.getByRole('navigation', { name: 'Weitere passende Produkte' });
   await expect(pagination.getByRole('button', { name: 'Weiter →' })).toBeEnabled();

@@ -1,6 +1,7 @@
 import type { ChangeEvent } from 'react';
 import type { OfflineAppSettings } from '../lib/settings';
 import type { UserDataCounts } from '../lib/userDataStore';
+import { DiabetesSettings } from './DiabetesSettings';
 
 export interface SettingsScreenProps {
   settings: OfflineAppSettings;
@@ -30,11 +31,19 @@ export function SettingsScreen({
         <p>Keine Produkt-API, keine Zugangsdaten und kein versteckter Online-Fallback.</p>
       </header>
       <div className="settings-grid">
+        <fieldset className="settings-card settings-card--wide theme-settings">
+          <legend>Design</legend>
+          <div className="theme-picker" role="radiogroup" aria-label="Darstellung auswählen">
+            <label className={settings.visualTheme === 'comic' ? 'is-active' : ''}><input type="radio" name="visual-theme" value="comic" checked={settings.visualTheme === 'comic'} onChange={() => update('visualTheme', 'comic')} /><span aria-hidden="true">🌈</span><strong>Bunt & Comic</strong><small>Quietschig, freundlich und kindgerecht</small></label>
+            <label className={settings.visualTheme === 'standard' ? 'is-active' : ''}><input type="radio" name="visual-theme" value="standard" checked={settings.visualTheme === 'standard'} onChange={() => update('visualTheme', 'standard')} /><span aria-hidden="true">✨</span><strong>Modern & ruhig</strong><small>Klar, hochwertig und zurückhaltend</small></label>
+          </div>
+        </fieldset>
         <fieldset className="settings-card settings-card--wide">
           <legend>Katalogmodus</legend>
           <label className="field"><span>Datenquellen bei der Produktsuche</span><select value={settings.clinicMode} onChange={(event: ChangeEvent<HTMLSelectElement>) => update('clinicMode', event.target.value as OfflineAppSettings['clinicMode'])} data-testid="clinic-mode-select"><option value="hybrid">Hybrid – Klinik bevorzugt + großer Katalog</option><option value="clinic-only">Klinik Only – nur Klinikum Leverkusen</option><option value="off">Klinik Off – nur großer SQLite-Katalog</option></select></label>
           <p className="settings-note">Im Hybridmodus haben passende Klinikwerte Vorrang. „Klinik Off“ ignoriert die Klinikdatei vollständig; „Klinik Only“ macht alle 105 Klinikdatensätze durchsuch- und scrollbar.</p>
         </fieldset>
+        <DiabetesSettings enabled={settings.diabeticProfileEnabled} segments={settings.diabetesSegments} onEnabledChange={(enabled) => update('diabeticProfileEnabled', enabled)} onSegmentsChange={(segments) => update('diabetesSegments', segments)} />
         <fieldset className="settings-card">
           <legend>Berechnung</legend>
           <label className="field">
@@ -62,7 +71,7 @@ export function SettingsScreen({
         </fieldset>
         <section className="settings-card" aria-labelledby="local-data-title">
           <h2 id="local-data-title">Lokale Nutzerdaten</h2>
-          <dl className="data-counts"><div><dt>Kalibrierungen</dt><dd>{counts.calibrations}</dd></div><div><dt>Verlauf</dt><dd>{counts.history}</dd></div><div><dt>Favoriten</dt><dd>{counts.favorites}</dd></div><div><dt>Eigene Produkte</dt><dd>{counts.manualProducts}</dd></div></dl>
+          <dl className="data-counts"><div><dt>Kalibrierungen</dt><dd>{counts.calibrations}</dd></div><div><dt>Verlauf</dt><dd>{counts.history}</dd></div><div><dt>Favoriten</dt><dd>{counts.favorites}</dd></div><div><dt>Eigene Produkte</dt><dd>{counts.manualProducts}</dd></div><div><dt>Produktfotos</dt><dd>{counts.productPhotos}</dd></div></dl>
           <div className="button-stack"><button type="button" className="button button--secondary" onClick={onClearHistory}>Verlauf löschen</button><button type="button" className="button button--secondary" onClick={onClearSession}>Gespeicherte Ansicht löschen</button><button type="button" className="button button--danger" onClick={onClearAllUserData}>Alle lokalen Nutzerdaten löschen</button></div>
         </section>
       </div>

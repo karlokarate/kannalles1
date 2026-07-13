@@ -53,6 +53,13 @@ export interface ManualProduct {
   updatedAt: string;
 }
 
+export interface CatalogProductPhoto {
+  schemaVersion: 1;
+  productCode: string;
+  imageDataUrl: string;
+  updatedAt: string;
+}
+
 export type AppSection = 'calculator' | 'history' | 'favorites' | 'settings';
 
 export interface SearchSessionSnapshot {
@@ -72,6 +79,7 @@ interface UserDataEnvelope {
   history: CalculationHistoryEntry[];
   favorites: FavoriteProduct[];
   manualProducts: ManualProduct[];
+  productPhotos: CatalogProductPhoto[];
   session: SearchSessionSnapshot | null;
 }
 
@@ -80,6 +88,7 @@ export interface UserDataCounts {
   history: number;
   favorites: number;
   manualProducts: number;
+  productPhotos: number;
 }
 
 const USER_DATA_KEY = 'kh-checker:offline-user-data:v2';
@@ -92,6 +101,7 @@ function emptyEnvelope(): UserDataEnvelope {
     history: [],
     favorites: [],
     manualProducts: [],
+    productPhotos: [],
     session: null
   };
 }
@@ -150,6 +160,10 @@ function validFavorite(value: unknown): value is FavoriteProduct {
     && typeof value.addedAt === 'string';
 }
 
+function validImageDataUrl(image: unknown): image is string {
+  return typeof image === 'string' && /^data:image\/(?:jpeg|png|webp);base64,/.test(image) && image.length <= 350_000;
+}
+
 function validManualProduct(value: unknown): value is ManualProduct {
   if (!isRecord(value) || value.schemaVersion !== 1) return false;
   const image = value.imageDataUrl;
@@ -158,8 +172,15 @@ function validManualProduct(value: unknown): value is ManualProduct {
     && typeof value.carbohydratesPer100 === 'number' && Number.isFinite(value.carbohydratesPer100)
     && value.carbohydratesPer100 >= 0 && value.carbohydratesPer100 <= 200
     && (value.basis === 'mass' || value.basis === 'volume')
-    && (image === null || (typeof image === 'string' && /^data:image\/(?:jpeg|png|webp);base64,/.test(image) && image.length <= 350_000))
+    && (image === null || validImageDataUrl(image))
     && typeof value.createdAt === 'string' && typeof value.updatedAt === 'string';
+}
+
+function validCatalogProductPhoto(value: unknown): value is CatalogProductPhoto {
+  return isRecord(value) && value.schemaVersion === 1
+    && typeof value.productCode === 'string' && value.productCode.trim().length > 0 && value.productCode.length <= 160
+    && validImageDataUrl(value.imageDataUrl)
+    && typeof value.updatedAt === 'string';
 }
 
 function validSession(value: unknown): value is SearchSessionSnapshot {
@@ -190,6 +211,7 @@ function normalizeEnvelope(value: unknown): UserDataEnvelope {
       : [],
     favorites: Array.isArray(value.favorites) ? value.favorites.filter(validFavorite) : [],
     manualProducts: Array.isArray(value.manualProducts) ? value.manualProducts.filter(validManualProduct).slice(0, 100) : [],
+    productPhotos: Array.isArray(value.productPhotos) ? value.productPhotos.filter(validCatalogProductPhoto).slice(0, 50) : [],
     session: validSession(value.session) ? value.session : null
   };
 }
@@ -326,6 +348,21 @@ export function deleteManualProduct(id: string): void {
   writeEnvelope(envelope);
 }
 
+export function saveCatalogProductPhoto(productCode: string, imageDataUrl: string): CatalogProductPhoto | null {
+  const photo: CatalogProductPhoto = { schemaVersion: 1, productCode: productCode.trim(), imageDataUrl, updatedAt: new Date().toISOString() };
+  if (!validCatalogProductPhoto(photo)) return null;
+  const envelope = readEnvelope();
+  envelope.productPhotos = [photo, ...envelope.productPhotos.filter((item) => item.productCode !== photo.productCode)].slice(0, 50);
+  writeEnvelope(envelope);
+  return photo;
+}
+
+export function getCatalogProductPhoto(productCode: string): CatalogProductPhoto | null {
+  return readEnvelope().productPhotos.find((item) => item.productCode === productCode) ?? null;
+}
+
+export function listCatalogProductPhotos(): CatalogProductPhoto[] { return readEnvelope().productPhotos; }
+
 export function isFavoriteProduct(productId: number): boolean {
   return readEnvelope().favorites.some((item) => item.productId === productId);
 }
@@ -358,7 +395,8 @@ export function getUserDataCounts(): UserDataCounts {
     calibrations: envelope.calibrations.length,
     history: envelope.history.length,
     favorites: envelope.favorites.length,
-    manualProducts: envelope.manualProducts.length
+    manualProducts: envelope.manualProducts.length,
+    productPhotos: envelope.productPhotos.length
   };
 }
 

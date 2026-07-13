@@ -125,7 +125,7 @@ export function searchClinicCatalog(query: string, limit = 20): CatalogSearchHit
 }
 
 export function clinicDefaultRequest(product: ClinicCatalogProduct): CatalogUnitRequest {
-  return { amount: product.clinic.referenceAmount, unit: product.clinic.referenceUnit, unitExplicit: true };
+  return { amount: product.clinic.referenceAmount, unit: product.clinic.referenceUnit, unitExplicit: false };
 }
 
 export function directClinicResolution(product: ClinicCatalogProduct): { status: 'resolved'; selectedOptionId: string; options: ResolvedUnitOption[]; reason: 'smallest-proven-unit' } | null {

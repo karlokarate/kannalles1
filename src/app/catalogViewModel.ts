@@ -28,6 +28,12 @@ export function catalogProductImageUrl(product: CatalogProduct): string | null {
   };
   const genericImage = genericImages[product.code];
   if (genericImage) return `${import.meta.env.BASE_URL}${genericImage}`;
+  if (product.code.startsWith('kl-')) {
+    const name = normalizedIdentityText(product.displayName);
+    if (/\b(?:nudel|nudeln|pasta|spaghetti|penne|fusilli|makaroni)\b/.test(name)) return `${import.meta.env.BASE_URL}${genericImages['generic:pasta-cooked']}`;
+    if (/\b(?:reis|milchreis)\b/.test(name)) return `${import.meta.env.BASE_URL}${genericImages['generic:rice-cooked']}`;
+    if (/\b(?:kartoffel|kartoffeln)\b/.test(name)) return `${import.meta.env.BASE_URL}${genericImages['generic:potatoes-boiled']}`;
+  }
   const image = product.imageReference;
   if (!image || !/^\d{8,14}$/.test(product.code)) return null;
   return `https://images.openfoodfacts.org/images/products/${imageProductPath(product.code)}/${image.key}.${image.revision}.${image.resolution}.jpg`;

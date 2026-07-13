@@ -11,7 +11,7 @@ const APP_VERSION = __APP_VERSION__;
 export default function App() {
   const c = useCatalogController();
   return (
-    <div className="app-shell" data-app-mode="offline-catalog" data-catalog-state={c.status.state} data-catalog-version={c.status.catalogVersion ?? ''} data-product-count={c.status.productCount ?? ''} data-persistent={String(c.status.persistent)} data-installed-from-network={String(c.installedFromNetwork)} data-active-slot={c.status.activeSlot ?? ''} data-search-state={c.search.phase} data-product-state={c.product ? 'selected' : 'none'} data-unit-state={c.resolution?.status ?? 'idle'} data-calculation-state={c.calculation?.status ?? 'idle'}>
+    <div className="app-shell" data-app-mode="offline-catalog" data-visual-theme={c.settings.visualTheme} data-catalog-state={c.status.state} data-catalog-version={c.status.catalogVersion ?? ''} data-product-count={c.status.productCount ?? ''} data-persistent={String(c.status.persistent)} data-installed-from-network={String(c.installedFromNetwork)} data-active-slot={c.status.activeSlot ?? ''} data-search-state={c.search.phase} data-product-state={c.product ? 'selected' : 'none'} data-unit-state={c.resolution?.status ?? 'idle'} data-calculation-state={c.calculation?.status ?? 'idle'}>
       <a className="skip-link" href="#main-content">Zum Inhalt springen</a>
       <header className="app-header"><div className="brand-lockup"><span className="brand-mark" aria-hidden="true">KH</span><div><strong>FishIT KH Checker</strong><span>Offline-Kohlenhydratrechner</span></div></div><span className="version-badge">v{APP_VERSION}</span></header>
       {c.status.state !== 'ready' && <CatalogStatus status={c.status} installedFromNetwork={c.installedFromNetwork} onRetry={() => void c.initialize()} />}

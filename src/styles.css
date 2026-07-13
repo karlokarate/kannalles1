@@ -29,6 +29,7 @@ html { min-width: 320px; min-height: 100%; background: #eef3f8; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: linear-gradient(180deg, #f8fbfd 0, #eef3f8 40%, #e7edf4 100%); }
 button, input, select { font: inherit; }
 button { touch-action: manipulation; }
+button, .search-card, .manual-card, .results-panel, .product-card, .settings-card, .product-result { transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease; }
 button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible {
   outline: 3px solid rgba(23, 107, 135, 0.28);
   outline-offset: 2px;
@@ -121,10 +122,23 @@ input:disabled, select:disabled { opacity: 0.6; }
 .result-copy { min-width: 0; display: grid; gap: 3px; }
 .result-copy strong, .result-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .result-copy small, .result-nutrition { color: var(--muted); }
+.clinic-tag { display: inline-flex; align-items: center; gap: 7px; width: fit-content; margin-bottom: 3px; padding: 4px 7px; border: 1px solid #bfd6df; border-radius: 9px; color: var(--primary-strong); background: #fff; }
+.clinic-tag img { width: 132px; height: auto; max-height: 44px; object-fit: contain; }
+.clinic-tag b { font-size: 0.68rem; letter-spacing: 0.08em; }
+.clinic-tag--compact { gap: 5px; padding: 2px 5px; }
+.clinic-tag--compact img { width: 94px; max-height: 31px; }
+.clinic-tag--compact b { font-size: 0.6rem; }
 .result-nutrition { text-align: right; font-size: 0.86rem; }
 .product-card { overflow: hidden; }
 .product-card__header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: clamp(16px, 3vw, 24px); border-bottom: 1px solid var(--line); }
 .product-card__header img { width: 126px; height: 126px; border: 1px solid var(--line); border-radius: 16px; object-fit: contain; background: #fff; }
+.product-card__header .clinic-tag img { width: 132px; height: auto; max-height: 44px; border: 0; border-radius: 0; background: transparent; }
+.product-photo-capture { position: relative; display: grid; gap: 4px; width: 126px; color: var(--primary-strong); text-align: center; cursor: pointer; }
+.product-photo-capture > small { font-size: 0.76rem; font-weight: 800; }
+.product-photo-capture input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.product-photo-capture--saved img { cursor: pointer; }
+.product-photo-capture:hover .product-image-fallback, .product-photo-capture:focus-within .product-image-fallback { border-color: var(--primary); background: #eef8fb; }
+.product-photo-message { margin: 12px clamp(16px, 3vw, 24px) 0; }
 .product-card__header h2 { margin: 4px 0; font-size: clamp(1.25rem, 3vw, 1.8rem); }
 .product-card__header p { margin: 0; color: var(--muted); }
 .favorite-button { display: grid; gap: 2px; min-width: 74px; padding: 9px; border: 1px solid var(--line); border-radius: 13px; color: var(--muted); background: #fff; cursor: pointer; }
@@ -184,6 +198,109 @@ input:disabled, select:disabled { opacity: 0.6; }
 .switch-row small, .settings-note { color: var(--muted); }
 .switch-row input { width: 24px; min-height: 24px; flex: 0 0 auto; }
 .settings-note { margin-bottom: 0; }
+.theme-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.theme-picker label { position: relative; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 3px 10px; padding: 15px; border: 2px solid var(--line); border-radius: 18px; background: var(--surface-muted); cursor: pointer; }
+.theme-picker label > input { position: absolute; width: 1px; min-height: 1px; opacity: 0; }
+.theme-picker label > span { grid-row: 1 / 3; font-size: 2rem; }
+.theme-picker label > small { color: var(--muted); }
+.theme-picker label.is-active { border-color: var(--primary); background: #eaf7fb; box-shadow: 0 8px 24px rgba(23, 107, 135, 0.12); }
+.diabetes-settings { display: grid; gap: 15px; }
+.diabetes-warning { margin: 0; padding: 12px 14px; border: 1px solid #e7c071; border-radius: var(--radius-sm); background: var(--warning-soft); }
+.diabetes-segment-list { display: grid; gap: 11px; }
+.diabetes-segment { padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-muted); }
+.diabetes-segment > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 11px; }
+.diabetes-segment-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 0.65fr)) repeat(3, minmax(0, 1.25fr)); gap: 11px; }
+.diabetes-segment output { display: flex; align-items: center; min-height: 48px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--muted); background: #f1f4f7; }
+.input-with-unit { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; overflow: hidden; border: 1px solid #c7d3df; border-radius: var(--radius-sm); background: #fff; }
+.input-with-unit:focus-within { outline: 3px solid rgba(23, 107, 135, 0.28); outline-offset: 2px; }
+.input-with-unit input { min-width: 0; border: 0; border-radius: 0; outline: 0; }
+.input-with-unit b { padding: 0 11px; color: var(--muted); font-size: 0.82rem; white-space: nowrap; }
+.diabetes-bolus-panel { padding: clamp(16px, 3vw, 22px); border: 1px solid #b8d9e5; border-radius: var(--radius-lg); background: #eef9fc; box-shadow: var(--shadow); }
+.product-card > .diabetes-bolus-panel { margin: 0 clamp(16px, 3vw, 24px) clamp(16px, 3vw, 24px); box-shadow: none; }
+.diabetes-bolus-panel h2 { margin: 3px 0 0; }
+.diabetes-glucose-input { max-width: 360px; margin-bottom: 14px; }
+.bolus-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.bolus-values > div { display: grid; gap: 4px; min-width: 0; padding: 14px; border: 1px solid #c8dfe7; border-radius: 14px; background: rgba(255,255,255,0.86); }
+.bolus-values dt { color: var(--muted); font-size: 0.82rem; font-weight: 700; }
+.bolus-values dd { margin: 0; color: var(--primary-strong); font-size: clamp(1.45rem, 4vw, 2.1rem); font-weight: 900; }
+.bolus-values small { color: var(--muted); overflow-wrap: anywhere; }
+.bolus-values > .bolus-values__total { border-color: var(--primary); }
+.bolus-subtraction { margin: 12px 0 0; color: #6f4600; font-weight: 700; }
+.medical-disclaimer { margin: 13px 0 0; padding-top: 12px; border-top: 1px solid #c8dfe7; color: #4a6070; font-size: 0.83rem; }
+
+/* The default comic theme changes only presentation; structure and calculations stay identical. */
+.app-shell[data-visual-theme="comic"] {
+  --surface: #fffef8;
+  --surface-muted: #fff8dd;
+  --line: #5a397f;
+  --ink: #31204f;
+  --muted: #6f5682;
+  --primary: #7138b4;
+  --primary-strong: #4e2189;
+  --success: #008f7a;
+  --success-soft: #dffff5;
+  --warning: #a94e00;
+  --warning-soft: #fff0b8;
+  --danger: #d62d68;
+  --danger-soft: #ffe3ed;
+  --shadow: 6px 7px 0 rgba(64, 35, 91, 0.15), 0 15px 34px rgba(91, 55, 127, 0.11);
+  --radius-lg: 28px;
+  --radius-md: 19px;
+  --radius-sm: 13px;
+  min-height: 100vh;
+  color: var(--ink);
+  background-color: #fff7c9;
+  background-image: radial-gradient(circle at 8% 8%, rgba(255, 78, 156, 0.18) 0 70px, transparent 72px), radial-gradient(circle at 92% 18%, rgba(36, 207, 197, 0.2) 0 90px, transparent 92px), linear-gradient(145deg, #fff8c9 0%, #f7e9ff 48%, #dffcff 100%);
+  font-family: "Trebuchet MS", "Arial Rounded MT Bold", Inter, ui-sans-serif, system-ui, sans-serif;
+}
+.app-shell[data-visual-theme="comic"] .app-header { border-bottom: 3px solid #5a397f; background: rgba(255, 253, 239, 0.94); box-shadow: 0 5px 0 rgba(90, 57, 127, 0.1); }
+.app-shell[data-visual-theme="comic"] .brand-mark { border: 2px solid #382052; border-radius: 50% 44% 52% 42%; background: linear-gradient(135deg, #ff4e9c, #7d48e8 52%, #24cfc5); box-shadow: 3px 4px 0 #ffd94a; transform: rotate(-4deg); }
+.app-shell[data-visual-theme="comic"] .brand-lockup strong { color: #4e2189; font-weight: 900; }
+.app-shell[data-visual-theme="comic"] .version-badge { border: 2px solid #5a397f; color: #4e2189; background: #ffed73; font-weight: 900; transform: rotate(2deg); }
+.app-shell[data-visual-theme="comic"] .screen-heading h1,
+.app-shell[data-visual-theme="comic"] .screen-heading h2 { color: #4e2189; font-weight: 900; text-shadow: 2px 2px 0 #fff, 4px 4px 0 rgba(255, 78, 156, 0.18); }
+.app-shell[data-visual-theme="comic"] .eyebrow { color: #9e1649; }
+.app-shell[data-visual-theme="comic"] .search-card,
+.app-shell[data-visual-theme="comic"] .manual-card,
+.app-shell[data-visual-theme="comic"] .results-panel,
+.app-shell[data-visual-theme="comic"] .product-card,
+.app-shell[data-visual-theme="comic"] .settings-card,
+.app-shell[data-visual-theme="comic"] .empty-state,
+.app-shell[data-visual-theme="comic"] .diabetes-bolus-panel { border: 2px solid #5a397f; }
+.app-shell[data-visual-theme="comic"] input,
+.app-shell[data-visual-theme="comic"] select { border-width: 2px; border-color: #8d70a6; }
+.app-shell[data-visual-theme="comic"] .button--primary { border: 2px solid #382052; background: linear-gradient(135deg, #ff4e9c, #7d48e8); box-shadow: 3px 4px 0 #ffd94a; }
+.app-shell[data-visual-theme="comic"] .button--secondary { border: 2px solid #5a397f; background: #fff; box-shadow: 2px 3px 0 rgba(90, 57, 127, 0.15); }
+.app-shell[data-visual-theme="comic"] .button:hover { transform: translateY(-2px) rotate(-0.5deg); }
+.app-shell[data-visual-theme="comic"] .mode-switch,
+.app-shell[data-visual-theme="comic"] .segmented-control { border: 2px solid #5a397f; background: #fff5b8; }
+.app-shell[data-visual-theme="comic"] .mode-switch button.is-active,
+.app-shell[data-visual-theme="comic"] .segmented-control button.is-active { background: linear-gradient(135deg, #7d48e8, #24bdb5); }
+.app-shell[data-visual-theme="comic"] .product-result { border: 2px solid #72518f; background: #fffef8; box-shadow: 3px 4px 0 rgba(90, 57, 127, 0.12); }
+.app-shell[data-visual-theme="comic"] .product-result:nth-child(3n + 1) { background: #fff5c7; }
+.app-shell[data-visual-theme="comic"] .product-result:nth-child(3n + 2) { background: #f9eaff; }
+.app-shell[data-visual-theme="comic"] .product-result:nth-child(3n) { background: #e2fbf8; }
+.app-shell[data-visual-theme="comic"] .result-position { color: #4e2189; background: #ffdb54; box-shadow: 1px 2px 0 #a56d00; }
+.app-shell[data-visual-theme="comic"] .calculation-result { border: 2px solid #382052; background: linear-gradient(135deg, #7138b4, #ef3f8a 55%, #ff8d3a); box-shadow: 5px 6px 0 #ffd94a; }
+.app-shell[data-visual-theme="comic"] .diabetes-bolus-panel { background: linear-gradient(135deg, #e4fbff, #f4e8ff); }
+.app-shell[data-visual-theme="comic"] .diabetes-glucose-input { position: relative; isolation: isolate; max-width: 430px; margin: 8px 14px 24px; padding: 24px 34px 30px; color: #fff; background: #f30f52; border-radius: 46% 54% 44% 56% / 54% 43% 57% 46%; filter: drop-shadow(5px 6px 0 rgba(105, 12, 49, 0.25)); transform: rotate(-1deg); }
+.app-shell[data-visual-theme="comic"] .diabetes-glucose-input::before,
+.app-shell[data-visual-theme="comic"] .diabetes-glucose-input::after { position: absolute; z-index: -1; content: ""; border-radius: 50%; background: #f30f52; }
+.app-shell[data-visual-theme="comic"] .diabetes-glucose-input::before { right: -13px; bottom: 14px; width: 27px; height: 27px; box-shadow: 18px 18px 0 -6px #f30f52; }
+.app-shell[data-visual-theme="comic"] .diabetes-glucose-input::after { left: 18px; bottom: -15px; width: 22px; height: 22px; box-shadow: -13px 12px 0 -6px #f30f52; }
+.app-shell[data-visual-theme="comic"] .diabetes-glucose-input > span:first-child { font-size: 1.02rem; font-weight: 900; text-shadow: 1px 2px 0 #9b123e; }
+.app-shell[data-visual-theme="comic"] .diabetes-glucose-input .input-with-unit { border: 3px solid #7f1239; background: #fff; transform: rotate(1deg); }
+.app-shell[data-visual-theme="comic"] .bolus-values > div { border-width: 2px; border-color: #72518f; }
+.app-shell[data-visual-theme="comic"] .clinic-tag { border: 2px solid #157f88; background: #e5ffff; box-shadow: 2px 2px 0 rgba(21, 127, 136, 0.18); }
+.app-shell[data-visual-theme="comic"] .theme-picker label.is-active { border-color: #5a397f; background: linear-gradient(135deg, #fff2a8, #f9ddff); box-shadow: 4px 5px 0 rgba(90, 57, 127, 0.15); }
+
+/* The quieter theme keeps the original information density with a fresher finish. */
+.app-shell[data-visual-theme="standard"] .search-card:hover,
+.app-shell[data-visual-theme="standard"] .manual-card:hover,
+.app-shell[data-visual-theme="standard"] .settings-card:hover { border-color: #bdcedc; box-shadow: 0 18px 48px rgba(30, 54, 76, 0.14); }
+.app-shell[data-visual-theme="standard"] .button:hover { transform: translateY(-1px); box-shadow: 0 7px 18px rgba(30, 54, 76, 0.12); }
+.app-shell[data-visual-theme="standard"] .product-result { background: linear-gradient(135deg, #fff, #f6fafc); }
+.app-shell[data-visual-theme="standard"] .app-header { box-shadow: 0 5px 22px rgba(30, 54, 76, 0.06); }
 .bottom-nav { position: fixed; z-index: 30; left: 50%; bottom: max(10px, env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(700px, calc(100% - 22px)); display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; padding: 7px; border: 1px solid rgba(193, 206, 219, 0.95); border-radius: 22px; background: rgba(255,255,255,0.94); box-shadow: 0 18px 45px rgba(30, 54, 76, 0.22); backdrop-filter: blur(18px); }
 .bottom-nav button { display: grid; place-items: center; gap: 2px; min-height: 54px; padding: 5px; border: 0; border-radius: 16px; color: var(--muted); background: transparent; font-size: 0.73rem; cursor: pointer; }
 .bottom-nav button span { font-size: 1.15rem; }
@@ -200,9 +317,11 @@ input:disabled, select:disabled { opacity: 0.6; }
   .product-result { grid-template-columns: auto 73px minmax(0, 1fr); }
   .product-result__image, .product-image-fallback--compact { width: 73px; height: 73px; }
   .result-nutrition { grid-column: 3; text-align: left; }
+  .clinic-tag--compact img { width: 82px; }
   .product-card__header { grid-template-columns: auto minmax(0, 1fr); }
   .favorite-button { grid-column: 1 / -1; grid-template-columns: auto 1fr; width: 100%; }
   .calculation-grid, .manual-grid, .calibration-fields, .settings-grid { grid-template-columns: 1fr; }
+  .diabetes-segment-grid, .bolus-values, .theme-picker { grid-template-columns: 1fr; }
   .field--wide { grid-column: auto; }
   .calibration-preview, .data-counts { grid-template-columns: 1fr; }
   .history-entry { grid-template-columns: 1fr auto; }
@@ -219,10 +338,13 @@ input:disabled, select:disabled { opacity: 0.6; }
   .catalog-status .button { width: 100%; }
   .product-card__header img { width: 96px; height: 96px; }
   .product-card__header .product-image-fallback { width: 96px; height: 96px; }
+  .product-photo-capture { width: 96px; }
   .calculation-result > strong { font-size: 2.35rem; }
   .bottom-nav { bottom: max(6px, env(safe-area-inset-bottom)); width: calc(100% - 12px); border-radius: 18px; }
   .bottom-nav button { min-height: 50px; font-size: 0.66rem; }
 }
+.app-shell[data-visual-theme="comic"] .bottom-nav { border: 2px solid #5a397f; background: rgba(255, 254, 244, 0.96); box-shadow: 0 10px 0 rgba(90, 57, 127, 0.12), 0 18px 45px rgba(59, 31, 88, 0.2); }
+.app-shell[data-visual-theme="comic"] .bottom-nav button.is-active { border: 2px solid #382052; background: linear-gradient(135deg, #ff4e9c, #7d48e8); box-shadow: 2px 3px 0 #ffd94a; }
 @media (prefers-reduced-motion: reduce) {
   /* biome-ignore lint/complexity/noImportantStyles: User motion preferences must override component transitions. */
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }

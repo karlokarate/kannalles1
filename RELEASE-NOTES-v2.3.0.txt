@@ -2,6 +2,8 @@ FishIT KH Checker v2.3.0 – Klinik-, Bild- und Bedienungsrelease
 =========================================================
 
 - Drei Katalogmodi: Hybrid mit Klinikvorrang, Klinik Only und Klinik Off.
+- Im Hybridmodus stehen passende Klinikwerte vor generischen Referenzwerten;
+  Reis-, Nudel- und Kartoffel-Einträge können deren Offline-Standardbilder nutzen.
 - 105 Datensätze des Klinikums Leverkusen lokal integriert; nicht belastbare
   Werte bleiben ausdrücklich nicht berechenbar.
 - Unbegrenzte Suchergebnisse mit höchstens 20 Einträgen pro Seite.
@@ -9,10 +11,21 @@ FishIT KH Checker v2.3.0 – Klinik-, Bild- und Bedienungsrelease
 - Produktbilder in Auswahl und Detailansicht rund 30 Prozent größer.
 - Gekochte Nudeln, Reis und Kartoffeln besitzen gebündelte Offline-Bilder.
 - Eigene Produkte lassen sich im manuellen Bereich mit Foto lokal speichern.
+- Fehlende Katalogbilder können direkt am Produkt fotografiert, lokal gespeichert
+  und bei späteren Suchen wieder angezeigt werden.
 - Selbst abgewogene Portionen, Riegel, Stücke und Scheiben werden sofort und
   dauerhaft zur Standard-Berechnungseinheit des konkreten Produkts.
+- Diese persönliche Serving-Kalibrierung gilt auch für Klinikprodukte mit
+  belastbarem KH-Wert pro 100 g.
 - Kilogramm wurde aus dem Einheiten-Picker entfernt; Kilogramm-Suchangaben
   werden intern verlustfrei in Gramm übernommen.
+- Optionales Diabetikerprofil mit sieben lückenlosen, editierbaren Zeitsegmenten
+  für persönliches KH-Insulin-Verhältnis, Korrekturfaktor und Zielblutzucker.
+- Sofortige, getrennte Anzeige von KH-, Korrektur- und Gesamtbolus; eine
+  Korrektur ist auch ohne Mahlzeitenberechnung möglich und wird nicht negativ.
+- Zwei umschaltbare Designs: „Bunt & Comic“ als neuer Standard und eine
+  modernisierte ruhige Ansicht. Die Blutzuckereingabe wird im Comicmodus als
+  kontrastreicher roter Blutfleck hervorgehoben.
 
 Suche, Klinikdaten, eigene Produkte, Bilder generischer Lebensmittel und
 Berechnung funktionieren nach der Installation offline. Optionale Bilder von
