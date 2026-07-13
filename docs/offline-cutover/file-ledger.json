@@ -1,0 +1,52 @@
+{
+  "document": "kh-checker-offline-cutover-file-ledger",
+  "version": "1.0.0",
+  "generatedAtUtc": "2026-07-13T17:43:15Z",
+  "repository": "karlokarate/kannalles1",
+  "branch": "agent/offline-sqlite-cutover",
+  "parentCommit": "30c434019bc9ea62b3e2f45c0be3e384f2b6be59",
+  "policy": {
+    "hardCutover": true,
+    "compatibilityLayers": false,
+    "deleteOnlyAfterReplacement": true,
+    "algorithmCherryPickAllowed": true,
+    "architectureCherryPickAllowed": false
+  },
+  "entries": [
+    {"paths":["Catalog/**"],"decision":"KEEP","owner":"forge","reason":"Production-v1 artifact, generated codec/search SSOT and provenance"},
+    {"paths":["src/lib/catalog/catalogDomain.ts","src/lib/catalog/catalogErrors.ts"],"decision":"CREATE","owner":"atlas","reason":"Bottom domain boundary"},
+    {"paths":["src/lib/catalog/catalogProtocol.ts","src/lib/catalog/catalogClient.ts","src/lib/catalog/catalog.worker.ts"],"decision":"REWRITE","owner":"forge","reason":"Catalog-native protocol plus true A/B lifecycle"},
+    {"paths":["src/lib/catalog/catalogManifest.ts","src/lib/catalog/catalogProjection.ts","src/lib/catalog/catalogSlots.ts","src/lib/catalog/catalogInstaller.ts"],"decision":"CREATE","owner":"forge","reason":"Manifest, lossless projection and atomic installer"},
+    {"paths":["src/lib/resolution/**"],"decision":"CREATE","owner":"helix","reason":"New pure resolver modules"},
+    {"paths":["src/lib/resolver.ts","src/lib/resolver.test.ts"],"decision":"CHERRY_PICK_ALGORITHMS_THEN_DELETE","owner":"helix","reason":"Do not patch mixed legacy architecture"},
+    {"paths":["src/lib/calibration.ts","src/lib/calibration.test.ts","src/lib/parser.ts","src/lib/baseFoods.ts"],"decision":"KEEP_AND_ADAPT","owner":"helix","reason":"Useful deterministic domain behavior"},
+    {"paths":["src/App.tsx"],"decision":"REWRITE","owner":"lumen","reason":"Remove API, gateway, ranking and build-transform bindings"},
+    {"paths":["src/app/**","src/lib/settings.ts","src/lib/userDataStore.ts"],"decision":"CREATE","owner":"lumen","reason":"Catalog-native UI and local data boundaries"},
+    {"paths":["src/lib/storage.ts","src/lib/storage.test.ts","src/types.ts"],"decision":"SPLIT_THEN_DELETE","owner":"lumen","reason":"Mixed API cache, credentials and monolithic transport types"},
+    {"paths":["src/main.tsx","src/styles.css","src/lib/searchState.ts"],"decision":"REWRITE_OR_ADAPT","owner":"lumen","reason":"Bind rebuilt app and catalog vocabulary"},
+    {"paths":["src/offline-catalog.css","scripts/offline-app-transform.mjs"],"decision":"DELETE","owner":"lumen","reason":"CSS concealment and source rewriting are forbidden"},
+    {"paths":["src/lib/api.ts","src/lib/api.test.ts","src/lib/apiGovernor.ts","src/lib/apiGovernor.test.ts","src/lib/gatewayUrl.ts","src/lib/aiClient.ts","src/lib/aiClient.test.ts"],"decision":"DELETE_AFTER_REPLACEMENT","owner":"sentinel","reason":"Online product and remote parsing tree"},
+    {"paths":["api/**","server/**","deploy/search-index/**","src/generated/**","server/generated/**","generated-tests/**","contracts/generated/**","contracts/source/**","docs/api/**","docs/generated/**"],"decision":"DELETE_AFTER_DEPENDENCY_SCAN","owner":"sentinel","reason":"Gateway/OpenAPI/generated online product authority"},
+    {"paths":["orval.config.ts","redocly.yaml","scripts/emit-openapi.mjs","scripts/generate-api.mjs","scripts/write-generated-adapters.mjs","scripts/write-generated-contract-test.mjs","scripts/write-generation-manifest.mjs","scripts/verify-generated-artifacts.mjs","scripts/check-generated-drift.mjs"],"decision":"DELETE_AFTER_DEPENDENCY_SCAN","owner":"sentinel","reason":"Obsolete gateway generation toolchain"},
+    {"paths":["contracts/critical-fields.contract.json","contracts/core-v2/contracts/critical-fields.contract.json","contracts/core-v2/contracts/unit-resolution.contract.json"],"decision":"KEEP_AND_SYNC","owner":"atlas","reason":"User-critical unit and calculation semantics"},
+    {"paths":["contracts/core-v2/contracts/search-execution.contract.json","contracts/core-v2/contracts/off-account.contract.json","contracts/core-v2/reference/target-types.ts"],"decision":"REWRITE","owner":"atlas","reason":"Remove API aliases and express hard cutover"},
+    {"paths":["contracts/core-v2/implementation/migration-plan.json"],"decision":"OVERRIDE_OR_DELETE","owner":"atlas","reason":"This plan is the single implementation authority"},
+    {"paths":["e2e/**","playwright.config.ts"],"decision":"REWRITE","owner":"sentinel","reason":"Use actual built DB/WASM/OPFS without catalogClient mocks"},
+    {"paths":[".github/workflows/build-deploy-pages.yml","scripts/verify-pages-build.mjs","scripts/validate-workflow.mjs","vite.config.ts","package.json","package-lock.json"],"decision":"REWRITE_AND_CLEAN","owner":"sentinel","reason":"Manifest-derived identity, truthful browser support and quality gates"},
+    {"paths":["scripts/validate-catalog-artifacts.py","scripts/ensure-sqlite-runtime.mjs"],"decision":"KEEP_AND_HARDEN","owner":"sentinel","reason":"Strong artifact/runtime validation foundation"},
+    {"paths":["knip.json","dependency-cruiser.config.cjs"],"decision":"CREATE","owner":"sentinel","reason":"Dead-code and architecture-boundary gates"}
+  ],
+  "validation": {
+    "requiredForDelete": [
+      "replacement integrated",
+      "tests green",
+      "no remaining imports",
+      "owner approval"
+    ],
+    "openQuestions": [
+      "Measured minimum browser versions",
+      "Final image cache boundary",
+      "Exact deletion timing for server/generated tree"
+    ]
+  }
+}
