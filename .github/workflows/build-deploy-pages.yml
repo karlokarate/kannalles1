@@ -60,6 +60,15 @@ jobs:
           tail -n 160 build-output.log
           exit "$status"
 
+      - name: Upload compiler log on failure
+        if: failure()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
+        with:
+          name: offline-build-output
+          path: build-output.log
+          if-no-files-found: error
+          retention-days: 3
+
       - name: Verify offline runtime artifact
         shell: bash
         run: |
