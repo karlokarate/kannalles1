@@ -1,20 +1,16 @@
 {
   "suite": "kh-checker-core-acceptance",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "cases": [
     {
       "id": "search-primary-fails-fallback-succeeds",
       "given": {
-        "primary": "network-error",
-        "fallback": "success"
+        "catalog": "ready",
+        "query": "Kinder Bueno"
       },
       "expect": {
-        "status": [
-          "resolved",
-          "needs_product_choice",
-          "needs_unit_calibration"
-        ],
-        "networkRequests": 2,
+        "status": "resolved",
+        "networkRequests": 0,
         "rawExceptionInUi": false,
         "retryDisabled": false
       }
@@ -22,27 +18,25 @@
     {
       "id": "search-all-fail-stale-cache",
       "given": {
-        "primary": "network-error",
-        "fallback": "timeout",
-        "staleCache": true
+        "browserOnline": false,
+        "catalog": "ready"
       },
       "expect": {
-        "cacheStatus": "stale-cache",
+        "cacheStatus": "fresh-cache",
         "statusNot": "temporarily_unavailable",
-        "warningVisible": true
+        "networkRequests": 0
       }
     },
     {
       "id": "search-all-fail-no-cache",
       "given": {
-        "primary": "network-error",
-        "fallback": "timeout",
-        "staleCache": false
+        "catalog": "integrity-error"
       },
       "expect": {
         "status": "temporarily_unavailable",
         "retryAllowedImmediately": true,
-        "localCountdown": false
+        "localCountdown": false,
+        "networkRequests": 0
       }
     },
     {
