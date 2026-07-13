@@ -1,6 +1,6 @@
 {
   "contract": "kh-checker-search-execution",
-  "version": "2.2.0",
+  "version": "3.0.0",
   "input": {
     "rawInput": "string",
     "canonicalQuery": "string",
@@ -8,6 +8,10 @@
       "api",
       "clinic"
     ],
+    "sourceModeCompatibility": {
+      "api": "deprecated_internal_name_for_offline_catalog_until_next_domain_schema_major",
+      "networkProductAccess": false
+    },
     "requestedPageSize": [
       10,
       15,
@@ -21,53 +25,63 @@
       "rules": [
         "extract_amount_and_unit_before_product_search",
         "remove_amount_and_unit_tokens_from_product_query",
-        "apply_controlled_typo_corrections"
+        "apply_controlled_typo_corrections",
+        "never_call_remote_ai_parser"
       ]
     },
     {
       "order": 2,
-      "step": "query_cache",
+      "step": "catalog_readiness",
       "rules": [
-        "browser_cache_key_includes_runtime_lane_identity",
-        "gateway_cache_key_includes_effective_upstream_backend_identity",
-        "normalize_and_validate_direct_or_gateway_responses",
-        "return_fresh_hit_without_network"
+        "load_versioned_manifest_from_same_origin",
+        "reuse_verified_opfs_catalog_before_download",
+        "deduplicate_catalog_initialization",
+        "verify_size_sha256_application_id_user_version_schema_and_product_count_before_activation",
+        "never_activate_partial_or_unverified_catalog"
       ]
     },
     {
       "order": 3,
-      "step": "primary_search",
+      "step": "offline_search",
       "rules": [
-        "empty_gateway_selects_direct_search_a_licious",
-        "optional_personal_off_credentials_are_used_only_for_world_openfoodfacts_requests",
-        "configured_gateway_is_authoritative_for_the_whole_action",
-        "gateway_lane_uses_its_configured_search_backend"
+        "execute_contentless_fts5_query_inside_dedicated_worker",
+        "use_generated_runtime_ssot_for_fts_escaping_and_sql",
+        "sort_exact_name_then_prefix_then_contains_then_popularity_then_name_then_product_id",
+        "issue_zero_product_network_requests",
+        "return_empty_only_after_reachable_catalog_query"
       ]
     },
     {
       "order": 4,
-      "step": "single_fallback",
+      "step": "offline_product_resolution",
       "rules": [
-        "direct_lane_falls_back_once_to_open_food_facts_legacy",
-        "gateway_lane_owns_its_internal_fallback",
-        "maximum_total_search_requests_per_action_is_two"
+        "read_selected_product_from_same_sqlite_catalog",
+        "use_generated_gtin_and_rescue_codecs",
+        "decode_nutrition_basis_unit_evidence_and_image_key_from_generated_ssot",
+        "never_fan_out_product_detail_requests",
+        "never_replace_missing_barcode_with_unrelated_product"
       ]
     },
     {
       "order": 5,
-      "step": "stale_cache",
+      "step": "unit_resolution",
       "rules": [
-        "use_if_all_network_backends_failed",
-        "mark_as_stale_and_show_source_age"
+        "preserve_explicit_user_unit",
+        "prefer_user_calibration_for_matching_scope_and_unit",
+        "prefer_proven_catalog_unit_over_serving_and_package",
+        "keep_package_and_mass_options_available",
+        "return_needs_unit_calibration_for_countable_unit_without_proven_weight",
+        "never_guess_piece_weight"
       ]
     },
     {
       "order": 6,
-      "step": "typed_failure",
+      "step": "typed_outcome",
       "rules": [
-        "never_propagate_raw_exception_to_render_tree",
+        "never_propagate_raw_worker_or_sqlite_exception_to_render_tree",
         "retry_button_remains_enabled",
-        "retry_after_is_advisory_only"
+        "no_local_cooldown",
+        "catalog_integrity_or_runtime_failure_maps_to_temporarily_unavailable"
       ]
     }
   ],
@@ -75,31 +89,31 @@
     "hits_and_auto_resolvable": "resolved",
     "hits_but_ambiguous": "needs_product_choice",
     "product_and_nutrition_but_no_requested_unit_weight": "needs_unit_calibration",
-    "reachable_sources_with_no_hits": "not_found",
-    "no_source_and_no_cache": "temporarily_unavailable"
+    "reachable_catalog_with_no_hits": "not_found",
+    "catalog_missing_invalid_locked_or_unsupported": "temporarily_unavailable"
   },
   "networkBudgets": {
-    "offAccountVerification": {
+    "catalogManifestRequestsPerInitialization": {
       "maximum": 1,
-      "scope": "explicit settings action, not a search action"
-    },
-    "browserGatewayRequestsPerAction": {
-      "maximum": 1,
+      "scope": "same_origin_catalog_update_check",
       "hardLocalLock": false
     },
-    "browserDirectRequestsPerAction": {
-      "maximum": 2,
+    "catalogArtifactRequestsPerVersion": {
+      "maximum": 1,
+      "scope": "same_origin_download_only_when_version_or_hash_changed",
       "hardLocalLock": false
     },
     "searchRequestsPerAction": {
-      "maximum": 2,
-      "scope": "selected_runtime_lane",
+      "maximum": 0,
+      "scope": "product_network",
       "hardLocalLock": false
     },
     "selectedProductDetailRequests": {
-      "primaryMaximum": 1,
-      "conditionalFallbackMaximum": 1,
-      "condition": "selected_product_missing_required_nutrition_or_unit_evidence"
+      "maximum": 0,
+      "scope": "product_network"
+    },
+    "remoteAiRequestsPerAction": {
+      "maximum": 0
     }
   }
 }
