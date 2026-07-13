@@ -16,9 +16,8 @@ export default defineConfig({
   plugins: [
     react(),
     legacy({
-      // This explicit baseline is the intersection of the JS and CSS feature
-      // contract (including native flex-gap). Older browsers keep the static
-      // compatibility notice instead of receiving a falsely supported layout.
+      // This explicit baseline is retained for the general UI. The offline
+      // product catalog separately reports unsupported OPFS runtimes.
       targets: [
         'Chrome >= 84',
         'ChromeAndroid >= 84',
@@ -31,8 +30,6 @@ export default defineConfig({
         'core-js/proposals/global-this',
         'abortcontroller-polyfill/dist/polyfill-patch-fetch'
       ],
-      // One compatibility graph avoids a CSP-unsafe data: feature probe and
-      // also makes local/file-like wrappers deterministic across WebViews.
       renderModernChunks: false
     }),
     VitePWA({
@@ -72,6 +69,9 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,json}'],
+        // The catalog has its own manifest, checksum, installation and rollback
+        // lifecycle. Workbox must never treat it as immutable app-shell data.
+        globIgnores: ['catalog/**', 'vendor/sqlite/**'],
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/\/[^/?]+\.[^/?]+$/],
         cleanupOutdatedCaches: true,
