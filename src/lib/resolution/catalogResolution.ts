@@ -1,14 +1,13 @@
-export type CatalogBasis = 'mass' | 'volume';
+import type {
+  CatalogMeasure,
+  CatalogNutritionBasis,
+  CatalogProduct,
+  CatalogUnitEvidence,
+  CatalogUnitEvidenceSource,
+  CatalogUnitKind
+} from '../catalog/catalogDomain';
 
-export type CatalogCountedUnitKind = 'piece' | 'bar' | 'slice';
-
-export type CatalogUnitKind =
-  | 'none'
-  | 'mass'
-  | 'volume'
-  | 'portion'
-  | CatalogCountedUnitKind
-  | 'package';
+type CountedUnitKind = Extract<CatalogUnitKind, 'piece' | 'bar' | 'slice'>;
 
 export type RequestedUnit =
   | 'g'
@@ -20,49 +19,13 @@ export type RequestedUnit =
   | 'portion'
   | 'package';
 
-export type CatalogUnitEvidenceSource =
-  | 'manufacturer-serving'
-  | 'explicit-serving-count'
-  | 'explicit-multipack-quantity';
-
-export interface CatalogMeasure {
-  baseValue: number;
-  basis: CatalogBasis;
-}
-
-/**
- * Structured evidence decoded from the production SQLite catalog.
- * No source text is parsed in this layer.
- */
-export interface StructuredCatalogUnitEvidence extends CatalogMeasure {
-  unitKind: Exclude<CatalogUnitKind, 'none' | 'mass' | 'volume' | 'package'>;
-  source: CatalogUnitEvidenceSource;
-}
-
-export interface CatalogResolutionProduct {
-  id: string | number;
-  displayName: string;
-  brand: string | null;
-  carbohydratesPer100: number;
-  carbohydrateBasis: CatalogBasis;
-  defaultUnitKind: CatalogUnitKind;
-  manufacturerServing: CatalogMeasure | null;
-  productQuantity: CatalogMeasure | null;
-  unitEvidence: StructuredCatalogUnitEvidence | null;
-  hasQualityErrors?: boolean;
-}
-
 export type CalibrationScope =
   | 'catalog-product'
   | 'barcode'
   | 'exact-product'
   | 'generic-food';
 
-/**
- * A calibration must already be identity-matched by the local user-data store.
- * Only its measured weight is consumed; stored carbohydrate snapshots are never
- * accepted as calculation authority.
- */
+/** Identity matching is owned by the local user-data store. */
 export interface MatchingUnitCalibration {
   calibrationId: string;
   scope: CalibrationScope;
@@ -79,21 +42,20 @@ export interface CatalogUnitRequest {
   unitExplicit: boolean;
 }
 
+/** Catalog evidence values are Atlas' frozen vocabulary without aliases. */
 export type ResolvedUnitSource =
-  | 'user-calibration'
-  | 'catalog-explicit-serving-count'
-  | 'catalog-explicit-multipack'
-  | 'manufacturer-serving'
-  | 'product-quantity'
-  | 'direct-mass'
-  | 'direct-volume'
+  | CatalogUnitEvidenceSource
+  | 'user_calibration'
+  | 'product_quantity'
+  | 'direct_mass'
+  | 'direct_volume'
   | 'unresolved';
 
 export interface ResolvedUnitOption {
   id: string;
   unit: RequestedUnit;
   label: string;
-  basis: CatalogBasis;
+  basis: CatalogNutritionBasis;
   /** Grams for mass-based options and millilitres for volume-based options. */
   baseValue: number | null;
   source: ResolvedUnitSource;
@@ -132,17 +94,22 @@ export interface CatalogCarbohydrateCalculation {
   unit: RequestedUnit;
   unitBaseValue: number | null;
   provenance: {
-    productId: string;
+    productId: number;
     optionId: string | null;
     source: ResolvedUnitSource | null;
-    basis: CatalogBasis;
+    basis: CatalogNutritionBasis;
   };
 }
 
 export interface CatalogEligibility {
   eligible: boolean;
   errors: Array<'missing-name' | 'invalid-carbohydrates'>;
-  warnings: Array<'quality-errors-present' | 'invalid-serving-ignored' | 'invalid-product-quantity-ignored' | 'invalid-unit-evidence-ignored'>;
+  warnings: Array<
+    | 'quality-errors-present'
+    | 'invalid-serving-ignored'
+    | 'invalid-product-quantity-ignored'
+    | 'invalid-unit-evidence-ignored'
+  >;
 }
 
 const UNIT_LABELS: Record<RequestedUnit, string> = {
@@ -164,13 +131,13 @@ const SCOPE_PRIORITY: Record<CalibrationScope, number> = {
 };
 
 const SOURCE_PRIORITY: Record<ResolvedUnitSource, number> = {
-  'user-calibration': 10,
-  'catalog-explicit-serving-count': 20,
-  'catalog-explicit-multipack': 30,
-  'manufacturer-serving': 60,
-  'product-quantity': 80,
-  'direct-mass': 100,
-  'direct-volume': 100,
+  user_calibration: 10,
+  explicit_serving_count: 20,
+  explicit_multipack_quantity: 30,
+  manufacturer_serving: 60,
+  product_quantity: 80,
+  direct_mass: 100,
+  direct_volume: 100,
   unresolved: 5
 };
 
@@ -182,7 +149,7 @@ function isFinitePositive(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
 
-function isCountedUnit(unit: CatalogUnitKind | RequestedUnit): unit is CatalogCountedUnitKind {
+function isCountedUnit(unit: CatalogUnitKind | RequestedUnit): unit is CountedUnitKind {
   return unit === 'piece' || unit === 'bar' || unit === 'slice';
 }
 
@@ -190,66 +157,81 @@ function isCalibratableUnit(unit: RequestedUnit): unit is MatchingUnitCalibratio
   return isCountedUnit(unit) || unit === 'portion';
 }
 
-function requestedUnitForCatalogKind(kind: CatalogUnitKind): RequestedUnit | null {
+function requestedUnitForCatalogKind(kind: CatalogUnitKind): RequestedUnit {
   if (kind === 'mass') return 'g';
   if (kind === 'volume') return 'ml';
-  if (kind === 'none') return null;
   return kind;
 }
 
-function measureIsValid(measure: CatalogMeasure | null, expectedBasis?: CatalogBasis): boolean {
-  if (!measure || !isFinitePositive(measure.baseValue) || measure.baseValue > MAX_TOTAL_BASE_VALUE) return false;
+function measureIsValid(
+  measure: CatalogMeasure | null,
+  expectedBasis?: CatalogNutritionBasis
+): boolean {
+  if (!measure || !isFinitePositive(measure.value) || measure.value > MAX_TOTAL_BASE_VALUE) {
+    return false;
+  }
   return expectedBasis === undefined || measure.basis === expectedBasis;
 }
 
-function unitEvidenceIsValid(evidence: StructuredCatalogUnitEvidence | null, expectedBasis: CatalogBasis): boolean {
-  if (!evidence || !measureIsValid(evidence, expectedBasis)) return false;
-  if (evidence.unitKind === 'portion') {
-    return evidence.source === 'manufacturer-serving'
-      && evidence.baseValue <= MAX_COUNTED_UNIT_WEIGHT_G;
+function unitEvidenceIsValid(
+  evidence: CatalogUnitEvidence | null,
+  expectedBasis: CatalogNutritionBasis
+): boolean {
+  if (!evidence || evidence.proven !== true || !measureIsValid(evidence, expectedBasis)) {
+    return false;
   }
-  return isCountedUnit(evidence.unitKind)
-    && evidence.source !== 'manufacturer-serving'
+  if (evidence.kind === 'portion') {
+    return evidence.source === 'manufacturer_serving'
+      && evidence.value <= MAX_COUNTED_UNIT_WEIGHT_G;
+  }
+  return isCountedUnit(evidence.kind)
+    && evidence.countability === 'countable'
+    && evidence.source !== 'manufacturer_serving'
     && evidence.basis === 'mass'
-    && evidence.baseValue <= MAX_COUNTED_UNIT_WEIGHT_G;
+    && evidence.value <= MAX_COUNTED_UNIT_WEIGHT_G;
 }
 
-function carbohydratesAreValid(value: number, basis: CatalogBasis): boolean {
+function carbohydratesAreValid(value: number, basis: CatalogNutritionBasis): boolean {
   if (!Number.isFinite(value) || value < 0) return false;
   return basis === 'mass' ? value <= 100 : value <= 200;
 }
 
-export function catalogProductEligibility(product: CatalogResolutionProduct): CatalogEligibility {
+export function catalogProductEligibility(product: CatalogProduct): CatalogEligibility {
   const errors: CatalogEligibility['errors'] = [];
   const warnings: CatalogEligibility['warnings'] = [];
   if (!product.displayName.trim()) errors.push('missing-name');
-  if (!carbohydratesAreValid(product.carbohydratesPer100, product.carbohydrateBasis)) {
+  if (!carbohydratesAreValid(product.carbohydratesPer100, product.nutritionBasis)) {
     errors.push('invalid-carbohydrates');
   }
   if (product.hasQualityErrors) warnings.push('quality-errors-present');
-  if (product.manufacturerServing && !measureIsValid(product.manufacturerServing, product.carbohydrateBasis)) {
+  if (product.manufacturerServing && !measureIsValid(product.manufacturerServing, product.nutritionBasis)) {
     warnings.push('invalid-serving-ignored');
   }
-  if (product.productQuantity && !measureIsValid(product.productQuantity, product.carbohydrateBasis)) {
+  if (product.productQuantity && !measureIsValid(product.productQuantity, product.nutritionBasis)) {
     warnings.push('invalid-product-quantity-ignored');
   }
-  if (product.unitEvidence && !unitEvidenceIsValid(product.unitEvidence, product.carbohydrateBasis)) {
+  if (product.provenUnit && !unitEvidenceIsValid(product.provenUnit, product.nutritionBasis)) {
     warnings.push('invalid-unit-evidence-ignored');
   }
   return { eligible: errors.length === 0, errors, warnings };
 }
 
-/** Preserve the SQLite order exactly; this layer only removes ineligible rows. */
-export function filterEligibleCatalogProducts<T extends CatalogResolutionProduct>(products: readonly T[]): T[] {
+/** Preserve SQLite order exactly; this layer only removes ineligible rows. */
+export function filterEligibleCatalogProducts<T extends CatalogProduct>(products: readonly T[]): T[] {
   return products.filter((product) => catalogProductEligibility(product).eligible);
 }
 
-function deterministicId(unit: RequestedUnit, source: ResolvedUnitSource, baseValue: number | null): string {
-  const value = baseValue === null ? 'unknown' : String(baseValue);
-  return `${unit}:${source}:${value}`;
+function deterministicId(
+  unit: RequestedUnit,
+  source: ResolvedUnitSource,
+  baseValue: number | null
+): string {
+  return `${unit}:${source}:${baseValue === null ? 'unknown' : String(baseValue)}`;
 }
 
-function makeOption(input: Omit<ResolvedUnitOption, 'id' | 'label' | 'priority' | 'recommended'>): ResolvedUnitOption {
+function makeOption(
+  input: Omit<ResolvedUnitOption, 'id' | 'label' | 'priority' | 'recommended'>
+): ResolvedUnitOption {
   return {
     ...input,
     id: deterministicId(input.unit, input.source, input.baseValue),
@@ -267,7 +249,9 @@ function calibrationWeight(calibration: MatchingUnitCalibration): number | null 
   return weight <= MAX_COUNTED_UNIT_WEIGHT_G ? weight : null;
 }
 
-function selectCalibration(calibrations: readonly MatchingUnitCalibration[]): MatchingUnitCalibration | null {
+function selectCalibration(
+  calibrations: readonly MatchingUnitCalibration[]
+): MatchingUnitCalibration | null {
   return [...calibrations]
     .filter((item) => calibrationWeight(item) !== null)
     .sort((a, b) => {
@@ -289,13 +273,10 @@ function addUnique(options: ResolvedUnitOption[], option: ResolvedUnitOption): v
   if (!duplicate) options.push(option);
 }
 
-function sourceForCatalogEvidence(source: CatalogUnitEvidenceSource): ResolvedUnitSource {
-  if (source === 'explicit-serving-count') return 'catalog-explicit-serving-count';
-  if (source === 'explicit-multipack-quantity') return 'catalog-explicit-multipack';
-  return 'manufacturer-serving';
-}
-
-function unresolvedOption(unit: RequestedUnit, basis: CatalogBasis): ResolvedUnitOption {
+function unresolvedOption(
+  unit: RequestedUnit,
+  basis: CatalogNutritionBasis
+): ResolvedUnitOption {
   return makeOption({
     unit,
     basis,
@@ -308,7 +289,10 @@ function unresolvedOption(unit: RequestedUnit, basis: CatalogBasis): ResolvedUni
   });
 }
 
-function orderOptions(options: ResolvedUnitOption[], selected: ResolvedUnitOption | null): ResolvedUnitOption[] {
+function orderOptions(
+  options: ResolvedUnitOption[],
+  selected: ResolvedUnitOption | null
+): ResolvedUnitOption[] {
   if (selected) selected.recommended = true;
   const group = (option: ResolvedUnitOption): number => {
     if (option.recommended) return -1;
@@ -326,12 +310,12 @@ function orderOptions(options: ResolvedUnitOption[], selected: ResolvedUnitOptio
 }
 
 export function resolveCatalogUnits(
-  product: CatalogResolutionProduct,
+  product: CatalogProduct,
   request: CatalogUnitRequest,
   calibrations: readonly MatchingUnitCalibration[] = []
 ): CatalogUnitResolution {
   const options: ResolvedUnitOption[] = [];
-  const basis = product.carbohydrateBasis;
+  const basis = product.nutritionBasis;
 
   const selectedCalibration = selectCalibration(calibrations);
   if (basis === 'mass' && selectedCalibration) {
@@ -341,7 +325,7 @@ export function resolveCatalogUnits(
         unit: selectedCalibration.unit,
         basis: 'mass',
         baseValue: value,
-        source: 'user-calibration',
+        source: 'user_calibration',
         smallestEdibleUnit: isCountedUnit(selectedCalibration.unit),
         note: selectedCalibration.measuredCount >= 2
           ? `Persönlich kalibriert aus ${selectedCalibration.measuredCount} gemeinsam gewogenen Einheiten.`
@@ -350,26 +334,24 @@ export function resolveCatalogUnits(
     }
   }
 
-  if (unitEvidenceIsValid(product.unitEvidence, basis) && product.unitEvidence) {
-    const unit = requestedUnitForCatalogKind(product.unitEvidence.unitKind);
-    if (unit) {
-      addUnique(options, makeOption({
-        unit,
-        basis: product.unitEvidence.basis,
-        baseValue: product.unitEvidence.baseValue,
-        source: sourceForCatalogEvidence(product.unitEvidence.source),
-        smallestEdibleUnit: isCountedUnit(unit),
-        note: 'Bewiesene kleinste Einheit aus strukturierten Katalogfeldern.'
-      }));
-    }
+  if (unitEvidenceIsValid(product.provenUnit, basis) && product.provenUnit) {
+    const unit = requestedUnitForCatalogKind(product.provenUnit.kind);
+    addUnique(options, makeOption({
+      unit,
+      basis: product.provenUnit.basis,
+      baseValue: product.provenUnit.value,
+      source: product.provenUnit.source,
+      smallestEdibleUnit: product.provenUnit.smallestEdibleUnit,
+      note: 'Bewiesene Einheit aus strukturierten Katalogfeldern.'
+    }));
   }
 
   if (measureIsValid(product.manufacturerServing, basis) && product.manufacturerServing) {
     addUnique(options, makeOption({
       unit: 'portion',
       basis,
-      baseValue: product.manufacturerServing.baseValue,
-      source: 'manufacturer-serving',
+      baseValue: product.manufacturerServing.value,
+      source: 'manufacturer_serving',
       smallestEdibleUnit: false,
       note: 'Herstellerportion aus dem strukturierten Katalog.'
     }));
@@ -379,28 +361,36 @@ export function resolveCatalogUnits(
     addUnique(options, makeOption({
       unit: 'package',
       basis,
-      baseValue: product.productQuantity.baseValue,
-      source: 'product-quantity',
+      baseValue: product.productQuantity.value,
+      source: 'product_quantity',
       smallestEdibleUnit: false,
       note: 'Gesamtmenge der Verkaufspackung.'
     }));
   }
 
   if (basis === 'mass') {
-    addUnique(options, makeOption({ unit: 'g', basis, baseValue: 1, source: 'direct-mass', smallestEdibleUnit: false, note: 'Direkte Gewichtsberechnung.' }));
-    addUnique(options, makeOption({ unit: 'kg', basis, baseValue: 1_000, source: 'direct-mass', smallestEdibleUnit: false, note: 'Direkte Gewichtsberechnung.' }));
+    addUnique(options, makeOption({
+      unit: 'g', basis, baseValue: 1, source: 'direct_mass', smallestEdibleUnit: false,
+      note: 'Direkte Gewichtsberechnung.'
+    }));
+    addUnique(options, makeOption({
+      unit: 'kg', basis, baseValue: 1_000, source: 'direct_mass', smallestEdibleUnit: false,
+      note: 'Direkte Gewichtsberechnung.'
+    }));
   } else {
-    addUnique(options, makeOption({ unit: 'ml', basis, baseValue: 1, source: 'direct-volume', smallestEdibleUnit: false, note: 'Direkte Volumenberechnung.' }));
+    addUnique(options, makeOption({
+      unit: 'ml', basis, baseValue: 1, source: 'direct_volume', smallestEdibleUnit: false,
+      note: 'Direkte Volumenberechnung.'
+    }));
   }
 
-  const requestedUnit = request.unit;
-  const requestedExisting = options.filter((option) => option.unit === requestedUnit);
+  const requestedExisting = options.filter((option) => option.unit === request.unit);
   if (request.unitExplicit && requestedExisting.length === 0) {
-    addUnique(options, unresolvedOption(requestedUnit, basis));
+    addUnique(options, unresolvedOption(request.unit, basis));
   }
 
   const implicitDefault = requestedUnitForCatalogKind(product.defaultUnitKind);
-  if (!request.unitExplicit && implicitDefault && !options.some((option) => option.unit === implicitDefault)) {
+  if (!request.unitExplicit && !options.some((option) => option.unit === implicitDefault)) {
     addUnique(options, unresolvedOption(implicitDefault, basis));
   }
 
@@ -409,44 +399,54 @@ export function resolveCatalogUnits(
 
   if (request.unitExplicit) {
     selected = options
-      .filter((option) => option.unit === requestedUnit)
+      .filter((option) => option.unit === request.unit)
       .sort((a, b) => a.priority - b.priority)[0] ?? null;
     reason = 'explicit-unit-preserved';
-  } else if (implicitDefault && (isCountedUnit(implicitDefault) || implicitDefault === 'portion')) {
+  } else if (isCountedUnit(implicitDefault) || implicitDefault === 'portion') {
     selected = options
       .filter((option) => option.unit === implicitDefault)
       .sort((a, b) => a.priority - b.priority)[0] ?? null;
-    if (selected?.source === 'user-calibration') reason = 'calibration-preferred';
+    if (selected?.source === 'user_calibration') reason = 'calibration-preferred';
     else if (selected?.smallestEdibleUnit) reason = 'smallest-proven-unit';
-    else if (selected?.source === 'manufacturer-serving') reason = 'manufacturer-serving';
+    else if (selected?.source === 'manufacturer_serving') reason = 'manufacturer-serving';
   }
 
   selected ??= options
-    .filter((option) => option.source === 'user-calibration' && option.smallestEdibleUnit)
+    .filter((option) => option.source === 'user_calibration' && option.smallestEdibleUnit)
     .sort((a, b) => a.priority - b.priority)[0] ?? null;
-  if (selected?.source === 'user-calibration') reason = 'calibration-preferred';
+  if (selected?.source === 'user_calibration') reason = 'calibration-preferred';
 
   selected ??= options
     .filter((option) => option.smallestEdibleUnit && option.baseValue !== null)
-    .sort((a, b) => a.priority - b.priority || (a.baseValue ?? Infinity) - (b.baseValue ?? Infinity))[0] ?? null;
+    .sort((a, b) =>
+      a.priority - b.priority
+      || (a.baseValue ?? Number.POSITIVE_INFINITY) - (b.baseValue ?? Number.POSITIVE_INFINITY)
+    )[0] ?? null;
   if (selected?.smallestEdibleUnit) reason = 'smallest-proven-unit';
 
-  selected ??= options.find((option) => option.source === 'manufacturer-serving') ?? null;
-  if (selected?.source === 'manufacturer-serving') reason = 'manufacturer-serving';
+  selected ??= options.find((option) => option.source === 'manufacturer_serving') ?? null;
+  if (selected?.source === 'manufacturer_serving') reason = 'manufacturer-serving';
 
-  selected ??= options.find((option) => option.source === 'product-quantity') ?? null;
-  if (selected?.source === 'product-quantity') reason = 'product-quantity';
+  selected ??= options.find((option) => option.source === 'product_quantity') ?? null;
+  if (selected?.source === 'product_quantity') reason = 'product-quantity';
 
-  selected ??= options.find((option) => option.source === 'direct-mass' || option.source === 'direct-volume') ?? null;
-  if (selected && (selected.source === 'direct-mass' || selected.source === 'direct-volume')) reason = 'direct-basis';
+  selected ??= options.find((option) =>
+    option.source === 'direct_mass' || option.source === 'direct_volume'
+  ) ?? null;
+  if (selected && (selected.source === 'direct_mass' || selected.source === 'direct_volume')) {
+    reason = 'direct-basis';
+  }
 
-  const selectedNeedsCalibration = selected?.source === 'unresolved' && isCalibratableUnit(selected.unit);
+  const selectedNeedsCalibration = selected?.source === 'unresolved'
+    && isCalibratableUnit(selected.unit);
   const status: CatalogUnitResolutionStatus = selectedNeedsCalibration
     ? 'needs_unit_calibration'
     : selected !== null && selected.baseValue !== null
       ? 'resolved'
       : 'not_calculable';
-  if (selectedNeedsCalibration && selected && isCountedUnit(selected.unit)) reason = 'countable-weight-missing';
+  if (selectedNeedsCalibration && selected && isCountedUnit(selected.unit)) {
+    reason = 'countable-weight-missing';
+  }
 
   const ordered = orderOptions(options, selected);
   return {
@@ -458,16 +458,18 @@ export function resolveCatalogUnits(
 }
 
 export function calculateCatalogCarbohydrates(
-  product: CatalogResolutionProduct,
+  product: CatalogProduct,
   request: CatalogUnitRequest,
   resolution: CatalogUnitResolution
 ): CatalogCarbohydrateCalculation {
   if (!Number.isFinite(request.amount) || request.amount <= 0 || request.amount > MAX_REQUEST_AMOUNT) {
     throw new RangeError('amount must be finite, positive and within the calculation limit');
   }
-  const selected = resolution.options.find((option) => option.id === resolution.selectedOptionId) ?? null;
+  const selected = resolution.options.find((option) =>
+    option.id === resolution.selectedOptionId
+  ) ?? null;
   const baseValue = selected?.baseValue ?? null;
-  const basis = product.carbohydrateBasis;
+  const basis = product.nutritionBasis;
   const calculable = selected !== null
     && baseValue !== null
     && selected.basis === basis
@@ -491,7 +493,7 @@ export function calculateCatalogCarbohydrates(
     unit: selected?.unit ?? request.unit,
     unitBaseValue: baseValue,
     provenance: {
-      productId: String(product.id),
+      productId: product.productId,
       optionId: selected?.id ?? null,
       source: selected?.source ?? null,
       basis
