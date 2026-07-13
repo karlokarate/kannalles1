@@ -210,9 +210,11 @@ async function download(
       operation: 'download', activeSlot, catalogVersion: manifest.catalogVersion, details: { status: response.status }
     });
   }
-  const declared = response.headers.get('content-length');
   const bytes = new Uint8Array(await response.arrayBuffer());
-  if ((declared !== null && Number(declared) !== manifest.sizeBytes) || bytes.byteLength !== manifest.sizeBytes) {
+  // Content-Length describes the transferred representation and may differ
+  // from the decoded response body when the CDN applies content encoding.
+  // The received bytes and their SHA-256 are the catalog authority.
+  if (bytes.byteLength !== manifest.sizeBytes) {
     throw new CatalogFailure('CATALOG_SIZE_MISMATCH', 'Die Byte-Länge des SQLite-Katalogs passt nicht zum Manifest.', {
       operation: 'download', activeSlot, catalogVersion: manifest.catalogVersion,
       details: { expectedBytes: manifest.sizeBytes, actualBytes: bytes.byteLength }

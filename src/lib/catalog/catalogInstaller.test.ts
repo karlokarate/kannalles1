@@ -179,13 +179,13 @@ function rawManifest(value: CatalogManifest): Record<string, unknown> {
   };
 }
 
-function fetcher(value: CatalogManifest, bytes: Uint8Array): typeof fetch {
+function fetcher(value: CatalogManifest, bytes: Uint8Array, declaredLength = bytes.byteLength): typeof fetch {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith('manifest.json')) return new Response(JSON.stringify(rawManifest(value)), { status: 200 });
     return new Response(bytes.slice(), {
       status: 200,
-      headers: { 'content-length': String(bytes.byteLength) }
+      headers: { 'content-length': String(declaredLength) }
     });
   }) as unknown as typeof fetch;
 }
@@ -215,6 +215,24 @@ describe('catalog A/B installer', () => {
     expect(runtimePools.b.getFileNames()).toEqual([]);
     expect(store.state.activeSlot).toBe('a');
     expect(store.state.rollbackSlot).toBeNull();
+  });
+
+  it('uses decoded body bytes instead of a CDN transfer Content-Length', async () => {
+    const bytes = new TextEncoder().encode('catalog-v1');
+    const value = await manifest(bytes, '2026-07-13');
+    const store = new MemoryStore();
+    const runtimePools = pools();
+    const installer = new CatalogInstaller(runtimePools, {
+      store,
+      fetcher: fetcher(value, bytes, bytes.byteLength + 4096)
+    });
+
+    const result = await installer.bootstrap(
+      'https://example.test/catalog/manifest.json',
+      'https://example.test/catalog/'
+    );
+
+    expect(result.status).toMatchObject({ state: 'ready', activeSlot: 'a' });
   });
 
   it('keeps the previous validated slot authoritative when an update fails validation', async () => {
