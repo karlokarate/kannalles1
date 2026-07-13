@@ -42,6 +42,17 @@ export interface FavoriteProduct {
   addedAt: string;
 }
 
+export interface ManualProduct {
+  schemaVersion: 1;
+  id: string;
+  label: string;
+  carbohydratesPer100: number;
+  basis: 'mass' | 'volume';
+  imageDataUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type AppSection = 'calculator' | 'history' | 'favorites' | 'settings';
 
 export interface SearchSessionSnapshot {
@@ -60,6 +71,7 @@ interface UserDataEnvelope {
   calibrations: CatalogUnitCalibration[];
   history: CalculationHistoryEntry[];
   favorites: FavoriteProduct[];
+  manualProducts: ManualProduct[];
   session: SearchSessionSnapshot | null;
 }
 
@@ -67,6 +79,7 @@ export interface UserDataCounts {
   calibrations: number;
   history: number;
   favorites: number;
+  manualProducts: number;
 }
 
 const USER_DATA_KEY = 'kh-checker:offline-user-data:v2';
@@ -78,6 +91,7 @@ function emptyEnvelope(): UserDataEnvelope {
     calibrations: [],
     history: [],
     favorites: [],
+    manualProducts: [],
     session: null
   };
 }
@@ -136,6 +150,18 @@ function validFavorite(value: unknown): value is FavoriteProduct {
     && typeof value.addedAt === 'string';
 }
 
+function validManualProduct(value: unknown): value is ManualProduct {
+  if (!isRecord(value) || value.schemaVersion !== 1) return false;
+  const image = value.imageDataUrl;
+  return typeof value.id === 'string'
+    && typeof value.label === 'string' && value.label.trim().length > 0
+    && typeof value.carbohydratesPer100 === 'number' && Number.isFinite(value.carbohydratesPer100)
+    && value.carbohydratesPer100 >= 0 && value.carbohydratesPer100 <= 200
+    && (value.basis === 'mass' || value.basis === 'volume')
+    && (image === null || (typeof image === 'string' && /^data:image\/(?:jpeg|png|webp);base64,/.test(image) && image.length <= 350_000))
+    && typeof value.createdAt === 'string' && typeof value.updatedAt === 'string';
+}
+
 function validSession(value: unknown): value is SearchSessionSnapshot {
   if (!isRecord(value) || value.schemaVersion !== 2) return false;
   return typeof value.query === 'string'
@@ -163,6 +189,7 @@ function normalizeEnvelope(value: unknown): UserDataEnvelope {
       ? value.history.filter(validHistoryEntry).slice(0, MAX_HISTORY_ENTRIES)
       : [],
     favorites: Array.isArray(value.favorites) ? value.favorites.filter(validFavorite) : [],
+    manualProducts: Array.isArray(value.manualProducts) ? value.manualProducts.filter(validManualProduct).slice(0, 100) : [],
     session: validSession(value.session) ? value.session : null
   };
 }
@@ -283,6 +310,22 @@ export function listFavoriteProducts(): FavoriteProduct[] {
   return readEnvelope().favorites;
 }
 
+export function saveManualProduct(product: ManualProduct): ManualProduct | null {
+  if (!validManualProduct(product)) return null;
+  const envelope = readEnvelope();
+  envelope.manualProducts = [product, ...envelope.manualProducts.filter((item) => item.id !== product.id)].slice(0, 100);
+  writeEnvelope(envelope);
+  return product;
+}
+
+export function listManualProducts(): ManualProduct[] { return readEnvelope().manualProducts; }
+
+export function deleteManualProduct(id: string): void {
+  const envelope = readEnvelope();
+  envelope.manualProducts = envelope.manualProducts.filter((item) => item.id !== id);
+  writeEnvelope(envelope);
+}
+
 export function isFavoriteProduct(productId: number): boolean {
   return readEnvelope().favorites.some((item) => item.productId === productId);
 }
@@ -314,7 +357,8 @@ export function getUserDataCounts(): UserDataCounts {
   return {
     calibrations: envelope.calibrations.length,
     history: envelope.history.length,
-    favorites: envelope.favorites.length
+    favorites: envelope.favorites.length,
+    manualProducts: envelope.manualProducts.length
   };
 }
 

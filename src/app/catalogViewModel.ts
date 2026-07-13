@@ -21,6 +21,13 @@ function imageProductPath(code: string): string {
 
 /** Optional network image composition stays above the SQLite projection boundary. */
 export function catalogProductImageUrl(product: CatalogProduct): string | null {
+  const genericImages: Record<string, string> = {
+    'generic:pasta-cooked': 'generic-foods/pasta-cooked.png',
+    'generic:rice-cooked': 'generic-foods/rice-cooked.png',
+    'generic:potatoes-boiled': 'generic-foods/potatoes-boiled.png'
+  };
+  const genericImage = genericImages[product.code];
+  if (genericImage) return `${import.meta.env.BASE_URL}${genericImage}`;
   const image = product.imageReference;
   if (!image || !/^\d{8,14}$/.test(product.code)) return null;
   return `https://images.openfoodfacts.org/images/products/${imageProductPath(product.code)}/${image.key}.${image.revision}.${image.resolution}.jpg`;

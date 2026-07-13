@@ -30,6 +30,11 @@ export function SettingsScreen({
         <p>Keine Produkt-API, keine Zugangsdaten und kein versteckter Online-Fallback.</p>
       </header>
       <div className="settings-grid">
+        <fieldset className="settings-card settings-card--wide">
+          <legend>Katalogmodus</legend>
+          <label className="field"><span>Datenquellen bei der Produktsuche</span><select value={settings.clinicMode} onChange={(event: ChangeEvent<HTMLSelectElement>) => update('clinicMode', event.target.value as OfflineAppSettings['clinicMode'])} data-testid="clinic-mode-select"><option value="hybrid">Hybrid – Klinik bevorzugt + großer Katalog</option><option value="clinic-only">Klinik Only – nur Klinikum Leverkusen</option><option value="off">Klinik Off – nur großer SQLite-Katalog</option></select></label>
+          <p className="settings-note">Im Hybridmodus haben passende Klinikwerte Vorrang. „Klinik Off“ ignoriert die Klinikdatei vollständig; „Klinik Only“ macht alle 105 Klinikdatensätze durchsuch- und scrollbar.</p>
+        </fieldset>
         <fieldset className="settings-card">
           <legend>Berechnung</legend>
           <label className="field">
@@ -57,7 +62,7 @@ export function SettingsScreen({
         </fieldset>
         <section className="settings-card" aria-labelledby="local-data-title">
           <h2 id="local-data-title">Lokale Nutzerdaten</h2>
-          <dl className="data-counts"><div><dt>Kalibrierungen</dt><dd>{counts.calibrations}</dd></div><div><dt>Verlauf</dt><dd>{counts.history}</dd></div><div><dt>Favoriten</dt><dd>{counts.favorites}</dd></div></dl>
+          <dl className="data-counts"><div><dt>Kalibrierungen</dt><dd>{counts.calibrations}</dd></div><div><dt>Verlauf</dt><dd>{counts.history}</dd></div><div><dt>Favoriten</dt><dd>{counts.favorites}</dd></div><div><dt>Eigene Produkte</dt><dd>{counts.manualProducts}</dd></div></dl>
           <div className="button-stack"><button type="button" className="button button--secondary" onClick={onClearHistory}>Verlauf löschen</button><button type="button" className="button button--secondary" onClick={onClearSession}>Gespeicherte Ansicht löschen</button><button type="button" className="button button--danger" onClick={onClearAllUserData}>Alle lokalen Nutzerdaten löschen</button></div>
         </section>
       </div>

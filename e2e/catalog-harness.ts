@@ -63,21 +63,21 @@ export async function openCatalogApp(page: Page): Promise<void> {
 }
 
 export async function expectCatalogReady(page: Page): Promise<Locator> {
-  const status = catalogStatus(page);
-  await expect(status).toBeVisible({ timeout: 120_000 });
-  await expect(status).toHaveAttribute('data-state', /^(?:ready|unavailable)$/, { timeout: 120_000 });
-  if (await status.getAttribute('data-state') === 'unavailable') {
+  const shell = page.locator('.app-shell');
+  await expect(shell).toHaveAttribute('data-catalog-state', /^(?:ready|unavailable)$/, { timeout: 120_000 });
+  if (await shell.getAttribute('data-catalog-state') === 'unavailable') {
     const issue = page.getByTestId('catalog-issue');
     const summary = await issue.locator('summary').textContent().catch(() => null);
     if (summary) await issue.locator('summary').click();
     const details = await issue.innerText().catch(() => 'Keine technischen Details gerendert.');
     throw new Error(`Kataloginitialisierung fehlgeschlagen:\n${details}`);
   }
-  await expect(status).toHaveAttribute('data-persistent', 'true');
-  await expect(status).toHaveAttribute('data-product-count', String(EXPECTED_PRODUCT_COUNT));
-  await expect(status).toHaveAttribute('data-catalog-version', /\S+/);
-  await expect(status).toHaveAttribute('data-active-slot', /^(?:a|b)$/);
-  return status;
+  await expect(shell).toHaveAttribute('data-persistent', 'true');
+  await expect(shell).toHaveAttribute('data-product-count', String(EXPECTED_PRODUCT_COUNT));
+  await expect(shell).toHaveAttribute('data-catalog-version', /\S+/);
+  await expect(shell).toHaveAttribute('data-active-slot', /^(?:a|b)$/);
+  await expect(catalogStatus(page)).toBeHidden();
+  return shell;
 }
 
 export async function searchCatalog(page: Page, query: string): Promise<Locator> {

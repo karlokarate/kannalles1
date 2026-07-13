@@ -148,11 +148,17 @@ export function getOfflineCatalogStatus(): Promise<CatalogStatus> {
 export async function searchOfflineCatalog(
   query: string,
   limit = 20,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  offset = 0
 ): Promise<readonly CatalogSearchHit[]> {
   await initializeOfflineCatalog();
   if (signal?.aborted) throw abortFailure();
-  return post<readonly CatalogSearchHit[]>({ type: 'search', query, limit }, signal);
+  return post<readonly CatalogSearchHit[]>({
+    type: 'search',
+    query,
+    limit: Math.max(1, Math.min(20, Math.trunc(limit))),
+    offset: Math.max(0, Math.trunc(offset))
+  }, signal);
 }
 
 export async function getOfflineCatalogProduct(

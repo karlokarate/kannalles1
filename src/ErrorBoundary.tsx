@@ -18,7 +18,7 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     // Keep diagnostics available without sending them anywhere automatically.
-    console.error('KH Checker render error', error, info.componentStack);
+    console.error('FishIT KH Checker render error', error, info.componentStack);
   }
 
   render() {

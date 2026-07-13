@@ -121,6 +121,8 @@ test('zeigt Trefferbilder, nutzt Sprache für gekochten Reis und speichert eine 
   await expect(amountInput).toHaveValue('3');
 
   await searchCatalog(page, BUENO_GTIN);
+  await expect(page.getByTestId('catalog-calibration')).not.toHaveAttribute('open', '');
+  await page.getByTestId('catalog-calibration').locator('summary').click();
   await page.getByTestId('catalog-calibration-unit').selectOption('bar');
   await page.getByTestId('catalog-calibration-count').fill('10');
   await page.getByTestId('catalog-calibration-weight').fill('200');
@@ -128,6 +130,32 @@ test('zeigt Trefferbilder, nutzt Sprache für gekochten Reis und speichert eine 
   await searchCatalog(page, BUENO_GTIN);
   await expect(page.getByTestId('catalog-unit-select').locator('option:checked')).toHaveAttribute('data-unit-provenance', 'user-calibration');
   await expect(page.getByTestId('catalog-unit-select').locator('option:checked')).toHaveAttribute('data-unit-weight-g', '20');
+});
+
+test('priorisiert Klinikwerte im Hybridmodus und paginiert Klinik- sowie Gesamtkatalog', async ({ page }) => {
+  await openCatalogApp(page);
+  await expectCatalogReady(page);
+
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await expect(page.getByTestId('clinic-mode-select')).toHaveValue('hybrid');
+  await page.getByRole('button', { name: 'Rechner', exact: true }).click();
+  await searchCatalog(page, 'Grahambrot');
+  await expect(page.getByTestId('catalog-product')).toContainText('KLINIKWERT');
+
+  await searchCatalog(page, 'Reis');
+  await expect(page.getByTestId('catalog-search-results')).toHaveAttribute('data-result-count', '20');
+  const pagination = page.getByRole('navigation', { name: 'Weitere passende Produkte' });
+  await expect(pagination.getByRole('button', { name: 'Weiter →' })).toBeEnabled();
+  await pagination.getByRole('button', { name: 'Weiter →' }).click();
+  await expect(pagination).toContainText('Seite 2');
+  await expect(page.getByTestId('catalog-unit-select')).not.toContainText('Kilogramm');
+
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await page.getByTestId('clinic-mode-select').selectOption('clinic-only');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expectCatalogReady(page);
+  await expect(page.getByTestId('clinic-catalog-browser')).toContainText('105 Einträge');
+  await expect(page.getByTestId('clinic-catalog-browser').getByRole('button')).toHaveCount(22);
 });
 
 test('öffnet den bereits installierten Katalog offline und führt Text- sowie Barcodeabfragen aus', async ({ page, context }) => {

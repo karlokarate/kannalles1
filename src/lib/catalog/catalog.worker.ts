@@ -160,23 +160,24 @@ function requireDatabase(operation: 'search' | 'product_lookup'): CatalogDatabas
   return runtimeDatabase;
 }
 
-function searchCatalog(query: string, requestedLimit: number): readonly CatalogSearchHit[] {
+function searchCatalog(query: string, requestedLimit: number, requestedOffset: number): readonly CatalogSearchHit[] {
   const database = requireDatabase('search');
   const canonical = query.normalize('NFKC').trim();
   const ftsQuery = buildCatalogFtsQuery(canonical);
   if (!ftsQuery) return [];
   const limit = Math.max(1, Math.min(20, Math.trunc(requestedLimit) || 20));
+  const offset = Math.max(0, Math.trunc(requestedOffset) || 0);
   try {
     const resultRows = rows<CatalogSqlRow>(
       database,
-      CATALOG_SEARCH_SQL,
-      [ftsQuery, canonical, canonical, canonical, limit]
+      `${CATALOG_SEARCH_SQL} OFFSET ?`,
+      [ftsQuery, canonical, canonical, canonical, limit, offset]
     );
     return projectCatalogSearchRows(resultRows);
   } catch (error) {
     throw toCatalogFailure(error, 'CATALOG_QUERY_FAILED', 'Die lokale Produktsuche ist fehlgeschlagen.', {
       operation: 'search', activeSlot: status.activeSlot, catalogVersion: status.catalogVersion,
-      details: { resultLimit: limit }
+      details: { resultLimit: limit, resultOffset: offset }
     });
   }
 }
@@ -246,7 +247,7 @@ workerScope.addEventListener('message', (event: MessageEvent<CatalogWorkerReques
       } else if (request.type === 'status') {
         response = { id: request.id, ok: true, type: 'status', result: status };
       } else if (request.type === 'search') {
-        response = { id: request.id, ok: true, type: 'search', result: searchCatalog(request.query, request.limit) };
+        response = { id: request.id, ok: true, type: 'search', result: searchCatalog(request.query, request.limit, request.offset) };
       } else if (request.type === 'product') {
         response = { id: request.id, ok: true, type: 'product', result: findProduct(request.barcode) };
       } else {

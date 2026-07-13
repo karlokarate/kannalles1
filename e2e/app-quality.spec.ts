@@ -1,4 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
+import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import {
   collectForbiddenProductRequests,
@@ -34,6 +35,12 @@ test('deterministische manuelle Berechnung funktioniert ohne Produktnetzwerk', a
 
   await expect(label).toHaveValue('Testbrot');
   await expect(page.locator('.calculation-result')).toContainText(/40(?:[,.]0)?\s*g KH/);
+  await page.getByTestId('manual-product-photo').setInputFiles(fileURLToPath(new URL('../public-template/generic-foods/rice-cooked.png', import.meta.url)));
+  await expect(page.getByRole('status')).toContainText('Foto verkleinert');
+  await page.getByTestId('manual-product-save').click();
+  await expect(page.getByRole('heading', { name: 'Eigene Produkte' })).toBeVisible();
+  await expect(page.locator('.saved-manual-product')).toContainText('Testbrot');
+  await expect(page.locator('.saved-manual-product img')).toBeVisible();
   forbidden.assertNone();
 });
 

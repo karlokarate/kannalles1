@@ -465,10 +465,6 @@ export function resolveCatalogUnits(
       unit: 'g', basis, baseValue: 1, source: 'direct_mass', smallestEdibleUnit: false,
       note: 'Direkte Gewichtsberechnung.'
     }));
-    addUnique(options, makeOption({
-      unit: 'kg', basis, baseValue: 1_000, source: 'direct_mass', smallestEdibleUnit: false,
-      note: 'Direkte Gewichtsberechnung.'
-    }));
   } else {
     addUnique(options, makeOption({
       unit: 'ml', basis, baseValue: 1, source: 'direct_volume', smallestEdibleUnit: false,
@@ -476,7 +472,7 @@ export function resolveCatalogUnits(
     }));
   }
 
-  if (request.unitExplicit && !options.some((option) => option.unit === request.unit)) {
+  if (request.unitExplicit && request.unit !== 'kg' && !options.some((option) => option.unit === request.unit)) {
     addUnique(options, unresolvedOption(request.unit, basis));
   }
 

@@ -48,8 +48,8 @@ export default defineConfig({
         'icons/apple-touch-icon.png'
       ],
       manifest: {
-        name: 'KH Checker',
-        short_name: 'KH Checker',
+        name: 'FishIT KH Checker',
+        short_name: 'FishIT KH',
         description: 'Kohlenhydrate für Produkte und Mengen berechnen.',
         theme_color: '#138a55',
         background_color: '#f6f8f7',

@@ -16,9 +16,9 @@ if (lockJson.version !== version || lockJson.packages?.['']?.version !== version
 }
 
 const checks = [
-  ['README.md', `# KH Checker v${version}`],
-  ['README-ERST-LESEN.txt', `KH CHECKER v${version}`],
-  [`RELEASE-NOTES-v${version}.txt`, `KH Checker v${version}`],
+  ['README.md', `# FishIT KH Checker v${version}`],
+  ['README-ERST-LESEN.txt', `FishIT KH CHECKER v${version}`],
+  [`RELEASE-NOTES-v${version}.txt`, `FishIT KH Checker v${version}`],
   ['src/App.tsx', 'const APP_VERSION = __APP_VERSION__'],
   ['vite.config.ts', 'const appVersion = packageJson.version'],
   ['public-template/README-ERST-LESEN.html', 'v__KH_APP_VERSION__'],

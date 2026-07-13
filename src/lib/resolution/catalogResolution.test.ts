@@ -97,6 +97,7 @@ describe('structured catalog unit resolution', () => {
     expect(resolution.options.some((option) => option.unit === 'portion')).toBe(true);
     expect(resolution.options.some((option) => option.unit === 'package')).toBe(true);
     expect(resolution.options.some((option) => option.unit === 'g')).toBe(true);
+    expect(resolution.options.some((option) => option.unit === 'kg')).toBe(false);
   });
 
   it('keeps the smallest proven unit first when defaultUnitKind is portion', () => {

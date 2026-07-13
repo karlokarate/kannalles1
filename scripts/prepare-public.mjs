@@ -132,4 +132,4 @@ await replaceTokens(targetDir);
 if (versionTokenCount < 1) {
   throw new Error(`Unexpected public version token inventory: ${versionTokenCount}.`);
 }
-console.log(`Public assets prepared for KH Checker v${version}; catalog=production-v1.`);
+console.log(`Public assets prepared for FishIT KH Checker v${version}; catalog=production-v1.`);

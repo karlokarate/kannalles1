@@ -1,0 +1,19 @@
+FishIT KH Checker v2.3.0 – Klinik-, Bild- und Bedienungsrelease
+=========================================================
+
+- Drei Katalogmodi: Hybrid mit Klinikvorrang, Klinik Only und Klinik Off.
+- 105 Datensätze des Klinikums Leverkusen lokal integriert; nicht belastbare
+  Werte bleiben ausdrücklich nicht berechenbar.
+- Unbegrenzte Suchergebnisse mit höchstens 20 Einträgen pro Seite.
+- Bester Treffer wird sofort angezeigt und in den Bildschirmfokus gerückt.
+- Produktbilder in Auswahl und Detailansicht rund 30 Prozent größer.
+- Gekochte Nudeln, Reis und Kartoffeln besitzen gebündelte Offline-Bilder.
+- Eigene Produkte lassen sich im manuellen Bereich mit Foto lokal speichern.
+- Selbst abgewogene Portionen, Riegel, Stücke und Scheiben werden sofort und
+  dauerhaft zur Standard-Berechnungseinheit des konkreten Produkts.
+- Kilogramm wurde aus dem Einheiten-Picker entfernt; Kilogramm-Suchangaben
+  werden intern verlustfrei in Gramm übernommen.
+
+Suche, Klinikdaten, eigene Produkte, Bilder generischer Lebensmittel und
+Berechnung funktionieren nach der Installation offline. Optionale Bilder von
+Markenprodukten bleiben fehlertolerant und haben keinen Einfluss auf Werte.

@@ -102,6 +102,17 @@ describe('A/B catalog client protocol', () => {
     ]);
   });
 
+  it('forwards a pagination offset while capping each page at 20 results', async () => {
+    const client = await import('./catalogClient');
+    await client.searchOfflineCatalog('reis', 99, undefined, 40);
+    expect(FakeWorker.instances[0].requests.at(-1)).toMatchObject({
+      type: 'search',
+      query: 'reis',
+      limit: 20,
+      offset: 40
+    });
+  });
+
   it('exposes immediate retry and Atlas CatalogStatus without inventing a second status model', async () => {
     const client = await import('./catalogClient');
     await client.initializeOfflineCatalog();

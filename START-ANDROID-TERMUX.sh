@@ -17,7 +17,7 @@ fi
 export HOST="${HOST:-127.0.0.1}"
 export PORT="${PORT:-8787}"
 URL="http://127.0.0.1:$PORT"
-echo "Starte KH Checker unter $URL"
+echo "Starte FishIT KH Checker unter $URL"
 (
   sleep 2
   if command -v termux-open-url >/dev/null 2>&1; then

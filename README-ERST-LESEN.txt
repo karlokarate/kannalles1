@@ -1,7 +1,7 @@
-KH CHECKER v2.2.4
+FishIT KH CHECKER v2.3.0
 =================
 
-KH Checker ist eine installierbare Offline-Web-App. Suche, Nährwerte und
+FishIT KH Checker ist eine installierbare Offline-Web-App. Suche, Nährwerte und
 Berechnung verwenden ausschließlich den mitgelieferten SQLite-Produktkatalog.
 Ein API-Server, Gateway oder Benutzerkonto ist nicht erforderlich.
 

@@ -43,6 +43,7 @@ export type CatalogWorkerRequest =
       readonly type: 'search';
       readonly query: string;
       readonly limit: number;
+      readonly offset: number;
     }
   | {
       readonly id: number;
