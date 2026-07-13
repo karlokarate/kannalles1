@@ -1,8 +1,9 @@
 {
   "contract": "kh-checker-off-account-retirement",
-  "version": "2.0.0",
-  "scope": "offline SQLite product runtime",
+  "version": "3.0.0",
+  "scope": "hard-cutover offline SQLite product runtime",
   "runtimePolicy": {
+    "offAccountSettingExists": false,
     "productSearchUsesCredentials": false,
     "productLookupUsesCredentials": false,
     "searchALiciousEnabled": false,
@@ -11,16 +12,17 @@
     "gatewayEnabled": false,
     "remoteAiEnabled": false
   },
-  "migration": {
-    "legacySettingsMayContainCredentials": true,
-    "legacyCredentialsMustNeverBeReadForProductOperations": true,
-    "legacyCredentialsMustNeverBeTransmitted": true,
-    "legacyCredentialsShouldBeRemovedFromSettingsOnNextSchemaMigration": true,
-    "authenticationFunctionFailsClosed": true
+  "legacyCredentialDisposition": {
+    "importAllowed": false,
+    "readAllowed": false,
+    "validationAllowed": false,
+    "transmissionAllowed": false,
+    "runtimeCompatibilityAdapterAllowed": false,
+    "actionWhenEncountered": "delete_without_authentication_or_network_use"
   },
   "catalogUpdateTransport": {
     "sameOriginOnly": true,
-    "credentials": "same-origin-host-session-only",
+    "applicationManagedCredentials": false,
     "offAccountCredentialsUsed": false,
     "productQueryTermsTransmitted": false,
     "barcodesTransmitted": false
@@ -29,6 +31,7 @@
     "diagnosticsContainPassword": false,
     "catalogMetadataContainsCredentials": false,
     "errorObjectsContainPassword": false,
-    "buildTimeEnvironmentContainsUserCredentials": false
+    "buildTimeEnvironmentContainsUserCredentials": false,
+    "localUserDataContainsOffCredentials": false
   }
 }

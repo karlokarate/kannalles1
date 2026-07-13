@@ -1,92 +1,86 @@
 import { describe, expect, it } from 'vitest';
-import {
-  calibrationLookupKeys,
-  createPieceCalibration,
-  deriveGroupCalibration,
-  selectCalibration
-} from '../../../src/lib/calibration';
-import {
-  createSearchWorkflowState,
-  currentWorkflowIssue,
-  searchWorkflowReducer
-} from '../../../src/lib/searchState';
-import type { PieceCalibration } from '../../../src/types';
+import { catalogDiagnostics, CatalogFailure, toCatalogFailure } from '../../../src/lib/catalog/catalogErrors';
+import type { CatalogProduct, CatalogStatus, CatalogUnitEvidence } from '../../../src/lib/catalog/catalogDomain';
 
-describe('KH Checker core contracts', () => {
-  it('derives a deterministic unit weight and carbohydrate amount from group weighing', () => {
-    const result = deriveGroupCalibration(10, 24, 12, 72);
-    expect(result).not.toBeNull();
-    expect(result.unitWeightG).toBeCloseTo(2.4, 10);
-    expect(result.carbsPerUnitG).toBeCloseTo(1.728, 10);
-    expect(result.requestedTotalWeightG).toBeCloseTo(28.8, 10);
-    expect(result.requestedTotalCarbsG).toBeCloseTo(20.736, 10);
+const buenoUnit: CatalogUnitEvidence = {
+  kind: 'bar',
+  value: 21.5,
+  basis: 'mass',
+  source: 'explicit_multipack_quantity',
+  countability: 'countable',
+  smallestEdibleUnit: true,
+  proven: true
+};
+
+const bueno: CatalogProduct = {
+  productId: 1,
+  code: '4008400321622',
+  displayName: 'Kinder Bueno',
+  brand: 'Kinder',
+  carbohydratesPer100: 49.5,
+  nutritionBasis: 'mass',
+  nutritionSource: 'as_sold',
+  manufacturerServing: { value: 43, basis: 'mass' },
+  productQuantity: { value: 43, basis: 'mass' },
+  provenUnit: buenoUnit,
+  defaultUnitKind: 'bar',
+  image: null,
+  hasQualityErrors: false,
+  rankOrdinal: 1000
+};
+
+describe('catalog-native core boundary', () => {
+  it('represents the smallest proven edible unit without legacy API fields', () => {
+    expect(bueno.provenUnit).toEqual(buenoUnit);
+    expect(bueno.provenUnit?.value).toBe(21.5);
+    expect(bueno).not.toHaveProperty('serving_size');
+    expect(bueno).not.toHaveProperty('product_quantity');
+    expect(bueno).not.toHaveProperty('nutriments');
   });
 
-  it('never persists a package as a piece calibration', () => {
-    expect(createPieceCalibration({
-      productName: 'Kinder Bueno', unit: 'package', measuredCount: 1,
-      measuredTotalWeightG: 43
-    })).toBeNull();
-  });
-
-  it('builds calibration lookup keys from most to least specific', () => {
-    expect(calibrationLookupKeys({
-      productName: 'Salzstangen',
-      brand: 'Snack Day',
-      barcode: '12345678',
-      unit: 'piece',
-      allowGenericScope: true
-    })).toEqual([
-      'barcode:12345678|piece',
-      'exact:salzstangen|snack-day|piece',
-      'generic:salzstangen|piece'
-    ]);
-  });
-
-  it('selects the most specific and best measured calibration', () => {
-    const base = {
-      schemaVersion: 2 as const,
-      calibrationId: '',
-      scopeKey: '',
-      product: {
-        canonicalName: 'salzstangen',
-        displayName: 'Salzstangen',
-        brandCanonical: null,
-        barcode: null
-      },
-      unit: { kind: 'piece' as const, label: 'Stück', smallestEdibleUnit: true },
-      measurement: {
-        mode: 'group_weighing' as const,
-        measuredCount: 10,
-        measuredTotalWeightG: 24
-      },
-      derivedUnitWeightG: 2.4,
-      createdAt: '2026-01-01T00:00:00Z',
-      updatedAt: '2026-01-01T00:00:00Z',
-      active: true
+  it('keeps one verified slot as the only ready authority', () => {
+    const status: CatalogStatus = {
+      state: 'ready',
+      activeSlot: 'a',
+      catalogVersion: '2026-07-13',
+      productCount: 317579,
+      progress: null,
+      diagnostics: null,
+      retryAllowedImmediately: true
     };
+    expect(status.activeSlot).toBe('a');
+  });
 
-    const records: PieceCalibration[] = [
-      { ...base, calibrationId: 'generic', scope: 'generic_food', scopeKey: 'generic:salzstangen|piece' },
-      {
-        ...base,
-        calibrationId: 'barcode',
-        scope: 'barcode',
-        scopeKey: 'barcode:12345678|piece',
-        product: { ...base.product, barcode: '12345678' },
-        measurement: { ...base.measurement, measuredCount: 5, measuredTotalWeightG: 12 }
+  it('redacts credentials from messages, technical details and structured values', () => {
+    const failure = new CatalogFailure('CATALOG_MANIFEST_INVALID', 'token=visible-in-input', {
+      operation: 'manifest',
+      technical: 'Authorization: Bearer abc.def password=hunter2',
+      details: {
+        password: 'hunter2',
+        note: 'api_key=12345',
+        status: 401
       }
-    ];
-    expect(selectCalibration(records)?.calibrationId).toBe('barcode');
+    });
+
+    expect(failure.message).not.toContain('visible-in-input');
+    expect(failure.diagnostics.technical).not.toContain('abc.def');
+    expect(failure.diagnostics.technical).not.toContain('hunter2');
+    expect(failure.diagnostics.details).not.toHaveProperty('password');
+    expect(failure.diagnostics.details.note).toBe('api_key=[redacted]');
+    expect(failure.diagnostics.details.status).toBe(401);
   });
 
-  it('represents offline/configuration issues in the production state machine', () => {
-    const issue = {
-      kind: 'offline' as const,
-      title: 'Offline', message: 'Keine Netzwerkdaten verfügbar.', technical: 'offline',
-      attempts: [], occurredAt: '2026-07-12T00:00:00.000Z', retryLabel: 'Erneut prüfen'
-    };
-    const state = searchWorkflowReducer(createSearchWorkflowState(), { type: 'issue', issue });
-    expect(currentWorkflowIssue(state)).toEqual(issue);
+  it('preserves an existing CatalogFailure and wraps unknown failures', () => {
+    const existing = new CatalogFailure('CATALOG_OPEN_FAILED', 'Katalog konnte nicht geöffnet werden.', {
+      operation: 'open',
+      technical: 'sqlite open failed'
+    });
+    expect(toCatalogFailure(existing, 'CATALOG_UNKNOWN', 'ignored', { operation: 'open' })).toBe(existing);
+
+    const wrapped = toCatalogFailure(new Error('boom'), 'CATALOG_QUERY_FAILED', 'Suche fehlgeschlagen.', {
+      operation: 'search'
+    });
+    expect(catalogDiagnostics(wrapped)?.code).toBe('CATALOG_QUERY_FAILED');
+    expect(catalogDiagnostics(new Error('plain'))).toBeNull();
   });
 });
