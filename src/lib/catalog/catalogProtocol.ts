@@ -1,87 +1,80 @@
-export type CatalogBasis = 'mass' | 'volume';
+import type {
+  CatalogDiagnostics,
+  CatalogFailureCode,
+  CatalogProduct,
+  CatalogSearchHit,
+  CatalogStatus
+} from './catalogDomain';
 
-export type CatalogUnitKind =
-  | 'none'
-  | 'mass'
-  | 'volume'
-  | 'portion'
-  | 'piece'
-  | 'bar'
-  | 'slice'
-  | 'package';
-
-export type CatalogUnitSource =
-  | 'none'
-  | 'manufacturerServing'
-  | 'explicitServingCount'
-  | 'explicitMultipackQuantity';
-
-/** Normalized browser-facing form of catalog-manifest.v1.json. */
+/** Transport-only projection of the immutable production manifest. */
 export interface CatalogManifest {
-  contract: 'kh-checker-offline-catalog-production';
-  contractVersion: string;
-  catalogVersion: string;
-  generatedAtUtc: string;
-  filename: string;
-  sizeBytes: number;
-  sha256: string;
-  applicationId: number;
-  userVersion: number;
-  pageSize: number;
-  productCount: number;
-  brandCount: number;
-  codecFile: string;
-  imageDictionaryFile: string;
-  imageDictionarySha256: string;
-}
-
-/** Fully decoded domain projection returned by the SQLite worker. */
-export interface CatalogProductRecord {
-  code: string;
-  name: string;
-  brand: string | null;
-  carbohydratesPer100: number;
-  carbohydrateBasis: CatalogBasis;
-  carbohydrateSourcePrepared: boolean;
-  servingValue: number | null;
-  servingBasis: CatalogBasis | null;
-  productQuantityValue: number | null;
-  productQuantityBasis: CatalogBasis | null;
-  provenUnitValue: number | null;
-  provenUnitKind: CatalogUnitKind;
-  provenUnitSource: CatalogUnitSource;
-  provenUnitBasis: CatalogBasis | null;
-  defaultUnitKind: CatalogUnitKind;
-  imageUrl: string | null;
-  hasQualityErrors: boolean;
-  rankOrdinal: number;
-}
-
-export interface CatalogRuntimeStatus {
-  state: 'idle' | 'installing' | 'ready' | 'failed';
-  catalogVersion: string | null;
-  productCount: number | null;
-  persistent: boolean;
-  installedFromNetwork: boolean;
-  message: string | null;
+  readonly contract: 'kh-checker-offline-catalog-production';
+  readonly contractVersion: string;
+  readonly catalogVersion: string;
+  readonly generatedAtUtc: string;
+  readonly filename: string;
+  readonly sizeBytes: number;
+  readonly sha256: string;
+  readonly applicationId: number;
+  readonly userVersion: number;
+  readonly pageSize: number;
+  readonly productCount: number;
+  readonly brandCount: number;
+  readonly codecFile: string;
+  readonly runtimeTypescript: string;
+  readonly imageResolution: number;
+  readonly imageDictionaryFile: string;
+  readonly imageDictionarySha256: string;
+  readonly transportCompression: null;
+  readonly searchOrdering: string;
+  readonly resultLimitDefault: number;
 }
 
 export type CatalogWorkerRequest =
   | {
-      id: number;
-      type: 'init';
-      sqliteModuleUrl: string;
-      manifestUrl: string;
-      catalogUrl: string;
+      readonly id: number;
+      readonly type: 'initialize' | 'retry';
+      readonly sqliteModuleUrl: string;
+      readonly manifestUrl: string;
+      readonly catalogBaseUrl: string;
     }
-  | { id: number; type: 'search'; query: string; limit: number }
-  | { id: number; type: 'product'; barcode: string }
-  | { id: number; type: 'status' };
-
-export type CatalogWorkerResponse =
-  | { id: number; ok: true; result: unknown }
   | {
-      id: number;
-      ok: false;
-      error: { name: string; message: string; code: string };
+      readonly id: number;
+      readonly type: 'search';
+      readonly query: string;
+      readonly limit: number;
+    }
+  | {
+      readonly id: number;
+      readonly type: 'product';
+      readonly barcode: string;
+    }
+  | {
+      readonly id: number;
+      readonly type: 'status';
     };
+
+export type CatalogWorkerSuccess =
+  | { readonly id: number; readonly ok: true; readonly type: 'status'; readonly result: CatalogStatus }
+  | { readonly id: number; readonly ok: true; readonly type: 'search'; readonly result: readonly CatalogSearchHit[] }
+  | { readonly id: number; readonly ok: true; readonly type: 'product'; readonly result: CatalogProduct | null };
+
+export interface CatalogWorkerFailure {
+  readonly id: number;
+  readonly ok: false;
+  readonly error: {
+    readonly name: 'CatalogFailure';
+    readonly message: string;
+    readonly code: CatalogFailureCode;
+    readonly diagnostics: CatalogDiagnostics;
+  };
+}
+
+export interface CatalogWorkerStatusEvent {
+  readonly id: 0;
+  readonly ok: true;
+  readonly type: 'status-event';
+  readonly result: CatalogStatus;
+}
+
+export type CatalogWorkerResponse = CatalogWorkerSuccess | CatalogWorkerFailure | CatalogWorkerStatusEvent;

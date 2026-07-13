@@ -1,9 +1,6 @@
-import type {
-  CatalogProductRecord,
-  CatalogRuntimeStatus,
-  CatalogWorkerRequest,
-  CatalogWorkerResponse
-} from './catalogProtocol';
+import type { CatalogProduct, CatalogSearchHit, CatalogStatus } from './catalogDomain';
+import { CatalogFailure } from './catalogErrors';
+import type { CatalogWorkerRequest, CatalogWorkerResponse } from './catalogProtocol';
 
 type RequestWithoutId = CatalogWorkerRequest extends infer Request
   ? Request extends { id: number }
@@ -12,20 +9,24 @@ type RequestWithoutId = CatalogWorkerRequest extends infer Request
   : never;
 
 interface PendingRequest {
-  resolve: (value: unknown) => void;
-  reject: (reason?: unknown) => void;
-  requestType: CatalogWorkerRequest['type'];
-  signal?: AbortSignal;
+  readonly resolve: (value: unknown) => void;
+  readonly reject: (reason?: unknown) => void;
+  readonly signal?: AbortSignal;
   abort?: () => void;
 }
 
+type CatalogStatusListener = (status: CatalogStatus) => void;
+
 let worker: Worker | null = null;
 let nextRequestId = 1;
-let initializePromise: Promise<CatalogRuntimeStatus> | null = null;
+let initialization: Promise<CatalogStatus> | null = null;
 const pending = new Map<number, PendingRequest>();
+const statusListeners = new Set<CatalogStatusListener>();
 
-function abortError(): DOMException {
-  return new DOMException('Die lokale Datenbankanfrage wurde abgebrochen.', 'AbortError');
+function abortFailure(): CatalogFailure {
+  return new CatalogFailure('CATALOG_CANCELLED', 'Die lokale Kataloganfrage wurde abgebrochen.', {
+    operation: 'search'
+  });
 }
 
 function rejectAll(reason: unknown): void {
@@ -36,6 +37,23 @@ function rejectAll(reason: unknown): void {
   pending.clear();
 }
 
+function notifyStatus(status: CatalogStatus): void {
+  for (const listener of statusListeners) listener(status);
+}
+
+function reviveFailure(response: Extract<CatalogWorkerResponse, { ok: false }>): CatalogFailure {
+  const diagnostics = response.error.diagnostics;
+  return new CatalogFailure(response.error.code, response.error.message, {
+    operation: diagnostics.operation,
+    technical: diagnostics.technical,
+    activeSlot: diagnostics.activeSlot,
+    attemptedSlot: diagnostics.attemptedSlot,
+    catalogVersion: diagnostics.catalogVersion,
+    details: diagnostics.details,
+    occurredAt: diagnostics.occurredAt
+  });
+}
+
 function ensureWorker(): Worker {
   if (worker) return worker;
   worker = new Worker(new URL('./catalog.worker.ts', import.meta.url), {
@@ -44,43 +62,47 @@ function ensureWorker(): Worker {
   });
   worker.addEventListener('message', (event: MessageEvent<CatalogWorkerResponse>) => {
     const response = event.data;
+    if (response.ok && response.type === 'status-event') {
+      notifyStatus(response.result);
+      return;
+    }
     const request = pending.get(response.id);
     if (!request) return;
     pending.delete(response.id);
     if (request.abort && request.signal) request.signal.removeEventListener('abort', request.abort);
-    if (response.ok) request.resolve(response.result);
-    else {
-      const error = new Error(response.error.message);
-      error.name = response.error.name;
-      Object.assign(error, { code: response.error.code });
-      request.reject(error);
+    if (response.ok) {
+      if (response.type === 'status') notifyStatus(response.result);
+      request.resolve(response.result);
+    } else {
+      request.reject(reviveFailure(response));
     }
   });
   worker.addEventListener('error', (event) => {
-    const error = new Error(event.message || 'Der SQLite-Worker ist unerwartet ausgefallen.');
-    error.name = 'CatalogWorkerError';
-    rejectAll(error);
+    const failure = new CatalogFailure('CATALOG_UNKNOWN', 'Der lokale Katalogworker ist unerwartet ausgefallen.', {
+      operation: 'initialize',
+      technical: event.message || 'Worker error'
+    });
+    rejectAll(failure);
     worker?.terminate();
     worker = null;
-    initializePromise = null;
+    initialization = null;
   });
   return worker;
 }
 
 function post<T>(request: RequestWithoutId, signal?: AbortSignal): Promise<T> {
-  if (signal?.aborted) return Promise.reject(abortError());
+  if (signal?.aborted) return Promise.reject(abortFailure());
   const id = nextRequestId++;
   return new Promise<T>((resolve, reject) => {
     const entry: PendingRequest = {
       resolve: (value) => resolve(value as T),
       reject,
-      requestType: request.type,
       signal
     };
     if (signal) {
       entry.abort = () => {
         if (!pending.delete(id)) return;
-        reject(abortError());
+        reject(abortFailure());
       };
       signal.addEventListener('abort', entry.abort, { once: true });
     }
@@ -89,64 +111,74 @@ function post<T>(request: RequestWithoutId, signal?: AbortSignal): Promise<T> {
   });
 }
 
-function runtimeUrls(): {
+function runtimeConfig(): {
   sqliteModuleUrl: string;
   manifestUrl: string;
-  catalogUrl: string;
+  catalogBaseUrl: string;
 } {
   const base = new URL('./', document.baseURI);
   return {
     sqliteModuleUrl: new URL('vendor/sqlite/index.mjs', base).href,
     manifestUrl: new URL('catalog/manifest.json', base).href,
-    catalogUrl: new URL('catalog/kh-checker-dach.sqlite', base).href
+    catalogBaseUrl: new URL('catalog/', base).href
   };
 }
 
-export function initializeOfflineCatalog(): Promise<CatalogRuntimeStatus> {
-  if (!initializePromise) {
-    initializePromise = post<CatalogRuntimeStatus>({ type: 'init', ...runtimeUrls() }).catch((error) => {
-      initializePromise = null;
-      throw error;
-    });
-  }
-  return initializePromise;
+export function initializeOfflineCatalog(): Promise<CatalogStatus> {
+  initialization ??= post<CatalogStatus>({ type: 'initialize', ...runtimeConfig() }).catch((error) => {
+    initialization = null;
+    throw error;
+  });
+  return initialization;
+}
+
+export function retryOfflineCatalog(): Promise<CatalogStatus> {
+  initialization = post<CatalogStatus>({ type: 'retry', ...runtimeConfig() }).catch((error) => {
+    initialization = null;
+    throw error;
+  });
+  return initialization;
+}
+
+export function getOfflineCatalogStatus(): Promise<CatalogStatus> {
+  return post<CatalogStatus>({ type: 'status' });
 }
 
 export async function searchOfflineCatalog(
   query: string,
-  limit: number,
+  limit = 20,
   signal?: AbortSignal
-): Promise<CatalogProductRecord[]> {
+): Promise<readonly CatalogSearchHit[]> {
   await initializeOfflineCatalog();
-  if (signal?.aborted) throw abortError();
-  return post<CatalogProductRecord[]>({ type: 'search', query, limit }, signal);
+  if (signal?.aborted) throw abortFailure();
+  return post<readonly CatalogSearchHit[]>({ type: 'search', query, limit }, signal);
 }
 
 export async function getOfflineCatalogProduct(
   barcode: string,
   signal?: AbortSignal
-): Promise<CatalogProductRecord | null> {
+): Promise<CatalogProduct | null> {
   await initializeOfflineCatalog();
-  if (signal?.aborted) throw abortError();
-  return post<CatalogProductRecord | null>({ type: 'product', barcode }, signal);
+  if (signal?.aborted) throw abortFailure();
+  return post<CatalogProduct | null>({ type: 'product', barcode }, signal);
 }
 
-export async function getOfflineCatalogStatus(): Promise<CatalogRuntimeStatus> {
-  await initializeOfflineCatalog();
-  return post<CatalogRuntimeStatus>({ type: 'status' });
+export function subscribeOfflineCatalogStatus(listener: CatalogStatusListener): () => void {
+  statusListeners.add(listener);
+  void getOfflineCatalogStatus().then(listener).catch(() => undefined);
+  return () => statusListeners.delete(listener);
 }
 
-export function cancelOfflineCatalogRequests(): void {
-  for (const [id, request] of pending) {
-    if (request.requestType === 'init' || request.requestType === 'status') continue;
-    pending.delete(id);
-    if (request.abort && request.signal) request.signal.removeEventListener('abort', request.abort);
-    request.reject(abortError());
-  }
+export function disposeOfflineCatalog(): void {
+  const failure = new CatalogFailure('CATALOG_CANCELLED', 'Der lokale Katalogworker wurde beendet.', {
+    operation: 'initialize'
+  });
+  rejectAll(failure);
+  worker?.terminate();
+  worker = null;
+  initialization = null;
 }
 
-// Start installation as soon as the application module is evaluated. Search still
-// awaits the same singleton promise, so no duplicate download or import can occur.
 if (typeof document !== 'undefined') {
   void initializeOfflineCatalog().catch(() => undefined);
 }
