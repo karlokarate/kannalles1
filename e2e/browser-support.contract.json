@@ -1,0 +1,43 @@
+{
+  "contract": "kh-checker-browser-support-release-gate",
+  "version": "1.0.0",
+  "claimPolicy": "A browser profile is supported only after its required Playwright project passes against the integrated production build with the real SQLite-WASM and OPFS runtime.",
+  "minimumVersionPolicy": "No minimum browser version is claimed until measured evidence is recorded from the integrated matrix.",
+  "requiredCapabilities": [
+    "WebAssembly",
+    "DedicatedWorker",
+    "OriginPrivateFileSystem",
+    "FileSystemSyncAccessHandle"
+  ],
+  "requiredTest": "e2e/browser-matrix.spec.ts",
+  "serialExecution": true,
+  "releaseRequiresAllProjects": true,
+  "requiredProjects": [
+    {
+      "name": "chromium-desktop",
+      "engine": "chromium",
+      "profile": "Desktop Chrome"
+    },
+    {
+      "name": "chromium-android",
+      "engine": "chromium",
+      "profile": "Pixel 7"
+    },
+    {
+      "name": "firefox-desktop",
+      "engine": "firefox",
+      "profile": "Desktop Firefox"
+    },
+    {
+      "name": "webkit-iphone",
+      "engine": "webkit",
+      "profile": "iPhone 15 Pro"
+    }
+  ],
+  "currentEvidence": {
+    "state": "pending_integrated_run",
+    "buildCommit": null,
+    "workflowRun": null,
+    "measuredAtUtc": null
+  }
+}

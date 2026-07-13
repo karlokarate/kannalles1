@@ -46,10 +46,11 @@ jobs:
       - name: Install locked SQLite-WASM runtime
         run: npm ci --prefix Catalog/runtime --no-audit --no-fund
 
-      - name: Validate production catalog and workflow
+      - name: Validate production catalog, workflow and browser-support contract
         run: |
           npm run check:catalog
           npm run check:workflow
+          npm run check:browser-support
 
       - name: Typecheck and run deterministic tests
         run: |
@@ -208,6 +209,7 @@ jobs:
             `- URL: ${process.env.PAGE_URL}`,
             `- Commit: ${process.env.GITHUB_SHA}`,
             `- Catalog: ${manifest.catalogVersion} · ${manifest.database.products} products · ${manifest.database.bytes} bytes`,
+            `- Database file: ${manifest.database.file}`,
             `- SQLite SHA-256: ${manifest.database.sha256}`,
             '- Product source: deployed SQLite → A/B OPFS slots → SQLite-WASM worker',
             '- Online OFF/Search-a-licious product access: disabled',

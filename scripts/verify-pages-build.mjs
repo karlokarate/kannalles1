@@ -11,10 +11,15 @@ const sourceManifest = JSON.parse(
   await fs.readFile(path.join(rootDir, 'Catalog/catalog-manifest.v1.json'), 'utf8'),
 );
 const appVersion = String(packageJson.version);
-const deployedDatabase = 'catalog/kh-checker-dach.sqlite';
+const databaseFilename = String(sourceManifest?.database?.file ?? '');
+if (!databaseFilename || path.basename(databaseFilename) !== databaseFilename) {
+  throw new Error(`GitHub-Pages-Prüfung fehlgeschlagen: ungültiger Manifest-Datenbankdateiname ${JSON.stringify(databaseFilename)}`);
+}
+const deployedDatabase = `catalog/${databaseFilename}`;
 const deployedManifest = 'catalog/manifest.json';
 const codecAsset = `catalog/${sourceManifest.codecFile}`;
 const imageDictionaryAsset = `catalog/${sourceManifest.image.dictionaryFile}`;
+const retiredRenamedDatabase = 'catalog/kh-checker-dach.sqlite';
 
 function fail(message) {
   throw new Error(`GitHub-Pages-Prüfung fehlgeschlagen: ${message}`);
@@ -69,9 +74,9 @@ const requiredFiles = [
 ];
 await Promise.all(requiredFiles.map(requireFile));
 
-for (const retired of ['API-DIAGNOSE.html', 'api-diagnose.js', 'api-docs']) {
+for (const retired of ['API-DIAGNOSE.html', 'api-diagnose.js', 'api-docs', retiredRenamedDatabase]) {
   const present = await fs.stat(path.join(pagesDir, retired)).catch(() => null);
-  if (present) fail(`veraltetes API-Diagnoseartefakt wird noch ausgeliefert: ${retired}`);
+  if (present) fail(`veraltetes oder umbenanntes Artefakt wird noch ausgeliefert: ${retired}`);
 }
 
 const htmlFiles = ['index.html', 'README-ERST-LESEN.html'];
@@ -152,13 +157,14 @@ if (!jsFiles.some((file) => /(?:^|-)legacy(?:-|\.)/.test(path.basename(file)))) 
 }
 const appJavaScript = (await Promise.all(jsFiles.map((file) => fs.readFile(path.join(pagesDir, file), 'utf8')))).join('\n');
 for (const required of [
-  'kh-checker-dach.sqlite',
+  databaseFilename,
   'catalog/manifest.json',
   appVersion,
 ]) {
   if (!appJavaScript.includes(required)) fail(`Offline-App-Build enthält nicht: ${required}`);
 }
 for (const forbidden of [
+  'kh-checker-dach.sqlite',
   'search.openfoodfacts.org',
   'world.openfoodfacts.org/cgi/search.pl',
   '/api/v1/search',
@@ -168,13 +174,14 @@ for (const forbidden of [
   'OFF_USER_AGENT',
   'process.env.OFF_USER_AGENT',
 ]) {
-  if (appJavaScript.includes(forbidden)) fail(`Retired online/server path is present in the app bundle: ${forbidden}`);
+  if (appJavaScript.includes(forbidden)) fail(`Retired online/server or renamed catalog path is present in the app bundle: ${forbidden}`);
 }
 
 console.log(JSON.stringify({
   pagesValid: true,
   appVersion,
   catalogVersion: sourceManifest.catalogVersion,
+  databaseFilename,
   productCount: sourceManifest.database.products,
   sizeBytes: sourceManifest.database.bytes,
   sha256: sourceManifest.database.sha256,
