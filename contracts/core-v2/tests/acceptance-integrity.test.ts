@@ -13,6 +13,7 @@ const requiredIds = [
   'catalog-reopen-offline',
   'catalog-corrupt-inactive-update-rolls-back',
   'catalog-no-valid-slot-unavailable',
+  'catalog-image-reference-without-url',
   'kinder-bueno-default-single-bar',
   'explicit-unit-never-replaced',
   'group-weighing-derivation',
@@ -26,9 +27,20 @@ describe('offline hard-cutover acceptance contract', () => {
   it('contains every required case exactly once', () => {
     const ids = suite.cases.map((entry) => entry.id);
     expect(suite.suite).toBe('kh-checker-offline-hard-cutover-acceptance');
-    expect(suite.version).toBe('3.0.0');
+    expect(suite.version).toBe('3.1.0');
     expect(new Set(ids).size).toBe(ids.length);
     expect([...ids].sort()).toEqual([...requiredIds].sort());
+  });
+
+  it('requires a catalog image key and forbids prebuilt projection URLs', () => {
+    const fixture = suite.cases.find((entry) => entry.id === 'catalog-image-reference-without-url');
+    expect(fixture?.expect.imageReference).toEqual({
+      keyId: 1,
+      key: 'front_de',
+      revision: 17,
+      resolution: 200
+    });
+    expect(fixture?.expect.prebuiltUrlPresent).toBe(false);
   });
 
   it('requires zero remote product requests for every catalog availability case', () => {
@@ -45,6 +57,7 @@ describe('offline hard-cutover acceptance contract', () => {
       operation: 'validate',
       activeSlot: 'a',
       attemptedSlot: 'b',
+      rollbackSlot: 'a',
       catalogVersion: '2026-07-13',
       technical: 'sha256 mismatch',
       details: { expectedBytes: 25227264 }
@@ -55,6 +68,7 @@ describe('offline hard-cutover acceptance contract', () => {
       operation: 'validate',
       activeSlot: 'a',
       attemptedSlot: 'b',
+      rollbackSlot: 'a',
       retryAllowedImmediately: true
     });
     expect(failure.diagnostics).not.toHaveProperty('password');

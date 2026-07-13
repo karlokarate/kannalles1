@@ -3,9 +3,18 @@
   "$id": "https://kh-checker.local/schemas/search-outcome.schema.json",
   "title": "KH Checker Catalog SearchOutcome",
   "type": "object",
-  "required": ["requestId", "status", "query", "sourceMode", "diagnostics"],
+  "required": [
+    "requestId",
+    "status",
+    "query",
+    "sourceMode",
+    "diagnostics"
+  ],
   "properties": {
-    "requestId": {"type": "string", "minLength": 1},
+    "requestId": {
+      "type": "string",
+      "minLength": 1
+    },
     "status": {
       "type": "string",
       "enum": [
@@ -18,19 +27,48 @@
     },
     "query": {
       "type": "object",
-      "required": ["raw", "canonical", "productOnly"],
+      "required": [
+        "raw",
+        "canonical",
+        "productOnly"
+      ],
       "properties": {
-        "raw": {"type": "string"},
-        "canonical": {"type": "string"},
-        "productOnly": {"type": "string"}
+        "raw": {
+          "type": "string"
+        },
+        "canonical": {
+          "type": "string"
+        },
+        "productOnly": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
-    "sourceMode": {"type": "string", "enum": ["catalog", "clinic"]},
-    "candidates": {"type": "array", "items": {"type": "object"}},
-    "result": {"type": ["object", "null"]},
+    "sourceMode": {
+      "type": "string",
+      "enum": [
+        "catalog",
+        "clinic"
+      ]
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "result": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
     "diagnostics": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "required": [
         "code",
         "operation",
@@ -40,11 +78,15 @@
         "retryAllowedImmediately",
         "activeSlot",
         "attemptedSlot",
+        "rollbackSlot",
         "catalogVersion",
         "details"
       ],
       "properties": {
-        "code": {"type": "string", "pattern": "^CATALOG_[A-Z0-9_]+$"},
+        "code": {
+          "type": "string",
+          "pattern": "^CATALOG_[A-Z0-9_]+$"
+        },
         "operation": {
           "type": "string",
           "enum": [
@@ -60,16 +102,69 @@
             "rollback"
           ]
         },
-        "message": {"type": "string", "minLength": 1},
-        "technical": {"type": "string"},
-        "occurredAt": {"type": "string", "format": "date-time"},
-        "retryAllowedImmediately": {"const": true},
-        "activeSlot": {"type": ["string", "null"], "enum": ["a", "b", null]},
-        "attemptedSlot": {"type": ["string", "null"], "enum": ["a", "b", null]},
-        "catalogVersion": {"type": ["string", "null"]},
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "technical": {
+          "type": "string"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "retryAllowedImmediately": {
+          "const": true
+        },
+        "activeSlot": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "a",
+            "b",
+            null
+          ]
+        },
+        "attemptedSlot": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "a",
+            "b",
+            null
+          ]
+        },
+        "catalogVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "details": {
           "type": "object",
-          "additionalProperties": {"type": ["string", "number", "boolean", "null"]}
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "rollbackSlot": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "a",
+            "b",
+            null
+          ]
         }
       },
       "additionalProperties": false

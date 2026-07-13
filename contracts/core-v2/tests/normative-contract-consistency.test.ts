@@ -56,7 +56,9 @@ describe('normative hard-cutover contract consistency', () => {
     });
     expect(contract.fields.search.MUST).toContain('issue_zero_product_search_or_product_detail_network_requests');
     expect(contract.fields.search.MUST).toContain('allow_immediate_manual_retry');
+    expect(contract.fields.search.MUST).toContain('project_catalog_image_reference_without_prebuilt_url');
     expect(contract.fields.search.MUST_NOT).toContain('fallback_to_search_a_licious_off_legacy_off_v2_or_off_v3');
+    expect(contract.fields.search.MUST_NOT).toContain('expose_prebuilt_image_url_from_sqlite_projection');
   });
 
   it('removes the obsolete direct-account release gate', () => {

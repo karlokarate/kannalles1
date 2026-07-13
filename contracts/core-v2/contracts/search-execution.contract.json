@@ -1,6 +1,6 @@
 {
   "contract": "kh-checker-search-execution",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "authority": {
     "productCatalog": "Catalog/catalog-manifest.v1.json plus its verified Production-v1 SQLite artifact",
     "activeReadAuthority": "exactly_one_verified_catalog_slot",
@@ -10,8 +10,15 @@
   "input": {
     "rawInput": "string",
     "canonicalQuery": "string",
-    "sourceMode": ["catalog", "clinic"],
-    "requestedPageSize": [10, 15, 20]
+    "sourceMode": [
+      "catalog",
+      "clinic"
+    ],
+    "requestedPageSize": [
+      10,
+      15,
+      20
+    ]
   },
   "pipeline": [
     {
@@ -56,7 +63,8 @@
       "rules": [
         "read_selected_product_from_same_active_sqlite_catalog",
         "use_generated_gtin_and_rescue_codecs",
-        "decode_nutrition_basis_unit_evidence_and_image_reference_from_generated_ssot",
+        "decode_nutrition_basis_unit_evidence_and_image_key_from_generated_ssot",
+        "project_CatalogImageReference_keyId_key_revision_and_resolution_without_url",
         "project_losslessly_into_CatalogProduct",
         "never_fan_out_product_detail_requests",
         "never_replace_missing_barcode_with_unrelated_product"
@@ -113,6 +121,8 @@
       "maximum": 0,
       "scope": "all_remote_product_detail_services"
     },
-    "remoteAiRequestsPerAction": {"maximum": 0}
+    "remoteAiRequestsPerAction": {
+      "maximum": 0
+    }
   }
 }

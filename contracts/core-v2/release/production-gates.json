@@ -1,21 +1,82 @@
 {
   "release": "KH Checker offline hard cutover",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "allMustPass": true,
   "gates": [
-    {"id": "single-product-authority", "check": "exactly one verified Production-v1 SQLite slot serves product reads", "severity": "blocker"},
-    {"id": "zero-product-network", "check": "search and selected-product resolution issue zero remote product requests", "severity": "blocker"},
-    {"id": "atomic-catalog-activation", "check": "inactive slot is fully validated before atomic activation and failed updates retain only the prior verified authority", "severity": "blocker"},
-    {"id": "search-outcome-totality", "check": "every search action returns one allowed typed outcome", "severity": "blocker"},
-    {"id": "catalog-diagnostics", "check": "raw failures are redacted into CatalogDiagnostics and immediate retry remains available", "severity": "blocker"},
-    {"id": "sqlite-order-visible", "check": "application code does not rerank SQLite search results", "severity": "blocker"},
-    {"id": "single-unit-first", "check": "all fixtures with reliable smallest-unit evidence select it first", "severity": "blocker"},
-    {"id": "no-silent-unit-substitution", "check": "explicit piece, bar and slice requests never resolve through portion or package", "severity": "blocker"},
-    {"id": "no-unit-weight-guess", "check": "unknown countable-unit weight returns needs_unit_calibration", "severity": "blocker"},
-    {"id": "universal-group-weighing", "check": "every countable needs-calibration result exposes editable count and total weight", "severity": "blocker"},
-    {"id": "calibration-persistence", "check": "saved authoritative unit weight survives reload and combines with current carbohydrates-per-100g", "severity": "blocker"},
-    {"id": "no-legacy-credentials", "check": "runtime settings, diagnostics and storage contain no OFF or remote-AI credentials", "severity": "blocker"},
-    {"id": "no-concealment-or-transform", "check": "no CSS concealment or source transformer substitutes for deleting legacy UI or imports", "severity": "blocker"},
-    {"id": "real-browser-proof", "check": "built app passes non-mocked SQLite-WASM and OPFS tests in the declared browser matrix", "severity": "blocker"}
+    {
+      "id": "single-product-authority",
+      "check": "exactly one verified Production-v1 SQLite slot serves product reads",
+      "severity": "blocker"
+    },
+    {
+      "id": "zero-product-network",
+      "check": "search and selected-product resolution issue zero remote product requests",
+      "severity": "blocker"
+    },
+    {
+      "id": "atomic-catalog-activation",
+      "check": "inactive slot is fully validated before atomic activation and failed updates retain only the prior verified authority",
+      "severity": "blocker"
+    },
+    {
+      "id": "search-outcome-totality",
+      "check": "every search action returns one allowed typed outcome",
+      "severity": "blocker"
+    },
+    {
+      "id": "catalog-diagnostics",
+      "check": "raw failures are redacted into CatalogDiagnostics and immediate retry remains available",
+      "severity": "blocker"
+    },
+    {
+      "id": "sqlite-order-visible",
+      "check": "application code does not rerank SQLite search results",
+      "severity": "blocker"
+    },
+    {
+      "id": "catalog-image-reference-only",
+      "check": "SQLite projection exposes keyId, key, revision and resolution but no prebuilt image URL",
+      "severity": "blocker"
+    },
+    {
+      "id": "single-unit-first",
+      "check": "all fixtures with reliable smallest-unit evidence select it first",
+      "severity": "blocker"
+    },
+    {
+      "id": "no-silent-unit-substitution",
+      "check": "explicit piece, bar and slice requests never resolve through portion or package",
+      "severity": "blocker"
+    },
+    {
+      "id": "no-unit-weight-guess",
+      "check": "unknown countable-unit weight returns needs_unit_calibration",
+      "severity": "blocker"
+    },
+    {
+      "id": "universal-group-weighing",
+      "check": "every countable needs-calibration result exposes editable count and total weight",
+      "severity": "blocker"
+    },
+    {
+      "id": "calibration-persistence",
+      "check": "saved authoritative unit weight survives reload and combines with current carbohydrates-per-100g",
+      "severity": "blocker"
+    },
+    {
+      "id": "no-legacy-credentials",
+      "check": "runtime settings, diagnostics and storage contain no OFF or remote-AI credentials",
+      "severity": "blocker"
+    },
+    {
+      "id": "no-concealment-or-transform",
+      "check": "no CSS concealment or source transformer substitutes for deleting legacy UI or imports",
+      "severity": "blocker"
+    },
+    {
+      "id": "real-browser-proof",
+      "check": "built app passes non-mocked SQLite-WASM and OPFS tests in the declared browser matrix",
+      "severity": "blocker"
+    }
   ]
 }

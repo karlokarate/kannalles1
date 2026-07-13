@@ -1,7 +1,12 @@
 {
   "contract": "kh-checker-critical-fields",
-  "version": "3.0.0",
-  "normativeKeywords": ["MUST", "MUST_NOT", "SHOULD", "MAY"],
+  "version": "3.1.0",
+  "normativeKeywords": [
+    "MUST",
+    "MUST_NOT",
+    "SHOULD",
+    "MAY"
+  ],
   "authority": {
     "productData": "verified_production_v1_sqlite_catalog",
     "search": "one_active_catalog_slot",
@@ -26,7 +31,8 @@
         "return_typed_outcome_instead_of_throwing_to_ui",
         "allow_immediate_manual_retry",
         "show_original_redacted_catalog_diagnostics_in_technical_details",
-        "issue_zero_product_search_or_product_detail_network_requests"
+        "issue_zero_product_search_or_product_detail_network_requests",
+        "project_catalog_image_reference_without_prebuilt_url"
       ],
       "MUST_NOT": [
         "install_local_cooldown",
@@ -36,7 +42,8 @@
         "fallback_to_search_a_licious_off_legacy_off_v2_or_off_v3",
         "read_from_two_catalog_authorities_for_one_user_action",
         "activate_partial_unverified_or_corrupt_catalog",
-        "replace_no_result_with_unrelated_product"
+        "replace_no_result_with_unrelated_product",
+        "expose_prebuilt_image_url_from_sqlite_projection"
       ]
     },
     "unitResolution": {
@@ -60,10 +67,20 @@
       ]
     },
     "calibration": {
-      "measurementModes": ["single_unit", "group_weighing"],
+      "measurementModes": [
+        "single_unit",
+        "group_weighing"
+      ],
       "groupWeighing": {
-        "measuredCount": {"type": "integer", "minimum": 2, "userEditable": true},
-        "measuredTotalWeightG": {"type": "number", "exclusiveMinimum": 0},
+        "measuredCount": {
+          "type": "integer",
+          "minimum": 2,
+          "userEditable": true
+        },
+        "measuredTotalWeightG": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
         "derivedUnitWeightG": "measuredTotalWeightG / measuredCount",
         "derivedCarbsPerUnitG": "derivedUnitWeightG * currentCarbsPer100g / 100"
       },

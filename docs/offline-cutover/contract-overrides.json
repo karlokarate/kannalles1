@@ -1,6 +1,6 @@
 {
   "document": "kh-checker-offline-cutover-contract-overrides",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "effectiveAtUtc": "2026-07-13T18:12:34Z",
   "authorityOrder": [
     "current_user_wishes",
@@ -40,7 +40,9 @@
     },
     {
       "id": "OVERRIDE-003",
-      "targets": ["contracts/core-v2/contracts/off-account.contract.json@2.0.0"],
+      "targets": [
+        "contracts/core-v2/contracts/off-account.contract.json@2.0.0"
+      ],
       "contradiction": "legacy credentials are deferred to a future migration and an authentication function remains modeled",
       "decision": "override_and_replace",
       "replacement": "credentials are absent from runtime and deleted without import, validation or transmission"
@@ -57,21 +59,27 @@
     },
     {
       "id": "OVERRIDE-005",
-      "targets": ["contracts/core-v2/implementation/migration-plan.json@kh-checker-calibration-v2-migration"],
+      "targets": [
+        "contracts/core-v2/implementation/migration-plan.json@kh-checker-calibration-v2-migration"
+      ],
       "contradiction": "legacy API cache retention and compatibility migration conflict with the hard cutover",
       "decision": "override_and_replace",
       "replacement": "kh-checker-offline-hard-cutover@1.0.0"
     },
     {
       "id": "OVERRIDE-006",
-      "targets": ["contracts/core-v2/implementation/current-code-gap-map.json@3.0.0"],
+      "targets": [
+        "contracts/core-v2/implementation/current-code-gap-map.json@3.0.0"
+      ],
       "contradiction": "legacy adapters, CSS concealment and mocked client tests are described as completed production evidence",
       "decision": "override_false_completion_claims",
       "replacement": "agent-owned replacement map at version 4.0.0"
     },
     {
       "id": "OVERRIDE-007",
-      "targets": ["contracts/core-v2/release/production-gates.json@2.0.0#direct-off-account"],
+      "targets": [
+        "contracts/core-v2/release/production-gates.json@2.0.0#direct-off-account"
+      ],
       "contradiction": "a direct OFF-account path is required although personal credentials and product APIs are forbidden",
       "decision": "delete_gate",
       "replacement": "no-legacy-credentials and zero-product-network gates"
@@ -85,6 +93,16 @@
       "contradiction": "mocked catalogClient plus legacy api/resolver/storage adapters are accepted as end-to-end production proof",
       "decision": "override_and_replace",
       "replacement": "contract-only integrity here; real browser proof owned by Sentinel and pure resolver proof owned by Helix"
+    },
+    {
+      "id": "OVERRIDE-009",
+      "targets": [
+        "src/lib/catalog/catalogProjection.ts pre-integration design",
+        "src/lib/catalog/catalogProtocol.ts pre-integration design"
+      ],
+      "contradiction": "SQLite projection exposes a prebuilt imageUrl although the catalog stores a key id and revision and URL composition belongs outside the product authority",
+      "decision": "override_before_owner_integration",
+      "replacement": "CatalogImageReference { keyId, key, revision, resolution }; combine with CatalogProduct.code only in the optional image presentation/cache boundary"
     }
   ]
 }

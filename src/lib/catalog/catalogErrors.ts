@@ -11,6 +11,7 @@ export interface CatalogFailureOptions {
   readonly technical?: string;
   readonly activeSlot?: CatalogSlotId | null;
   readonly attemptedSlot?: CatalogSlotId | null;
+  readonly rollbackSlot?: CatalogSlotId | null;
   readonly catalogVersion?: string | null;
   readonly details?: Readonly<Record<string, CatalogDiagnosticValue>>;
   readonly cause?: unknown;
@@ -30,24 +31,18 @@ function redactText(value: string): string {
 function redactDetails(
   details: Readonly<Record<string, CatalogDiagnosticValue>> | undefined
 ): Readonly<Record<string, CatalogDiagnosticValue>> {
-  if (!details) {
-    return {};
-  }
+  if (!details) return {};
 
   const redacted: Record<string, CatalogDiagnosticValue> = {};
   for (const [key, value] of Object.entries(details)) {
-    if (SENSITIVE_DETAIL_KEY.test(key)) {
-      continue;
-    }
+    if (SENSITIVE_DETAIL_KEY.test(key)) continue;
     redacted[key] = typeof value === 'string' ? redactText(value) : value;
   }
   return redacted;
 }
 
 function errorTechnical(error: unknown): string {
-  if (error instanceof Error) {
-    return redactText(`${error.name}: ${error.message}`);
-  }
+  if (error instanceof Error) return redactText(`${error.name}: ${error.message}`);
   return redactText(typeof error === 'string' ? error : 'Unknown catalog failure');
 }
 
@@ -70,6 +65,7 @@ export class CatalogFailure extends Error {
       retryAllowedImmediately: true,
       activeSlot: options.activeSlot ?? null,
       attemptedSlot: options.attemptedSlot ?? null,
+      rollbackSlot: options.rollbackSlot ?? null,
       catalogVersion: options.catalogVersion ?? null,
       details: redactDetails(options.details)
     };
@@ -90,9 +86,7 @@ export function toCatalogFailure(
   message: string,
   options: Omit<CatalogFailureOptions, 'cause'>
 ): CatalogFailure {
-  if (isCatalogFailure(error)) {
-    return error;
-  }
+  if (isCatalogFailure(error)) return error;
   return new CatalogFailure(code, message, { ...options, cause: error });
 }
 

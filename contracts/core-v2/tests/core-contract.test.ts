@@ -1,15 +1,64 @@
 import { describe, expect, it } from 'vitest';
 import { catalogDiagnostics, CatalogFailure, toCatalogFailure } from '../../../src/lib/catalog/catalogErrors';
-import type { CatalogProduct, CatalogStatus, CatalogUnitEvidence } from '../../../src/lib/catalog/catalogDomain';
+import type {
+  CatalogCountability,
+  CatalogDiagnosticValue,
+  CatalogDiagnostics,
+  CatalogFailureCode,
+  CatalogImageReference,
+  CatalogMeasure,
+  CatalogNutrition,
+  CatalogNutritionBasis,
+  CatalogNutritionSource,
+  CatalogOperation,
+  CatalogProduct,
+  CatalogProvenUnitEvidence,
+  CatalogSearchHit,
+  CatalogSlotId,
+  CatalogSlotState,
+  CatalogStatus,
+  CatalogStatusState,
+  CatalogUnitEvidence,
+  CatalogUnitEvidenceSource,
+  CatalogUnitKind
+} from '../../../src/lib/catalog/catalogDomain';
 
-const buenoUnit: CatalogUnitEvidence = {
-  kind: 'bar',
-  value: 21.5,
+type FrozenCatalogDomainExportContract = {
+  CatalogCountability: CatalogCountability;
+  CatalogDiagnosticValue: CatalogDiagnosticValue;
+  CatalogDiagnostics: CatalogDiagnostics;
+  CatalogFailureCode: CatalogFailureCode;
+  CatalogImageReference: CatalogImageReference;
+  CatalogMeasure: CatalogMeasure;
+  CatalogNutrition: CatalogNutrition;
+  CatalogNutritionBasis: CatalogNutritionBasis;
+  CatalogNutritionSource: CatalogNutritionSource;
+  CatalogOperation: CatalogOperation;
+  CatalogProduct: CatalogProduct;
+  CatalogProvenUnitEvidence: CatalogProvenUnitEvidence;
+  CatalogSearchHit: CatalogSearchHit;
+  CatalogSlotId: CatalogSlotId;
+  CatalogSlotState: CatalogSlotState;
+  CatalogStatus: CatalogStatus;
+  CatalogStatusState: CatalogStatusState;
+  CatalogUnitEvidence: CatalogUnitEvidence;
+  CatalogUnitEvidenceSource: CatalogUnitEvidenceSource;
+  CatalogUnitKind: CatalogUnitKind;
+};
+
+const imageReference: CatalogImageReference = {
+  keyId: 1,
+  key: 'front_de',
+  revision: 17,
+  resolution: 200
+};
+
+const buenoUnit: CatalogProvenUnitEvidence = {
+  unitKind: 'bar',
+  baseValue: 21.5,
   basis: 'mass',
   source: 'explicit_multipack_quantity',
-  countability: 'countable',
-  smallestEdibleUnit: true,
-  proven: true
+  smallestEdibleUnit: true
 };
 
 const bueno: CatalogProduct = {
@@ -17,43 +66,71 @@ const bueno: CatalogProduct = {
   code: '4008400321622',
   displayName: 'Kinder Bueno',
   brand: 'Kinder',
-  carbohydratesPer100: 49.5,
-  nutritionBasis: 'mass',
-  nutritionSource: 'as_sold',
-  manufacturerServing: { value: 43, basis: 'mass' },
-  productQuantity: { value: 43, basis: 'mass' },
-  provenUnit: buenoUnit,
-  defaultUnitKind: 'bar',
-  image: null,
+  nutrition: {
+    carbohydratesPer100: 49.5,
+    basis: 'mass',
+    source: 'as_sold'
+  },
+  unitEvidence: {
+    manufacturerServing: { baseValue: 43, basis: 'mass' },
+    productQuantity: { baseValue: 43, basis: 'mass' },
+    provenSmallestUnit: buenoUnit,
+    defaultUnitKind: 'bar'
+  },
+  imageReference,
   hasQualityErrors: false,
   rankOrdinal: 1000
 };
 
-describe('catalog-native core boundary', () => {
-  it('represents the smallest proven edible unit without legacy API fields', () => {
-    expect(bueno.provenUnit).toEqual(buenoUnit);
-    expect(bueno.provenUnit?.value).toBe(21.5);
+const searchHit: CatalogSearchHit = { ...bueno, resultIndex: 0 };
+
+// Compile-time assertion: this exact type-only export set is the frozen v1 surface.
+const frozenExportContract: FrozenCatalogDomainExportContract | null = null;
+void frozenExportContract;
+
+describe('frozen catalog-native core boundary', () => {
+  it('projects nutrition and unit evidence without legacy API fields', () => {
+    expect(bueno.nutrition).toEqual({
+      carbohydratesPer100: 49.5,
+      basis: 'mass',
+      source: 'as_sold'
+    });
+    expect(bueno.unitEvidence.provenSmallestUnit).toEqual(buenoUnit);
+    expect(searchHit.resultIndex).toBe(0);
     expect(bueno).not.toHaveProperty('serving_size');
     expect(bueno).not.toHaveProperty('product_quantity');
     expect(bueno).not.toHaveProperty('nutriments');
   });
 
-  it('keeps one verified slot as the only ready authority', () => {
+  it('exposes an image key and never a prebuilt image URL', () => {
+    expect(bueno.imageReference).toEqual(imageReference);
+    expect(bueno.imageReference).not.toHaveProperty('url');
+    expect(bueno).not.toHaveProperty('imageUrl');
+  });
+
+  it('keeps one active slot and lossless state for both physical slots', () => {
     const status: CatalogStatus = {
       state: 'ready',
       activeSlot: 'a',
+      rollbackSlot: 'b',
+      slotStates: { a: 'active', b: 'verified' },
       catalogVersion: '2026-07-13',
       productCount: 317579,
+      persistent: true,
       progress: null,
       diagnostics: null,
       retryAllowedImmediately: true
     };
     expect(status.activeSlot).toBe('a');
+    expect(status.slotStates).toEqual({ a: 'active', b: 'verified' });
   });
 
   it('redacts credentials from messages, technical details and structured values', () => {
     const failure = new CatalogFailure('CATALOG_MANIFEST_INVALID', 'token=visible-in-input', {
       operation: 'manifest',
+      activeSlot: 'a',
+      attemptedSlot: 'b',
+      rollbackSlot: 'a',
       technical: 'Authorization: Bearer abc.def password=hunter2',
       details: {
         password: 'hunter2',
@@ -68,6 +145,7 @@ describe('catalog-native core boundary', () => {
     expect(failure.diagnostics.details).not.toHaveProperty('password');
     expect(failure.diagnostics.details.note).toBe('api_key=[redacted]');
     expect(failure.diagnostics.details.status).toBe(401);
+    expect(failure.diagnostics.rollbackSlot).toBe('a');
   });
 
   it('preserves an existing CatalogFailure and wraps unknown failures', () => {

@@ -1,8 +1,8 @@
 /**
- * Compile-time reference to the production catalog boundary.
+ * Compile-time reference to the frozen production catalog boundary.
  *
- * This file is intentionally not a second type authority. Consumers import
- * production types from src/lib/catalog/catalogDomain.ts.
+ * This file is not a second type authority. Consumers import production types
+ * directly from src/lib/catalog/catalogDomain.ts.
  */
 export type {
   CatalogCountability,
@@ -11,12 +11,15 @@ export type {
   CatalogFailureCode,
   CatalogImageReference,
   CatalogMeasure,
+  CatalogNutrition,
   CatalogNutritionBasis,
   CatalogNutritionSource,
   CatalogOperation,
   CatalogProduct,
+  CatalogProvenUnitEvidence,
   CatalogSearchHit,
   CatalogSlotId,
+  CatalogSlotState,
   CatalogStatus,
   CatalogStatusState,
   CatalogUnitEvidence,
