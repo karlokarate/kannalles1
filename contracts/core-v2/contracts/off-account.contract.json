@@ -1,45 +1,34 @@
 {
-  "contract": "kh-checker-direct-off-account",
-  "version": "1.0.0",
-  "scope": "optional personal Open Food Facts account in the direct browser lane",
-  "officialOffSemantics": {
-    "usernameParameter": "user_id",
-    "emailAddressIsUsername": false,
-    "loginVerification": "POST https://world.openfoodfacts.org/cgi/auth.pl",
-    "readAuthenticationRequired": false,
-    "preferredAuthenticatedFlow": "OFF session cookie",
-    "browserConstraint": "OFF returns wildcard CORS without credential support and a SameSite=Lax session cookie, so a cross-site Pages PWA cannot portably reuse that cookie"
+  "contract": "kh-checker-off-account-retirement",
+  "version": "2.0.0",
+  "scope": "offline SQLite product runtime",
+  "runtimePolicy": {
+    "productSearchUsesCredentials": false,
+    "productLookupUsesCredentials": false,
+    "searchALiciousEnabled": false,
+    "offLegacyEnabled": false,
+    "offProductApiEnabled": false,
+    "gatewayEnabled": false,
+    "remoteAiEnabled": false
   },
-  "persistence": {
-    "userProvidedCredentialsAllowed": true,
-    "cleartextBrowserPersistenceAllowed": true,
-    "explicitUserActionRequired": true,
-    "repository": "versioned settings repository",
-    "offlineAvailable": true,
-    "individuallyRemovableInSettings": true,
-    "mustNotBeRejectedBySecretOrReleaseGates": true
+  "migration": {
+    "legacySettingsMayContainCredentials": true,
+    "legacyCredentialsMustNeverBeReadForProductOperations": true,
+    "legacyCredentialsMustNeverBeTransmitted": true,
+    "legacyCredentialsShouldBeRemovedFromSettingsOnNextSchemaMigration": true,
+    "authenticationFunctionFailsClosed": true
   },
-  "directRequestUse": {
-    "allowedOrigins": [
-      "https://world.openfoodfacts.org"
-    ],
-    "searchALiciousReceivesCredentials": false,
-    "configuredGatewayReceivesCredentials": false,
-    "offLegacyAndProductReadsReceiveCredentials": true,
-    "parameters": [
-      "user_id",
-      "password",
-      "no_log=1"
-    ],
-    "transport": "HTTPS request parameters supported by Product Opener",
-    "publicDocumentationDeviation": "OFF publicly recommends credential parameters only for POST, PUT and DELETE; direct authenticated GET is a deliberate user-approved compatibility compromise because its credentialed cross-site cookie is not browser-portable"
+  "catalogUpdateTransport": {
+    "sameOriginOnly": true,
+    "credentials": "same-origin-host-session-only",
+    "offAccountCredentialsUsed": false,
+    "productQueryTermsTransmitted": false,
+    "barcodesTransmitted": false
   },
   "nonNegotiableRedaction": {
     "diagnosticsContainPassword": false,
-    "apiCacheContainsCredentialedRequestUrl": false,
+    "catalogMetadataContainsCredentials": false,
     "errorObjectsContainPassword": false,
-    "searchALiciousRequestsContainOffCredentials": false,
-    "gatewayRequestsContainOffCredentials": false,
     "buildTimeEnvironmentContainsUserCredentials": false
   }
 }
