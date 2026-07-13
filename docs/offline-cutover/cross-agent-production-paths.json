@@ -72,10 +72,11 @@
     "sentinel": {
       "agentName":"Sentinel",
       "branch":"agent/offline-cutover-sentinel-quality",
-      "lastReadAtUtc":null,
-      "lastRebasedOn":null,
+      "lastReadAtUtc":"2026-07-13T18:20:00Z",
+      "lastRebasedOn":"1f6aa59e41c7153784d4fed0fdc8c67d36dce2b3",
       "events":[
-        {"eventId":"SENTINEL-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["SENTINEL-500","SENTINEL-510","SENTINEL-520"],"summary":"Real browser proof, CI, architecture gates and final legacy deletion proposal","affectedPaths":[],"consumers":["atlas","forge","helix","lumen"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]}
+        {"eventId":"SENTINEL-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["SENTINEL-500","SENTINEL-510","SENTINEL-520"],"summary":"Real browser proof, CI, architecture gates and final legacy deletion proposal","affectedPaths":[],"consumers":["atlas","forge","helix","lumen"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]},
+        {"eventId":"SENTINEL-500-001","timestampUtc":"2026-07-13T18:20:00Z","commit":"SELF","kind":"implementation","stepIds":["SENTINEL-500"],"summary":"Added a serial real-browser harness for the built PWA, production SQLite-WASM and OPFS SAH-pool with no catalog client or worker mocks.","affectedPaths":["e2e/README.md","e2e/catalog-harness.ts","e2e/browser-matrix.spec.ts","e2e/start-real-preview.mjs","playwright.config.ts","e2e/app.spec.ts"],"consumers":["forge","lumen","owner"],"requiredActions":["Forge must expose CatalogStatus active slot, catalog version, product count, persistence and install-source fields without test-only alternate authority.","Lumen must render the semantic data-testid and data-* diagnostics documented in e2e/README.md.","Owner must run this harness only after the Forge and Lumen boundaries are integrated."]}
       ]
     }
   }
