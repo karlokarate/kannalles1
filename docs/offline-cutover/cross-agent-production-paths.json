@@ -45,10 +45,11 @@
     "forge": {
       "agentName":"Forge",
       "branch":"agent/offline-cutover-forge-runtime",
-      "lastReadAtUtc":null,
-      "lastRebasedOn":null,
+      "lastReadAtUtc":"2026-07-13T18:19:00Z",
+      "lastRebasedOn":"1f6aa59e41c7153784d4fed0fdc8c67d36dce2b3",
       "events":[
-        {"eventId":"FORGE-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["FORGE-200","FORGE-210","FORGE-220"],"summary":"Manifest, projection, A/B OPFS installer, worker and client","affectedPaths":[],"consumers":["atlas","helix","lumen","sentinel"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]}
+        {"eventId":"FORGE-BASELINE-001","timestampUtc":"2026-07-13T17:43:15Z","commit":"planning-baseline","kind":"scope_initialized","stepIds":["FORGE-200","FORGE-210","FORGE-220"],"summary":"Manifest, projection, A/B OPFS installer, worker and client","affectedPaths":[],"consumers":["atlas","helix","lumen","sentinel"],"requiredActions":["Read every production path and agent block","Stay inside owned paths","Append an event with every implementation commit"]},
+        {"eventId":"FORGE-200-001","timestampUtc":"2026-07-13T18:19:00Z","commit":"same-commit","kind":"implementation","stepIds":["FORGE-200"],"summary":"Rewrote the manifest authority, lossless product projection and typed worker protocol around Production-v1.","affectedPaths":["src/lib/catalog/catalogProtocol.ts","src/lib/catalog/catalogManifest.ts","src/lib/catalog/catalogProjection.ts","src/lib/catalog/catalogManifest.test.ts","src/lib/catalog/catalogProjection.test.ts"],"consumers":["atlas","helix","lumen","sentinel"],"requiredActions":["Atlas must align frozen domain exports with CatalogUnitEvidence and diagnostics names","Sentinel must publish the manifest-declared database filename without renaming","Helix must consume provenSmallestUnit as evidence and never infer absent unit weight"]}
       ]
     },
     "helix": {
