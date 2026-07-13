@@ -1,41 +1,37 @@
-import type { CatalogProductRecord } from './catalog/catalogProtocol';
+import type {
+  CatalogDiagnostics,
+  CatalogProduct,
+  CatalogSearchHit
+} from './catalog/catalogDomain';
 
-export type CatalogSearchOutcome =
-  | 'resolved'
+export type CatalogSearchPhase =
+  | 'idle'
+  | 'searching'
   | 'needs_product_choice'
+  | 'resolved'
   | 'needs_unit_calibration'
   | 'not_found'
   | 'temporarily_unavailable';
 
-export type CatalogSearchPhase = 'idle' | 'searching' | CatalogSearchOutcome;
-
-export interface CatalogIssue {
-  kind: 'catalog' | 'query' | 'calibration';
-  title: string;
-  message: string;
-  technical: string;
-  occurredAt: string;
-  retryAllowedImmediately: true;
-}
-
 export interface CatalogSearchState {
   phase: CatalogSearchPhase;
   query: string;
-  candidates: readonly CatalogProductRecord[];
-  selectedProduct: CatalogProductRecord | null;
-  issue: CatalogIssue | null;
+  candidates: readonly CatalogSearchHit[];
+  selectedProduct: CatalogProduct | null;
+  diagnostics: CatalogDiagnostics | null;
+  validationMessage: string | null;
   requestStartedAt: string | null;
 }
 
 export type CatalogSearchAction =
   | { type: 'start'; query: string }
-  | { type: 'resolve'; query: string; product: CatalogProductRecord }
-  | { type: 'choose'; query: string; candidates: readonly CatalogProductRecord[] }
-  | { type: 'select'; product: CatalogProductRecord }
-  | { type: 'needs-calibration'; product: CatalogProductRecord; issue: CatalogIssue }
-  | { type: 'not-found'; query: string; issue: CatalogIssue }
-  | { type: 'failed'; query: string; issue: CatalogIssue }
-  | { type: 'clear-issue' }
+  | { type: 'show-choice'; query: string; candidates: readonly CatalogSearchHit[] }
+  | { type: 'resolve'; query: string; product: CatalogProduct; candidates?: readonly CatalogSearchHit[] }
+  | { type: 'needs-calibration'; product: CatalogProduct }
+  | { type: 'not-found'; query: string }
+  | { type: 'failed'; query: string; diagnostics: CatalogDiagnostics }
+  | { type: 'validation'; message: string }
+  | { type: 'clear-message' }
   | { type: 'reset' };
 
 export function createCatalogSearchState(): CatalogSearchState {
@@ -44,7 +40,8 @@ export function createCatalogSearchState(): CatalogSearchState {
     query: '',
     candidates: [],
     selectedProduct: null,
-    issue: null,
+    diagnostics: null,
+    validationMessage: null,
     requestStartedAt: null
   };
 }
@@ -61,35 +58,30 @@ export function catalogSearchReducer(
         query: action.query,
         candidates: [],
         selectedProduct: null,
-        issue: null,
+        diagnostics: null,
+        validationMessage: null,
         requestStartedAt: new Date().toISOString()
       };
-    case 'resolve':
-      return {
-        ...state,
-        phase: 'resolved',
-        query: action.query,
-        candidates: [action.product],
-        selectedProduct: action.product,
-        issue: null,
-        requestStartedAt: null
-      };
-    case 'choose':
+    case 'show-choice':
       return {
         ...state,
         phase: 'needs_product_choice',
         query: action.query,
         candidates: action.candidates,
         selectedProduct: null,
-        issue: null,
+        diagnostics: null,
+        validationMessage: null,
         requestStartedAt: null
       };
-    case 'select':
+    case 'resolve':
       return {
         ...state,
         phase: 'resolved',
+        query: action.query,
+        candidates: action.candidates ?? state.candidates,
         selectedProduct: action.product,
-        issue: null,
+        diagnostics: null,
+        validationMessage: null,
         requestStartedAt: null
       };
     case 'needs-calibration':
@@ -97,7 +89,8 @@ export function catalogSearchReducer(
         ...state,
         phase: 'needs_unit_calibration',
         selectedProduct: action.product,
-        issue: action.issue,
+        diagnostics: null,
+        validationMessage: null,
         requestStartedAt: null
       };
     case 'not-found':
@@ -107,7 +100,8 @@ export function catalogSearchReducer(
         query: action.query,
         candidates: [],
         selectedProduct: null,
-        issue: action.issue,
+        diagnostics: null,
+        validationMessage: null,
         requestStartedAt: null
       };
     case 'failed':
@@ -117,28 +111,21 @@ export function catalogSearchReducer(
         query: action.query,
         candidates: [],
         selectedProduct: null,
-        issue: action.issue,
+        diagnostics: action.diagnostics,
+        validationMessage: null,
         requestStartedAt: null
       };
-    case 'clear-issue':
-      return { ...state, issue: null };
+    case 'validation':
+      return {
+        ...state,
+        validationMessage: action.message,
+        diagnostics: null,
+        requestStartedAt: null,
+        phase: state.selectedProduct ? state.phase : 'idle'
+      };
+    case 'clear-message':
+      return { ...state, diagnostics: null, validationMessage: null };
     case 'reset':
       return createCatalogSearchState();
   }
-}
-
-export function createCatalogIssue(
-  kind: CatalogIssue['kind'],
-  title: string,
-  message: string,
-  technical: string
-): CatalogIssue {
-  return {
-    kind,
-    title,
-    message,
-    technical,
-    occurredAt: new Date().toISOString(),
-    retryAllowedImmediately: true
-  };
 }
