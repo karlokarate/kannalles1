@@ -9,6 +9,8 @@ export interface KhCheckerTransferFile {
   diabetes: {
     enabled: boolean;
     factorSegments: DiabetesFactorSegments;
+    insulinActivityDurationHours: number;
+    manualBolusTrackingEnabled: boolean;
   };
   history: HistoryTransferData;
 }
@@ -22,7 +24,12 @@ export function createTransferFile(settings: OfflineAppSettings, exportedAt = ne
     format: 'fishit-kh-checker-transfer',
     schemaVersion: 1,
     exportedAt,
-    diabetes: { enabled: settings.diabeticProfileEnabled, factorSegments: settings.diabetesFactorSegments },
+    diabetes: {
+      enabled: settings.diabeticProfileEnabled,
+      factorSegments: settings.diabetesFactorSegments,
+      insulinActivityDurationHours: settings.insulinActivityDurationHours,
+      manualBolusTrackingEnabled: settings.manualBolusTrackingEnabled
+    },
     history
   };
 }
@@ -37,7 +44,9 @@ export function parseTransferFile(raw: string): KhCheckerTransferFile | null {
       exportedAt: value.exportedAt,
       diabetes: {
         enabled: value.diabetes.enabled,
-        factorSegments: normalizeDiabetesFactorSchedules(value.diabetes.factorSegments, value.diabetes.segments)
+        factorSegments: normalizeDiabetesFactorSchedules(value.diabetes.factorSegments, value.diabetes.segments),
+        insulinActivityDurationHours: typeof value.diabetes.insulinActivityDurationHours === 'number' && Number.isFinite(value.diabetes.insulinActivityDurationHours) && value.diabetes.insulinActivityDurationHours >= 1 && value.diabetes.insulinActivityDurationHours <= 6 && Number.isInteger(value.diabetes.insulinActivityDurationHours * 2) ? value.diabetes.insulinActivityDurationHours : 5,
+        manualBolusTrackingEnabled: value.diabetes.manualBolusTrackingEnabled === true
       },
       history: { calculations: value.history.calculations as HistoryTransferData['calculations'], meals: value.history.meals as HistoryTransferData['meals'], calibrations: value.history.calibrations as HistoryTransferData['calibrations'] }
     };

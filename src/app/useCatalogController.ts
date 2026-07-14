@@ -101,6 +101,8 @@ export function useCatalogController() {
   const [activeMealHistoryId, setActiveMealHistoryId] = useState<string | null>(null);
   const [activeMealCreatedAt, setActiveMealCreatedAt] = useState<string | null>(null);
   const [transferMessage, setTransferMessage] = useState<string | null>(null);
+  const [lastBolusTime, setLastBolusTime] = useState('');
+  const [lastBolusUnits, setLastBolusUnits] = useState('');
   const abortRef = useRef<AbortController | null>(null);
   const speechRecognitionRef = useRef<SpeechRecognition | null>(null);
   const restored = useRef(false);
@@ -510,7 +512,7 @@ export function useCatalogController() {
       if (!parsed) { setTransferMessage('Diese Datei ist keine gültige FishIT-KH-Datendatei.'); return; }
       const imported = importHistoryData(parsed.history);
       if (!imported) { setTransferMessage('Die gespeicherten Daten in der Datei sind ungültig.'); return; }
-      updateSettings({ ...settings, diabeticProfileEnabled: parsed.diabetes.enabled, diabetesFactorSegments: parsed.diabetes.factorSegments });
+      updateSettings({ ...settings, diabeticProfileEnabled: parsed.diabetes.enabled, diabetesFactorSegments: parsed.diabetes.factorSegments, insulinActivityDurationHours: parsed.diabetes.insulinActivityDurationHours, manualBolusTrackingEnabled: parsed.diabetes.manualBolusTrackingEnabled });
       refreshLocalData();
       setTransferMessage(`${imported.meals + imported.calculations} Verlaufseinträge, ${imported.calibrations} Portions-Overrides und die Diabeteseinstellungen wurden importiert.`);
     } catch {
@@ -518,7 +520,7 @@ export function useCatalogController() {
     }
   };
 
-  return { settings, updateSettings, status, setStatus, installedFromNetwork, initialize, section, setSection, manualMode, setManualMode, query, setQuery, search, dispatch, executeSearch, searchPage, searchHasNext, changeSearchPage, clinicBrowseCandidates: settings.clinicMode === 'clinic-only' ? clinicCatalogProducts() : [], startVoiceSearch, speechListening, speechMessage, product, request, setRequest, resolution, selectedOptionId, selectUnit, selectedOption, calculation, selectCandidate, calibrationUnit, changeCalibrationUnit, calibrationCount, setCalibrationCount, calibrationWeight, setCalibrationWeight, calibrationPreview, calibrationMessage, productPhotoMessage, catalogPhotoUrl, setCatalogPhoto, manual, setManual, manualCalculation, saveManual, manualProducts, manualMessage, saveManualDefinition, loadManualDefinition, removeManualDefinition, setManualPhoto, history, savedMeals, favorites, counts, refreshLocalData, saveCurrent, isFavorite: product ? isFavoriteProduct(product.productId) : false, toggleFavorite, clearHistory, clearSession: clearSearchSession, clearAll, mealItems, mealOpen, editingMealItemId, mealTotalCarbohydrates, mealMessage, mealNeedsCurrentGlucose, mealGlucoseFocusRequest, transferMessage, addCurrentToMeal, startNextMealProduct, openMealSummary, openMealItem, updateMealItem, removeMealItem, clearMeal, loadSavedMeal, removeSavedMeal, acknowledgeMealGlucose, downloadTransferFile, shareTransferFile, importTransferFile };
+  return { settings, updateSettings, status, setStatus, installedFromNetwork, initialize, section, setSection, manualMode, setManualMode, query, setQuery, search, dispatch, executeSearch, searchPage, searchHasNext, changeSearchPage, clinicBrowseCandidates: settings.clinicMode === 'clinic-only' ? clinicCatalogProducts() : [], startVoiceSearch, speechListening, speechMessage, product, request, setRequest, resolution, selectedOptionId, selectUnit, selectedOption, calculation, selectCandidate, calibrationUnit, changeCalibrationUnit, calibrationCount, setCalibrationCount, calibrationWeight, setCalibrationWeight, calibrationPreview, calibrationMessage, productPhotoMessage, catalogPhotoUrl, setCatalogPhoto, manual, setManual, manualCalculation, saveManual, manualProducts, manualMessage, saveManualDefinition, loadManualDefinition, removeManualDefinition, setManualPhoto, history, savedMeals, favorites, counts, refreshLocalData, saveCurrent, isFavorite: product ? isFavoriteProduct(product.productId) : false, toggleFavorite, clearHistory, clearSession: clearSearchSession, clearAll, mealItems, mealOpen, editingMealItemId, mealTotalCarbohydrates, mealMessage, mealNeedsCurrentGlucose, mealGlucoseFocusRequest, transferMessage, lastBolusTime, setLastBolusTime, lastBolusUnits, setLastBolusUnits, addCurrentToMeal, startNextMealProduct, openMealSummary, openMealItem, updateMealItem, removeMealItem, clearMeal, loadSavedMeal, removeSavedMeal, acknowledgeMealGlucose, downloadTransferFile, shareTransferFile, importTransferFile };
 }
 
 export type CatalogController = ReturnType<typeof useCatalogController>;

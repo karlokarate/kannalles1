@@ -239,6 +239,8 @@ input:disabled, select:disabled { opacity: 0.6; }
 .theme-picker label.is-active { border-color: var(--primary); background: #eaf7fb; box-shadow: 0 8px 24px rgba(23, 107, 135, 0.12); }
 .diabetes-settings { display: grid; gap: 15px; }
 .diabetes-warning { margin: 0; padding: 12px 14px; border: 1px solid #e7c071; border-radius: var(--radius-sm); background: var(--warning-soft); }
+.insulin-activity-settings { display: grid; gap: 13px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-muted); }
+.insulin-activity-settings h2 { margin: 3px 0 0; }
 .diabetes-segment-list { display: grid; gap: 11px; }
 .diabetes-segment { padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-muted); }
 .diabetes-segment > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 11px; }
@@ -268,7 +270,11 @@ input:disabled, select:disabled { opacity: 0.6; }
 .product-card > .diabetes-bolus-panel { margin: 0 clamp(16px, 3vw, 24px) clamp(16px, 3vw, 24px); box-shadow: none; }
 .diabetes-bolus-panel h2 { margin: 3px 0 0; }
 .diabetes-glucose-input { max-width: 360px; margin-bottom: 14px; }
-.bolus-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.pen-bolus-entry { display: grid; gap: 10px; margin: 0 0 14px; padding: 14px; border: 1px solid #c8dfe7; border-radius: var(--radius-md); background: rgba(255,255,255,0.7); }
+.pen-bolus-entry > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pen-bolus-entry > header h3 { margin: 0; }
+.pen-bolus-inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 10px; }
+.bolus-values { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0; }
 .bolus-values > div { display: grid; gap: 4px; min-width: 0; padding: 14px; border: 1px solid #c8dfe7; border-radius: 14px; background: rgba(255,255,255,0.86); }
 .bolus-values dt { color: var(--muted); font-size: 0.82rem; font-weight: 700; }
 .bolus-values dd { margin: 0; color: var(--primary-strong); font-size: clamp(1.45rem, 4vw, 2.1rem); font-weight: 900; }
@@ -374,7 +380,7 @@ input:disabled, select:disabled { opacity: 0.6; }
   .product-card__header { grid-template-columns: auto minmax(0, 1fr); }
   .favorite-button { grid-column: 1 / -1; grid-template-columns: auto 1fr; width: 100%; }
   .calculation-grid, .manual-grid, .calibration-fields, .settings-grid { grid-template-columns: 1fr; }
-  .diabetes-segment-grid, .bolus-values, .theme-picker { grid-template-columns: 1fr; }
+  .diabetes-segment-grid, .bolus-values, .theme-picker, .pen-bolus-inputs { grid-template-columns: 1fr; }
   .diabetes-factor-grid { grid-template-columns: 1fr 1fr; }
   .factor-value-field { grid-column: 1 / -1; }
   .field--wide { grid-column: auto; }

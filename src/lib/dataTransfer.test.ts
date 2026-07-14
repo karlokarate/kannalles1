@@ -11,6 +11,7 @@ describe('portable history and diabetes settings', () => {
     expect(parseTransferFile(serializeTransferFile(file))).toEqual(file);
     expect(file.history.calibrations[0].unit).toBe('slice');
     expect(file.diabetes.factorSegments.carbohydrateRatioG).not.toBe(file.diabetes.factorSegments.correctionFactorMgDl);
+    expect(file.diabetes).toMatchObject({ insulinActivityDurationHours: 5, manualBolusTrackingEnabled: false });
   });
 
   it('imports legacy transfer files with shared segments without losing values', () => {
@@ -30,6 +31,7 @@ describe('portable history and diabetes settings', () => {
     expect(parsed?.diabetes.factorSegments.carbohydrateRatioG[0].value).toBe(11);
     expect(parsed?.diabetes.factorSegments.correctionFactorMgDl[0].value).toBe(55);
     expect(parsed?.diabetes.factorSegments.targetGlucoseMgDl[0].value).toBe(105);
+    expect(parsed?.diabetes).toMatchObject({ insulinActivityDurationHours: 5, manualBolusTrackingEnabled: false });
   });
 
   it('rejects unrelated JSON files', () => {

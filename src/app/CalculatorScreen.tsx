@@ -54,7 +54,7 @@ function MealSummary({ c, currentGlucose, onCurrentGlucoseChange }: { c: Catalog
       <div className="meal-summary__actions"><button type="button" className="button button--primary" onClick={c.startNextMealProduct}>+ Weiteres Produkt</button><span className="meal-auto-save">✓ Automatisch im Verlauf gespeichert</span><button type="button" className="button button--danger" onClick={() => { if (window.confirm('Aktuelle Rechnung zurücksetzen? Die automatisch gespeicherte Version bleibt im Verlauf verfügbar.')) c.clearMeal(); }}>Aktuelle Rechnung zurücksetzen</button></div>
       {c.mealMessage && <p className="inline-message" role="status">{c.mealMessage}</p>}
     </article>
-    {c.settings.diabeticProfileEnabled && <>{c.mealNeedsCurrentGlucose && <p className="current-glucose-prompt" role="status">Bitte gib deinen aktuellen Blutzucker ein. Der Bolus wird für diese wiederverwendete Rechnung neu berechnet.</p>}<DiabetesBolusPanel settings={c.settings} carbohydratesG={c.mealTotalCarbohydrates} currentGlucose={currentGlucose} onCurrentGlucoseChange={(value) => { c.acknowledgeMealGlucose(); onCurrentGlucoseChange(value); }} focusRequest={c.mealGlucoseFocusRequest} /></>}
+    {c.settings.diabeticProfileEnabled && <>{c.mealNeedsCurrentGlucose && <p className="current-glucose-prompt" role="status">Bitte gib deinen aktuellen Blutzucker ein. Der Bolus wird für diese wiederverwendete Rechnung neu berechnet.</p>}<DiabetesBolusPanel settings={c.settings} carbohydratesG={c.mealTotalCarbohydrates} currentGlucose={currentGlucose} onCurrentGlucoseChange={(value) => { c.acknowledgeMealGlucose(); onCurrentGlucoseChange(value); }} lastBolusTime={c.lastBolusTime} lastBolusUnits={c.lastBolusUnits} onLastBolusTimeChange={c.setLastBolusTime} onLastBolusUnitsChange={c.setLastBolusUnits} focusRequest={c.mealGlucoseFocusRequest} /></>}
   </>;
 }
 
@@ -114,7 +114,7 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
         </fieldset>
       </header>
 
-      {c.settings.diabeticProfileEnabled && (c.manualMode || !product) && <DiabetesBolusPanel settings={c.settings} carbohydratesG={carbohydratesForBolus} currentGlucose={currentGlucose} onCurrentGlucoseChange={setCurrentGlucose} />}
+      {c.settings.diabeticProfileEnabled && (c.manualMode || !product) && <DiabetesBolusPanel settings={c.settings} carbohydratesG={carbohydratesForBolus} currentGlucose={currentGlucose} onCurrentGlucoseChange={setCurrentGlucose} lastBolusTime={c.lastBolusTime} lastBolusUnits={c.lastBolusUnits} onLastBolusTimeChange={c.setLastBolusTime} onLastBolusUnitsChange={c.setLastBolusUnits} />}
 
       {!c.manualMode ? <>
         <search><form className="search-card" onSubmit={submit} data-search-phase={c.search.phase}>
@@ -165,7 +165,7 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
             <span>Kohlenhydrate gesamt</span><strong>{formatCarbohydrates(calculation.carbohydratesG, c.settings.decimalPlaces)} g KH</strong><small>{isClinicCatalogProduct(product) && product.clinic.directCarbohydratesPerUnit !== null ? `Direkter Klinikwert · ${c.request.amount.toLocaleString('de-DE')} × ${product.clinic.directCarbohydratesPerUnit.toLocaleString('de-DE')} g KH je Stück` : `Intern ohne Zwischenrundung berechnet · ${c.request.amount.toLocaleString('de-DE')} × ${calculation.unitBaseValue?.toLocaleString('de-DE')} × ${product.nutrition.carbohydratesPer100.toLocaleString('de-DE')} / 100`}</small><button type="button" className="button button--secondary" onClick={c.addCurrentToMeal}>{c.editingMealItemId ? 'Änderung übernehmen & weiter' : '+ Zur Gesamtrechnung'}</button>{c.settings.saveHistory && <button type="button" className="button button--secondary" onClick={c.saveCurrent}>Im Verlauf speichern</button>}
           </section> : <section className="missing-calculation" data-testid="catalog-calculation" data-status={calculation?.status ?? 'not_calculable'}><strong>Für diese Einheit fehlt noch ein belastbares Gewicht.</strong><p>Du kannst die Einheit direkt unten durch gemeinsames Wiegen festlegen.</p></section>}
 
-          {c.settings.diabeticProfileEnabled && <DiabetesBolusPanel settings={c.settings} carbohydratesG={carbohydratesForBolus} currentGlucose={currentGlucose} onCurrentGlucoseChange={setCurrentGlucose} />}
+          {c.settings.diabeticProfileEnabled && <DiabetesBolusPanel settings={c.settings} carbohydratesG={carbohydratesForBolus} currentGlucose={currentGlucose} onCurrentGlucoseChange={setCurrentGlucose} lastBolusTime={c.lastBolusTime} lastBolusUnits={c.lastBolusUnits} onLastBolusTimeChange={c.setLastBolusTime} onLastBolusUnitsChange={c.setLastBolusUnits} />}
 
           {product.nutrition.basis === 'mass' && !isGenericCatalogProduct(product) && (!isClinicCatalogProduct(product) || product.clinic.directCarbohydratesPerUnit === null) && <details className="calibration-card" open={calibrationOpen} onToggle={(event) => setCalibrationOpen(event.currentTarget.open)} data-testid="catalog-calibration" data-status="always-available">
             <summary><span><span className="eyebrow">Persönliche Standard-Einheit</span><strong>Serving-Einheit selbst abwiegen</strong></span><small>{hasDefinedServing ? 'Bereits definiert · bei Bedarf ändern' : 'Noch keine Portion definiert'}</small></summary>

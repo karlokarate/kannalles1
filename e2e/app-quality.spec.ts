@@ -111,6 +111,8 @@ test('segmentiertes Diabetikerprofil berechnet Korrektur allein und zusammen mit
   await openAppShell(page);
   await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await page.getByTestId('diabetes-profile-toggle').check();
+  await page.getByTestId('insulin-duration-select').selectOption('5');
+  await page.getByTestId('manual-bolus-tracking-toggle').check();
   const ratioGroup = page.getByTestId('diabetes-factor-carbohydrateRatioG');
   const correctionGroup = page.getByTestId('diabetes-factor-correctionFactorMgDl');
   const targetGroup = page.getByTestId('diabetes-factor-targetGlucoseMgDl');
@@ -165,15 +167,21 @@ test('segmentiertes Diabetikerprofil berechnet Korrektur allein und zusammen mit
   await page.getByTestId('current-glucose-input').fill('200');
   await expect(page.getByTestId('correction-bolus')).toHaveText('+2,0 E');
   await expect(page.getByTestId('total-bolus')).toHaveText('2,0 E');
+  const currentTime = await page.evaluate(() => `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`);
+  await page.getByTestId('last-bolus-time').fill(currentTime);
+  await page.getByTestId('last-bolus-units').fill('1,0');
+  await expect(page.getByTestId('active-insulin')).toHaveText('−1,0 E');
+  await expect(page.getByTestId('active-insulin-summary')).toContainText(/noch 1,0+ E aktiv/);
+  await expect(page.getByTestId('total-bolus')).toHaveText('1,0 E');
 
   await page.getByRole('button', { name: 'Manuell', exact: true }).click();
   await page.getByLabel('KH pro 100 g').fill('40');
   await page.getByLabel('Menge in g').fill('100');
   await expect(page.getByTestId('carbohydrate-bolus')).toHaveText('4,0 E');
-  await expect(page.getByTestId('total-bolus')).toHaveText('6,0 E');
+  await expect(page.getByTestId('total-bolus')).toHaveText('5,0 E');
   await page.getByTestId('current-glucose-input').fill('50');
   await expect(page.getByTestId('correction-bolus')).toHaveText('-1,0 E');
-  await expect(page.getByTestId('total-bolus')).toHaveText('3,0 E');
+  await expect(page.getByTestId('total-bolus')).toHaveText('2,0 E');
 });
 
 test('exportiert, teilt und importiert Verlauf, Diabeteseinstellungen und Portions-Overrides als eine Datei', async ({ page }) => {
@@ -185,6 +193,8 @@ test('exportiert, teilt und importiert Verlauf, Diabeteseinstellungen und Portio
   await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await page.getByTestId('diabetes-profile-toggle').check();
   await page.getByTestId('carbohydrate-ratio-input').first().fill('12');
+  await page.getByTestId('insulin-duration-select').selectOption('4.5');
+  await page.getByTestId('manual-bolus-tracking-toggle').check();
 
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Datei exportieren' }).click();
@@ -194,13 +204,17 @@ test('exportiert, teilt und importiert Verlauf, Diabeteseinstellungen und Portio
   if (!downloadPath) throw new Error('export download did not produce a readable file');
   const contents = readFileSync(downloadPath, 'utf8');
   const transferred = JSON.parse(contents);
-  expect(transferred).toMatchObject({ format: 'fishit-kh-checker-transfer', schemaVersion: 1, diabetes: { enabled: true }, history: { calculations: [], meals: [], calibrations: [] } });
+  expect(transferred).toMatchObject({ format: 'fishit-kh-checker-transfer', schemaVersion: 1, diabetes: { enabled: true, insulinActivityDurationHours: 4.5, manualBolusTrackingEnabled: true }, history: { calculations: [], meals: [], calibrations: [] } });
 
   await page.getByRole('button', { name: 'Nativ teilen', exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as typeof window & { sharedFileName?: string }).sharedFileName ?? '')).toMatch(/^fishit-kh-daten-.*\.txt$/);
 
   await page.getByTestId('carbohydrate-ratio-input').first().fill('20');
+  await page.getByTestId('insulin-duration-select').selectOption('6');
+  await page.getByTestId('manual-bolus-tracking-toggle').uncheck();
   await page.getByTestId('transfer-file-input').setInputFiles({ name: 'fishit-kh-daten.json', mimeType: 'application/json', buffer: Buffer.from(contents) });
   await expect(page.locator('.transfer-settings').getByRole('status')).toContainText('Diabeteseinstellungen wurden importiert');
   await expect(page.getByTestId('carbohydrate-ratio-input').first()).toHaveValue('12');
+  await expect(page.getByTestId('insulin-duration-select')).toHaveValue('4.5');
+  await expect(page.getByTestId('manual-bolus-tracking-toggle')).toBeChecked();
 });

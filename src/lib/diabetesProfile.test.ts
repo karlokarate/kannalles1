@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeDiabetesFactors, activeDiabetesSegment, addDiabetesSegment, calculateBolus, changeSegmentBoundary, defaultDiabetesFactorSchedules, defaultDiabetesSegments, normalizeDiabetesFactorSchedules, normalizeDiabetesSegments, removeDiabetesSegment } from './diabetesProfile';
+import { activeDiabetesFactors, activeDiabetesSegment, activeInsulinFromClockTime, addDiabetesSegment, calculateBolus, changeSegmentBoundary, defaultDiabetesFactorSchedules, defaultDiabetesSegments, normalizeDiabetesFactorSchedules, normalizeDiabetesSegments, remainingInsulinFraction, removeDiabetesSegment } from './diabetesProfile';
 
 describe('diabetes profile time segments', () => {
   it('provides the seven requested contiguous default windows', () => {
@@ -63,15 +63,43 @@ describe('bolus calculation', () => {
   const segment = { ...defaultDiabetesSegments()[0], carbohydrateRatioG: 10, correctionFactorMgDl: 50, targetGlucoseMgDl: 100 };
 
   it('adds a positive correction to the meal bolus', () => {
-    expect(calculateBolus(60, 200, segment)).toEqual({ carbohydrateBolus: 6, correctionBolus: 2, totalBolus: 8 });
+    expect(calculateBolus(60, 200, segment)).toEqual({ carbohydrateBolus: 6, correctionBolus: 2, unadjustedTotalBolus: 8, activeInsulinUnits: 0, totalBolus: 8 });
   });
 
   it('subtracts a below-target correction without returning a negative dose', () => {
-    expect(calculateBolus(10, 50, segment)).toEqual({ carbohydrateBolus: 1, correctionBolus: -1, totalBolus: 0 });
+    expect(calculateBolus(10, 50, segment)).toEqual({ carbohydrateBolus: 1, correctionBolus: -1, unadjustedTotalBolus: 0, activeInsulinUnits: 0, totalBolus: 0 });
   });
 
   it('calculates correction without a meal and requires configured factors', () => {
-    expect(calculateBolus(null, 200, segment)).toEqual({ carbohydrateBolus: null, correctionBolus: 2, totalBolus: 2 });
-    expect(calculateBolus(50, 200, defaultDiabetesSegments()[0])).toEqual({ carbohydrateBolus: null, correctionBolus: null, totalBolus: null });
+    expect(calculateBolus(null, 200, segment)).toEqual({ carbohydrateBolus: null, correctionBolus: 2, unadjustedTotalBolus: 2, activeInsulinUnits: 0, totalBolus: 2 });
+    expect(calculateBolus(50, 200, defaultDiabetesSegments()[0])).toEqual({ carbohydrateBolus: null, correctionBolus: null, unadjustedTotalBolus: null, activeInsulinUnits: 0, totalBolus: null });
+  });
+
+  it('subtracts active insulin without ever returning a negative total', () => {
+    expect(calculateBolus(60, 200, segment, 1.5)).toMatchObject({ unadjustedTotalBolus: 8, activeInsulinUnits: 1.5, totalBolus: 6.5 });
+    expect(calculateBolus(null, 200, segment, 3)).toMatchObject({ unadjustedTotalBolus: 2, activeInsulinUnits: 3, totalBolus: 0 });
+  });
+});
+
+describe('active insulin model', () => {
+  it('starts at the full bolus and reaches zero at the configured duration', () => {
+    expect(remainingInsulinFraction(0, 5)).toBe(1);
+    expect(remainingInsulinFraction(5, 5)).toBe(0);
+    expect(remainingInsulinFraction(6, 5)).toBe(0);
+  });
+
+  it('has its strongest modeled activity around 1.5 hours', () => {
+    const drop = (at: number) => remainingInsulinFraction(at, 5) - remainingInsulinFraction(at + 0.05, 5);
+    expect(drop(1.5)).toBeGreaterThan(drop(0.75));
+    expect(drop(1.5)).toBeGreaterThan(drop(2.5));
+  });
+
+  it('handles a last bolus across midnight and rejects invalid entries', () => {
+    const active = activeInsulinFromClockTime('23:30', 4, 5, new Date(2026, 6, 15, 0, 30));
+    expect(active?.elapsedHours).toBe(1);
+    expect(active?.units).toBeGreaterThan(0);
+    expect(active?.units).toBeLessThan(4);
+    expect(activeInsulinFromClockTime('', 4, 5)).toBeNull();
+    expect(activeInsulinFromClockTime('12:00', 0, 5)).toBeNull();
   });
 });

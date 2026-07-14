@@ -6,8 +6,12 @@ import type { DiabetesFactorKey, DiabetesFactorSegment, DiabetesFactorSegments }
 interface DiabetesSettingsProps {
   enabled: boolean;
   factorSegments: DiabetesFactorSegments;
+  insulinActivityDurationHours: number;
+  manualBolusTrackingEnabled: boolean;
   onEnabledChange: (enabled: boolean) => void;
   onFactorSegmentsChange: (key: DiabetesFactorKey, segments: DiabetesFactorSegment[]) => void;
+  onInsulinActivityDurationChange: (hours: number) => void;
+  onManualBolusTrackingChange: (enabled: boolean) => void;
 }
 
 interface FactorDefinition {
@@ -110,11 +114,20 @@ function FactorGroup({ definition, segments, defaultOpen, onSegmentsChange }: { 
   </details>;
 }
 
-export function DiabetesSettings({ enabled, factorSegments, onEnabledChange, onFactorSegmentsChange }: DiabetesSettingsProps) {
+const INSULIN_DURATIONS = Array.from({ length: 11 }, (_, index) => 1 + index * 0.5);
+
+export function DiabetesSettings({ enabled, factorSegments, insulinActivityDurationHours, manualBolusTrackingEnabled, onEnabledChange, onFactorSegmentsChange, onInsulinActivityDurationChange, onManualBolusTrackingChange }: DiabetesSettingsProps) {
   return <fieldset className="settings-card settings-card--wide diabetes-settings" data-testid="diabetes-settings">
     <legend>Diabetikerprofil</legend>
     <label className="switch-row"><span><strong>Bolus-Rechenhilfe aktivieren</strong><small>Zeigt KH-, Korrektur- und Gesamtbolus auf dem Rechner.</small></span><input type="checkbox" checked={enabled} onChange={(event) => onEnabledChange(event.target.checked)} data-testid="diabetes-profile-toggle" /></label>
-    <p className="settings-note diabetes-warning"><strong>Wichtig:</strong> Nur mit den persönlichen, vom Behandlungsteam festgelegten Werten verwenden. Die Rechenhilfe berücksichtigt kein aktives Insulin, keine Trendpfeile, Bewegung, Krankheit oder verzögerte Mahlzeitenwirkung und gibt keine Insulindosis frei.</p>
+    <p className="settings-note diabetes-warning"><strong>Wichtig:</strong> Nur mit den persönlichen, vom Behandlungsteam festgelegten Werten verwenden. Laufendes Insulin wird ausschließlich aus dem optional manuell erfassten letzten Bolus geschätzt; frühere Bolusgaben, Basalinsulin, Trendpfeile, Bewegung, Krankheit und verzögerte Mahlzeitenwirkung bleiben unberücksichtigt. Die Rechenhilfe gibt keine Insulindosis frei.</p>
+    <section className="insulin-activity-settings" aria-labelledby="insulin-activity-title">
+      <div><span className="eyebrow">Laufendes Insulin</span><h2 id="insulin-activity-title">Pen-Bolus berücksichtigen</h2></div>
+      <label className="field"><span>Persönliche Insulin-Wirkdauer</span><select value={insulinActivityDurationHours} onChange={(event) => onInsulinActivityDurationChange(Number(event.target.value))} data-testid="insulin-duration-select">{INSULIN_DURATIONS.map((hours) => <option key={hours} value={hours}>{hours.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} Stunden</option>)}</select></label>
+      <label className="switch-row"><span><strong>Letzten Pen-Bolus erfassen</strong><small>Blendet unter dem aktuellen Blutzucker Uhrzeit und Insulineinheiten des letzten Bolus ein.</small></span><input type="checkbox" checked={manualBolusTrackingEnabled} onChange={(event) => onManualBolusTrackingChange(event.target.checked)} data-testid="manual-bolus-tracking-toggle" /></label>
+      <p className="settings-note">Das Modell setzt die höchste Insulinwirkung nach 1,5 Stunden an und zählt danach bis zum Ende der eingestellten Wirkdauer herunter. Die Wirkdauer muss passend zum verwendeten Insulin mit dem Behandlungsteam festgelegt werden.</p>
+      {insulinActivityDurationHours < 4 && <p className="settings-note diabetes-warning" role="status"><strong>Achtung:</strong> Eine kurze Wirkdauer kann noch aktives Insulin ausblenden und dadurch Insulin-Stacking begünstigen.</p>}
+    </section>
     <div className="section-title-row"><div><span className="eyebrow">Getrennt und übersichtlich</span><h2>Faktoren nach Zeitsegment</h2></div><span>3 unabhängige Zeitpläne</span></div>
     <p className="settings-note">Jede Faktorgruppe besitzt eigene Zeitsegmente und Zeitgrenzen. Enter oder „Weiter“ springt innerhalb derselben Gruppe zum nächsten Wert; „Fertig“ klappt die vollständig eingegebene Gruppe zu.</p>
     <div className="diabetes-factor-list">{FACTORS.map((definition, index) => <FactorGroup key={definition.key} definition={definition} segments={factorSegments[definition.key]} defaultOpen={index === 0} onSegmentsChange={(segments) => onFactorSegmentsChange(definition.key, segments)} />)}</div>

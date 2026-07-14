@@ -28,7 +28,15 @@ export interface ActiveDiabetesFactors {
 export interface BolusCalculation {
   carbohydrateBolus: number | null;
   correctionBolus: number | null;
+  unadjustedTotalBolus: number | null;
+  activeInsulinUnits: number;
   totalBolus: number | null;
+}
+
+export interface ActiveInsulinCalculation {
+  units: number;
+  fraction: number;
+  elapsedHours: number;
 }
 
 interface SegmentWindow {
@@ -212,15 +220,36 @@ export function activeDiabetesFactors(schedules: DiabetesFactorSegments, date = 
   };
 }
 
-export function calculateBolus(carbohydratesG: number | null, currentGlucoseMgDl: number | null, factors: ActiveDiabetesFactors): BolusCalculation {
+export function remainingInsulinFraction(elapsedHours: number, durationHours: number, peakHours = 1.5): number {
+  if (!Number.isFinite(elapsedHours) || !Number.isFinite(durationHours) || !Number.isFinite(peakHours) || durationHours <= 0 || peakHours <= 0) return 0;
+  if (elapsedHours <= 0) return 1;
+  if (elapsedHours >= durationHours) return 0;
+  const remaining = (time: number) => (1 + time / peakHours) * Math.exp(-time / peakHours);
+  const atEnd = remaining(durationHours);
+  return Math.max(0, Math.min(1, (remaining(elapsedHours) - atEnd) / (1 - atEnd)));
+}
+
+export function activeInsulinFromClockTime(lastBolusTime: string, bolusUnits: number, durationHours: number, now = new Date()): ActiveInsulinCalculation | null {
+  const minute = timeInputToMinute(lastBolusTime);
+  if (minute === null || minute === 1440 || !Number.isFinite(bolusUnits) || bolusUnits <= 0 || !Number.isFinite(durationHours) || durationHours < 1 || durationHours > 6) return null;
+  const nowMinute = now.getHours() * 60 + now.getMinutes();
+  const elapsedMinutes = (nowMinute - minute + 1440) % 1440;
+  const elapsedHours = elapsedMinutes / 60;
+  const fraction = remainingInsulinFraction(elapsedHours, durationHours);
+  return { units: bolusUnits * fraction, fraction, elapsedHours };
+}
+
+export function calculateBolus(carbohydratesG: number | null, currentGlucoseMgDl: number | null, factors: ActiveDiabetesFactors, activeInsulinUnits = 0): BolusCalculation {
   const carbohydrateBolus = carbohydratesG !== null && carbohydratesG >= 0 && factors.carbohydrateRatioG !== null
     ? carbohydratesG / factors.carbohydrateRatioG
     : null;
   const correctionBolus = currentGlucoseMgDl !== null && factors.correctionFactorMgDl !== null && factors.targetGlucoseMgDl !== null
     ? (currentGlucoseMgDl - factors.targetGlucoseMgDl) / factors.correctionFactorMgDl
     : null;
-  const totalBolus = carbohydrateBolus === null
+  const unadjustedTotalBolus = carbohydrateBolus === null
     ? correctionBolus === null ? null : Math.max(0, correctionBolus)
     : Math.max(0, carbohydrateBolus + (correctionBolus ?? 0));
-  return { carbohydrateBolus, correctionBolus, totalBolus };
+  const safeActiveInsulin = Number.isFinite(activeInsulinUnits) && activeInsulinUnits > 0 ? activeInsulinUnits : 0;
+  const totalBolus = unadjustedTotalBolus === null ? null : Math.max(0, unadjustedTotalBolus - safeActiveInsulin);
+  return { carbohydrateBolus, correctionBolus, unadjustedTotalBolus, activeInsulinUnits: safeActiveInsulin, totalBolus };
 }

@@ -18,6 +18,8 @@ export interface OfflineAppSettings {
   visualTheme: VisualTheme;
   diabeticProfileEnabled: boolean;
   diabetesFactorSegments: DiabetesFactorSegments;
+  insulinActivityDurationHours: number;
+  manualBolusTrackingEnabled: boolean;
 }
 
 const SETTINGS_KEY = 'kh-checker:offline-settings:v1';
@@ -32,7 +34,9 @@ export const DEFAULT_OFFLINE_SETTINGS: OfflineAppSettings = Object.freeze({
   clinicMode: 'hybrid',
   visualTheme: 'comic',
   diabeticProfileEnabled: false,
-  diabetesFactorSegments: defaultDiabetesFactorSchedules()
+  diabetesFactorSegments: defaultDiabetesFactorSchedules(),
+  insulinActivityDurationHours: 5,
+  manualBolusTrackingEnabled: false
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -55,7 +59,9 @@ export function normalizeOfflineSettings(value: unknown): OfflineAppSettings {
     clinicMode: value.clinicMode === 'clinic-only' || value.clinicMode === 'off' ? value.clinicMode : 'hybrid',
     visualTheme: value.visualTheme === 'standard' ? 'standard' : 'comic',
     diabeticProfileEnabled: value.diabeticProfileEnabled === true,
-    diabetesFactorSegments: normalizeDiabetesFactorSchedules(value.diabetesFactorSegments, value.diabetesSegments)
+    diabetesFactorSegments: normalizeDiabetesFactorSchedules(value.diabetesFactorSegments, value.diabetesSegments),
+    insulinActivityDurationHours: typeof value.insulinActivityDurationHours === 'number' && Number.isFinite(value.insulinActivityDurationHours) && value.insulinActivityDurationHours >= 1 && value.insulinActivityDurationHours <= 6 && Number.isInteger(value.insulinActivityDurationHours * 2) ? value.insulinActivityDurationHours : 5,
+    manualBolusTrackingEnabled: value.manualBolusTrackingEnabled === true
   };
 }
 
