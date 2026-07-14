@@ -113,6 +113,51 @@ test('übernimmt eine gesprochene Produktliste samt Einzelmengen direkt in die G
   await expect.poll(async () => Number(await page.getByTestId('meal-total').getAttribute('data-total-carbs-g'))).toBeCloseTo(99.484, 10);
 });
 
+test('verarbeitet gemischte Einheiten im Suchfeld und ausgeschriebene Mengen per Sprache', async ({ page }) => {
+  await page.addInitScript(() => {
+    class MixedUnitSpeechRecognition {
+      lang = '';
+      interimResults = false;
+      continuous = false;
+      onstart: (() => void) | null = null;
+      onresult: ((event: unknown) => void) | null = null;
+      onerror: ((event: unknown) => void) | null = null;
+      onend: (() => void) | null = null;
+      start() {
+        setTimeout(() => {
+          this.onstart?.();
+          this.onresult?.({ results: [[{ transcript: 'zwei Scheiben Mehrkornbrot mit Nutella und 400 ml Sprite' }]] });
+          this.onend?.();
+        }, 0);
+      }
+    }
+    Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: MixedUnitSpeechRecognition });
+    Object.defineProperty(window, 'webkitSpeechRecognition', { configurable: true, value: undefined });
+  });
+  await openCatalogApp(page);
+  await expectCatalogReady(page);
+
+  await page.getByTestId('catalog-search-input').fill('2 Scheiben Mehrkornbrot mit Nutella und 400 ml Sprite');
+  await page.getByTestId('catalog-search-submit').click();
+  await expect(page.getByTestId('meal-summary')).toBeVisible();
+  await expect(page.getByTestId('meal-item')).toHaveCount(3);
+  const bread = page.getByTestId('meal-item').filter({ hasText: 'Mehrkornbrot' });
+  const sprite = page.getByTestId('meal-item').filter({ hasText: 'Sprite' });
+  await expect(bread.getByRole('spinbutton')).toHaveValue('2');
+  await expect(bread.getByRole('combobox')).toHaveValue(/slice/);
+  await expect(sprite.getByRole('spinbutton')).toHaveValue('400');
+  await expect(sprite.getByRole('combobox')).toHaveValue(/ml/);
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Aktuelle Rechnung zurücksetzen' }).click();
+  await expect(page.getByTestId('catalog-search-input')).toBeVisible();
+  await page.getByTestId('catalog-speech-search').click();
+  await expect(page.getByTestId('meal-summary')).toBeVisible();
+  await expect(page.getByTestId('meal-item')).toHaveCount(3);
+  await expect(page.getByTestId('meal-item').filter({ hasText: 'Mehrkornbrot' }).getByRole('spinbutton')).toHaveValue('2');
+  await expect(page.getByTestId('meal-item').filter({ hasText: 'Sprite' }).getByRole('spinbutton')).toHaveValue('400');
+});
+
 test('sammelt mehrere Produkte, hält die Summe schwebend und unterstützt Bearbeiten, Details sowie Reset', async ({ page }) => {
   await openCatalogApp(page);
   await expectCatalogReady(page);

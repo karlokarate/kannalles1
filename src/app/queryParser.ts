@@ -37,14 +37,17 @@ export function normalizeCatalogQuery(value: string): string {
   return value.normalize('NFKC').replace(/\s+/g, ' ').trim();
 }
 
-export function parseSpokenProductList(rawInput: string): string[] {
+export function parseProductList(rawInput: string): string[] {
   const normalized = normalizeCatalogQuery(rawInput);
   if (!normalized) return [];
   return normalized
-    .split(/\s*(?:,|\b(?:mit|und|plus|sowie)\b)\s*/i)
+    .split(/\s*(?:[,;]|\b(?:mit|und|plus|sowie)\b)\s*/i)
     .map((part) => normalizeCatalogQuery(part))
     .filter(Boolean);
 }
+
+// Kept as a compatibility alias for persisted tests and older call sites.
+export const parseSpokenProductList = parseProductList;
 
 export function parseCatalogQuery(rawInput: string): ParsedCatalogQuery | null {
   const raw = normalizeCatalogQuery(rawInput);

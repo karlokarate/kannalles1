@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCatalogQuery, parseSpokenProductList } from './app/queryParser';
+import { parseCatalogQuery, parseProductList, parseSpokenProductList } from './app/queryParser';
 import { autoSelectionEligibility, catalogProductImageUrl, selectDefaultCatalogCandidate } from './app/catalogViewModel';
 import type { CatalogSearchHit } from './lib/catalog/catalogDomain';
 import { catalogProductEligibility } from './lib/resolution/catalogResolution';
@@ -52,8 +52,12 @@ describe('Lumen hard-cutover state', () => {
       unitExplicit: false
     });
     expect(parseCatalogQuery('zwei Scheiben Mehrkornbrot')).toMatchObject({ amount: 2, unit: 'slice', catalogQuery: 'Mehrkornbrot' });
+    expect(parseCatalogQuery('2 Scheiben Mehrkornbrot')).toMatchObject({ amount: 2, unit: 'slice', catalogQuery: 'Mehrkornbrot' });
     expect(parseCatalogQuery('eine Sprite')).toMatchObject({ amount: 1, amountExplicit: true, catalogQuery: 'Sprite' });
     expect(parseSpokenProductList('2 Scheiben Mehrkornbrot mit 20 g Nutella und eine Sprite')).toEqual(['2 Scheiben Mehrkornbrot', '20 g Nutella', 'eine Sprite']);
+    expect(parseProductList('2 Scheiben Mehrkornbrot mit Nutella und 400 ml Sprite')).toEqual(['2 Scheiben Mehrkornbrot', 'Nutella', '400 ml Sprite']);
+    expect(parseProductList('zwei Scheiben Mehrkornbrot mit Nutella und 400 Milliliter Sprite')).toEqual(['zwei Scheiben Mehrkornbrot', 'Nutella', '400 Milliliter Sprite']);
+    expect(parseCatalogQuery('400 ml Sprite')).toMatchObject({ amount: 400, unit: 'ml', catalogQuery: 'Sprite' });
   });
 
   it('uses the frozen structured catalog evidence directly at the resolver boundary', () => {
