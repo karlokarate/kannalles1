@@ -77,6 +77,72 @@ test('löst den Bueno-Barcode auf die kleinste bewiesene Einheit auf und rechnet
   forbidden.assertNone();
 });
 
+test('sammelt mehrere Produkte, hält die Summe schwebend und unterstützt Bearbeiten, Details sowie Reset', async ({ page }) => {
+  await openCatalogApp(page);
+  await expectCatalogReady(page);
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await page.getByTestId('clinic-mode-select').selectOption('off');
+  await page.getByRole('button', { name: 'Rechner', exact: true }).click();
+
+  await searchCatalog(page, 'Reis');
+  await expect(page.getByTestId('catalog-product')).toContainText('Reis, gekocht');
+  await page.getByTestId('meal-floating-add').click();
+  await expect(page.getByTestId('meal-floating-total')).toContainText('1 Produkt');
+  await expect(page.getByTestId('catalog-search-input')).toHaveValue('');
+
+  await searchCatalog(page, 'Kartoffeln');
+  await expect(page.getByTestId('catalog-product')).toContainText('Kartoffeln, gekocht');
+  await page.getByRole('button', { name: '+ Zur Gesamtrechnung' }).click();
+  await expect(page.getByTestId('meal-floating-total')).toContainText('2 Produkte');
+  await page.getByTestId('meal-floating-total').click();
+
+  const summary = page.getByTestId('meal-summary');
+  await expect(summary).toBeVisible();
+  await expect(page.getByTestId('meal-item')).toHaveCount(2);
+  const totalBefore = Number(await page.getByTestId('meal-total').getAttribute('data-total-carbs-g'));
+  await page.getByLabel('Reis, gekocht: Menge').fill('100');
+  await expect.poll(async () => Number(await page.getByTestId('meal-total').getAttribute('data-total-carbs-g'))).toBeLessThan(totalBefore);
+
+  await page.getByRole('button', { name: 'Reis, gekocht: Details öffnen' }).click();
+  await expect(page.getByTestId('catalog-product')).toContainText('Reis, gekocht');
+  await expect(page.getByTestId('meal-floating-total')).toBeVisible();
+  await page.getByTestId('meal-floating-total').click();
+  await page.getByRole('button', { name: 'Kartoffeln, gekocht aus der Gesamtrechnung entfernen' }).click();
+  await expect(page.getByTestId('meal-item')).toHaveCount(1);
+
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await page.getByTestId('diabetes-profile-toggle').check();
+  await page.getByTestId('diabetes-factor-correctionFactorMgDl').locator('summary').click();
+  await page.getByTestId('diabetes-factor-targetGlucoseMgDl').locator('summary').click();
+  for (const input of await page.getByTestId('carbohydrate-ratio-input').all()) await input.fill('10');
+  for (const input of await page.getByTestId('correction-factor-input').all()) await input.fill('50');
+  for (const input of await page.getByTestId('target-glucose-input').all()) await input.fill('100');
+  await page.getByRole('button', { name: 'Verlauf', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Gespeicherte Rechnungen' })).toBeVisible();
+  await page.getByRole('button', { name: 'Öffnen & verwenden' }).click();
+  await expect(page.getByTestId('meal-item')).toHaveCount(1);
+  await expect(page.getByText(/Bitte gib deinen aktuellen Blutzucker ein/)).toBeVisible();
+  await expect(page.getByTestId('current-glucose-input')).toBeFocused();
+  await expect(page.getByTestId('current-glucose-input')).toHaveValue('');
+  await page.getByTestId('current-glucose-input').fill('200');
+  await expect(page.getByTestId('total-bolus')).not.toHaveText('–');
+  await page.getByRole('button', { name: '+ Weiteres Produkt' }).click();
+  await searchCatalog(page, 'Kartoffeln');
+  await page.getByTestId('meal-floating-add').click();
+  await page.getByTestId('meal-floating-total').click();
+  await expect(page.getByTestId('meal-item')).toHaveCount(2);
+
+  await page.getByRole('button', { name: 'Zur Produktsuche' }).click();
+  await page.getByTestId('catalog-search-input').fill('Nur ein Testtext');
+  await page.getByRole('button', { name: 'Suche zurücksetzen' }).click();
+  await expect(page.getByTestId('catalog-search-input')).toHaveValue('');
+  await page.getByTestId('meal-floating-total').click();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Aktuelle Rechnung zurücksetzen' }).click();
+  await expect(page.getByTestId('meal-floating-total')).toBeHidden();
+  await expect(page.getByTestId('catalog-search-input')).toBeVisible();
+});
+
 test('zeigt Trefferbilder, nutzt Sprache für gekochten Reis und speichert eine eigene Riegel-Einheit automatisch', async ({ page }) => {
   await page.addInitScript(() => {
     class FakeSpeechRecognition {

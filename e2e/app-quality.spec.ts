@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import {
   collectForbiddenProductRequests,
@@ -73,9 +74,27 @@ test('segmentiertes Diabetikerprofil berechnet Korrektur allein und zusammen mit
   await openAppShell(page);
   await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await page.getByTestId('diabetes-profile-toggle').check();
+  const correctionGroup = page.getByTestId('diabetes-factor-correctionFactorMgDl');
+  const targetGroup = page.getByTestId('diabetes-factor-targetGlucoseMgDl');
+  await expect(page.getByTestId('diabetes-factor-carbohydrateRatioG')).toHaveAttribute('open', '');
+  await expect(correctionGroup).not.toHaveAttribute('open', '');
+  await correctionGroup.locator('summary').click();
+  await targetGroup.locator('summary').click();
   for (const input of await page.getByTestId('carbohydrate-ratio-input').all()) await input.fill('10');
   for (const input of await page.getByTestId('correction-factor-input').all()) await input.fill('50');
   for (const input of await page.getByTestId('target-glucose-input').all()) await input.fill('100');
+
+  const firstRatio = page.getByTestId('carbohydrate-ratio-input').first();
+  const secondRatio = page.getByTestId('carbohydrate-ratio-input').nth(1);
+  await expect(firstRatio).toHaveAttribute('inputmode', 'decimal');
+  await expect(firstRatio).toHaveAttribute('enterkeyhint', 'next');
+  await firstRatio.fill('10,5');
+  await expect(firstRatio).toHaveValue('10,5');
+  await firstRatio.press('Enter');
+  await expect(secondRatio).toBeFocused();
+  await expect.poll(() => secondRatio.evaluate((input) => ({ start: (input as HTMLInputElement).selectionStart, end: (input as HTMLInputElement).selectionEnd, length: (input as HTMLInputElement).value.length }))).toEqual({ start: 0, end: 2, length: 2 });
+  await targetGroup.getByRole('button', { name: 'Weiter →' }).first().click();
+  await expect(page.getByTestId('target-glucose-input').nth(1)).toBeFocused();
 
   const editableTarget = page.getByTestId('target-glucose-input').first();
   await editableTarget.selectText();
@@ -101,4 +120,33 @@ test('segmentiertes Diabetikerprofil berechnet Korrektur allein und zusammen mit
   await page.getByTestId('current-glucose-input').fill('50');
   await expect(page.getByTestId('correction-bolus')).toHaveText('-1,0 E');
   await expect(page.getByTestId('total-bolus')).toHaveText('3,0 E');
+});
+
+test('exportiert, teilt und importiert Verlauf, Diabeteseinstellungen und Portions-Overrides als eine Datei', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => true });
+    Object.defineProperty(navigator, 'share', { configurable: true, value: async (data: ShareData) => { (window as typeof window & { sharedFileName?: string }).sharedFileName = data.files?.[0]?.name; } });
+  });
+  await openAppShell(page);
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await page.getByTestId('diabetes-profile-toggle').check();
+  await page.getByTestId('carbohydrate-ratio-input').first().fill('12');
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Datei exportieren' }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^fishit-kh-daten-\d{4}-\d{2}-\d{2}\.json$/);
+  const downloadPath = await download.path();
+  if (!downloadPath) throw new Error('export download did not produce a readable file');
+  const contents = readFileSync(downloadPath, 'utf8');
+  const transferred = JSON.parse(contents);
+  expect(transferred).toMatchObject({ format: 'fishit-kh-checker-transfer', schemaVersion: 1, diabetes: { enabled: true }, history: { calculations: [], meals: [], calibrations: [] } });
+
+  await page.getByRole('button', { name: 'Teilen', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { sharedFileName?: string }).sharedFileName ?? '')).toMatch(/^fishit-kh-daten-.*\.json$/);
+
+  await page.getByTestId('carbohydrate-ratio-input').first().fill('20');
+  await page.getByTestId('transfer-file-input').setInputFiles({ name: 'fishit-kh-daten.json', mimeType: 'application/json', buffer: Buffer.from(contents) });
+  await expect(page.locator('.transfer-settings').getByRole('status')).toContainText('Diabeteseinstellungen wurden importiert');
+  await expect(page.getByTestId('carbohydrate-ratio-input').first()).toHaveValue('12');
 });

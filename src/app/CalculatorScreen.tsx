@@ -27,6 +27,37 @@ function ProductImage({ src, alt, compact = false }: { src: string | null; alt: 
   return <img className={compact ? 'product-result__image' : undefined} src={src} alt={alt} width={compact ? 84 : 126} height={compact ? 84 : 126} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailedSrc(src)} />;
 }
 
+function FloatingMealControls({ c }: { c: CatalogController }) {
+  const canAdd = Boolean(c.product && c.calculation?.status === 'calculated' && c.calculation.carbohydratesG !== null);
+  return <aside className="floating-meal-controls" aria-label="Gesamtrechnung">
+    {c.mealItems.length > 0 && <button type="button" className="floating-meal-total" onClick={c.openMealSummary} data-testid="meal-floating-total"><span>{c.mealItems.length} {c.mealItems.length === 1 ? 'Produkt' : 'Produkte'}</span><strong>{formatCarbohydrates(c.mealTotalCarbohydrates, c.settings.decimalPlaces)} g KH</strong></button>}
+    <button type="button" className="floating-meal-add" onClick={canAdd ? c.addCurrentToMeal : c.startNextMealProduct} aria-label={canAdd ? c.editingMealItemId ? 'Produktänderung übernehmen und weitere Berechnung starten' : 'Aktuelle Berechnung hinzufügen und weitere Berechnung starten' : 'Neue Produktsuche starten'} title={canAdd ? 'Zur Gesamtrechnung hinzufügen' : 'Neue Produktsuche'} data-testid="meal-floating-add">+</button>
+  </aside>;
+}
+
+function MealSummary({ c, currentGlucose, onCurrentGlucoseChange }: { c: CatalogController; currentGlucose: string; onCurrentGlucoseChange: (value: string) => void }) {
+  return <>
+    <article className="meal-summary" data-testid="meal-summary">
+      <div className="section-title-row"><div><span className="eyebrow">Gesammelte Berechnung</span><h2>Produkte</h2></div><span>{c.mealItems.length}</span></div>
+      <div className="meal-item-list">{c.mealItems.map((item) => <article className="meal-item" key={item.id} data-testid="meal-item">
+        <button type="button" className="meal-item__product" onClick={() => c.openMealItem(item.id)} aria-label={`${item.product.displayName}: Details öffnen`}>
+          <strong>{item.product.displayName}</strong><small>{item.product.brand ?? 'Produktdetails öffnen'} · Details öffnen →</small>
+        </button>
+        <label className="field meal-item__amount"><span>Menge</span><input type="number" min="0.01" max="10000" step="any" value={item.request.amount} aria-label={`${item.product.displayName}: Menge`} onChange={(event: ChangeEvent<HTMLInputElement>) => { const amount = Number(event.target.value); if (Number.isFinite(amount) && amount > 0) c.updateMealItem(item.id, amount); }} /></label>
+        <label className="field meal-item__unit"><span>Einheit</span><select value={item.resolution.selectedOptionId ?? ''} aria-label={`${item.product.displayName}: Einheit`} onChange={(event: ChangeEvent<HTMLSelectElement>) => c.updateMealItem(item.id, item.request.amount, event.target.value)}>{item.resolution.options.map((option) => <option key={option.id} value={option.id} disabled={option.baseValue === null}>{option.label}{option.baseValue === null ? ' – Gewicht fehlt' : ''}</option>)}</select></label>
+        <strong className="meal-item__carbs">{formatCarbohydrates(item.calculation.carbohydratesG, c.settings.decimalPlaces)} g KH</strong>
+        <button type="button" className="meal-item__remove" onClick={() => c.removeMealItem(item.id)} aria-label={`${item.product.displayName} aus der Gesamtrechnung entfernen`} title="Entfernen">−</button>
+      </article>)}</div>
+      <section className="calculation-result meal-total-result" aria-live="polite" data-testid="meal-total" data-total-carbs-g={c.mealTotalCarbohydrates}>
+        <span>Kohlenhydrate der Gesamtrechnung</span><strong>{formatCarbohydrates(c.mealTotalCarbohydrates, c.settings.decimalPlaces)} g KH</strong><small>Summe aus {c.mealItems.length} {c.mealItems.length === 1 ? 'Produkt' : 'Produkten'} ohne Zwischenrundung</small>
+      </section>
+      <div className="meal-summary__actions"><button type="button" className="button button--primary" onClick={c.startNextMealProduct}>+ Weiteres Produkt</button><span className="meal-auto-save">✓ Automatisch im Verlauf gespeichert</span><button type="button" className="button button--danger" onClick={() => { if (window.confirm('Aktuelle Rechnung zurücksetzen? Die automatisch gespeicherte Version bleibt im Verlauf verfügbar.')) c.clearMeal(); }}>Aktuelle Rechnung zurücksetzen</button></div>
+      {c.mealMessage && <p className="inline-message" role="status">{c.mealMessage}</p>}
+    </article>
+    {c.settings.diabeticProfileEnabled && <>{c.mealNeedsCurrentGlucose && <p className="current-glucose-prompt" role="status">Bitte gib deinen aktuellen Blutzucker ein. Der Bolus wird für diese wiederverwendete Rechnung neu berechnet.</p>}<DiabetesBolusPanel settings={c.settings} carbohydratesG={c.mealTotalCarbohydrates} currentGlucose={currentGlucose} onCurrentGlucoseChange={(value) => { c.acknowledgeMealGlucose(); onCurrentGlucoseChange(value); }} focusRequest={c.mealGlucoseFocusRequest} /></>}
+  </>;
+}
+
 function EditableProductImage({ catalogSrc, localSrc, alt, onPhoto }: { catalogSrc: string | null; localSrc: string | null; alt: string; onPhoto: (file: File | null) => void }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const effectiveCatalogSrc = catalogSrc && failedSrc !== catalogSrc ? catalogSrc : null;
@@ -51,6 +82,7 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
   const localImageUrl = product ? c.catalogPhotoUrl(product.code) : null;
   const hasDefinedServing = Boolean(resolution?.options.some((option) => option.baseValue !== null && ['piece', 'bar', 'slice', 'portion'].includes(option.unit)));
   useEffect(() => { void c.search.query; setAmountValue(String(c.request.amount)); }, [c.request.amount, c.search.query]);
+  useEffect(() => { if (c.mealGlucoseFocusRequest > 0) setCurrentGlucose(''); }, [c.mealGlucoseFocusRequest]);
   useEffect(() => {
     if (!product) return;
     const frame = requestAnimationFrame(() => {
@@ -63,6 +95,14 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
   const clinicBrowsePageSize = 20;
   const clinicBrowse = c.clinicBrowseCandidates.slice(clinicBrowsePage * clinicBrowsePageSize, (clinicBrowsePage + 1) * clinicBrowsePageSize);
   const carbohydratesForBolus = c.manualMode ? c.manualCalculation : calculation?.status === 'calculated' ? calculation.carbohydratesG : null;
+
+  if (c.mealOpen && c.mealItems.length > 0) return (
+    <section className="screen calculator-screen" aria-labelledby="calculator-title">
+      <header className="screen-heading"><div><span className="eyebrow">Gesamtrechnung</span><h1 id="calculator-title">Deine Mahlzeit</h1></div><button type="button" className="button button--secondary" onClick={c.startNextMealProduct}>Zur Produktsuche</button></header>
+      <MealSummary c={c} currentGlucose={currentGlucose} onCurrentGlucoseChange={setCurrentGlucose} />
+      <FloatingMealControls c={c} />
+    </section>
+  );
 
   return (
     <section className="screen calculator-screen" aria-labelledby="calculator-title">
@@ -87,6 +127,7 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
           {c.speechListening && <div className="speech-recording" role="status" aria-live="polite"><span aria-hidden="true" />Höre zu …</div>}
           <small>Die Produktsuche bleibt vollständig lokal; die Spracheingabe wird vom Browser bereitgestellt.</small>
           {c.speechMessage && <small className="speech-message" role="status">{c.speechMessage}</small>}
+          {(c.query || c.product || c.search.phase !== 'idle') && <div className="search-reset-row"><button type="button" className="button button--ghost" onClick={c.startNextMealProduct}>Suche zurücksetzen</button></div>}
         </form></search>
 
         {c.search.validationMessage && <div className="inline-message" role="alert">{c.search.validationMessage}</div>}
@@ -121,7 +162,7 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
           </div>
 
           {calculation?.status === 'calculated' && calculation.carbohydratesG !== null ? <section className="calculation-result" aria-live="polite" data-testid="catalog-calculation" data-status="calculated" data-total-carbs-g={calculation.carbohydratesG} data-total-mass-g={calculation.totalMassG ?? ''} data-total-volume-ml={calculation.totalVolumeMl ?? ''} data-unit-kind={calculation.unit} data-unit-base-value={calculation.unitBaseValue ?? ''} data-provenance={calculation.provenance.source ?? ''}>
-            <span>Kohlenhydrate gesamt</span><strong>{formatCarbohydrates(calculation.carbohydratesG, c.settings.decimalPlaces)} g KH</strong><small>{isClinicCatalogProduct(product) && product.clinic.directCarbohydratesPerUnit !== null ? `Direkter Klinikwert · ${c.request.amount.toLocaleString('de-DE')} × ${product.clinic.directCarbohydratesPerUnit.toLocaleString('de-DE')} g KH je Stück` : `Intern ohne Zwischenrundung berechnet · ${c.request.amount.toLocaleString('de-DE')} × ${calculation.unitBaseValue?.toLocaleString('de-DE')} × ${product.nutrition.carbohydratesPer100.toLocaleString('de-DE')} / 100`}</small>{c.settings.saveHistory && <button type="button" className="button button--secondary" onClick={c.saveCurrent}>Im Verlauf speichern</button>}
+            <span>Kohlenhydrate gesamt</span><strong>{formatCarbohydrates(calculation.carbohydratesG, c.settings.decimalPlaces)} g KH</strong><small>{isClinicCatalogProduct(product) && product.clinic.directCarbohydratesPerUnit !== null ? `Direkter Klinikwert · ${c.request.amount.toLocaleString('de-DE')} × ${product.clinic.directCarbohydratesPerUnit.toLocaleString('de-DE')} g KH je Stück` : `Intern ohne Zwischenrundung berechnet · ${c.request.amount.toLocaleString('de-DE')} × ${calculation.unitBaseValue?.toLocaleString('de-DE')} × ${product.nutrition.carbohydratesPer100.toLocaleString('de-DE')} / 100`}</small><button type="button" className="button button--secondary" onClick={c.addCurrentToMeal}>{c.editingMealItemId ? 'Änderung übernehmen & weiter' : '+ Zur Gesamtrechnung'}</button>{c.settings.saveHistory && <button type="button" className="button button--secondary" onClick={c.saveCurrent}>Im Verlauf speichern</button>}
           </section> : <section className="missing-calculation" data-testid="catalog-calculation" data-status={calculation?.status ?? 'not_calculable'}><strong>Für diese Einheit fehlt noch ein belastbares Gewicht.</strong><p>Du kannst die Einheit direkt unten durch gemeinsames Wiegen festlegen.</p></section>}
 
           {c.settings.diabeticProfileEnabled && <DiabetesBolusPanel settings={c.settings} carbohydratesG={carbohydratesForBolus} currentGlucose={currentGlucose} onCurrentGlucoseChange={setCurrentGlucose} />}
@@ -147,6 +188,7 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
         <section className="calculation-result" aria-live="polite"><span>Kohlenhydrate gesamt</span><strong>{formatCarbohydrates(c.manualCalculation, c.settings.decimalPlaces)} g KH</strong>{c.settings.saveHistory && c.manualCalculation !== null && <button type="button" className="button button--secondary" onClick={c.saveManual}>Im Verlauf speichern</button>}</section>
         {c.manualProducts.length > 0 && <section className="saved-manual-products" aria-labelledby="saved-manual-title"><div className="section-title-row"><div><span className="eyebrow">Lokal gespeichert</span><h3 id="saved-manual-title">Eigene Produkte</h3></div><span>{c.manualProducts.length}</span></div><div className="result-list">{c.manualProducts.map((item) => <article className="saved-manual-product" key={item.id}>{item.imageDataUrl ? <img src={item.imageDataUrl} alt="" /> : <span className="manual-product-photo manual-product-photo--empty" aria-hidden="true">▧</span>}<div><strong>{item.label}</strong><small>{item.carbohydratesPer100.toLocaleString('de-DE')} g KH / 100 {item.basis === 'mass' ? 'g' : 'ml'}</small></div><button type="button" className="button button--secondary" onClick={() => c.loadManualDefinition(item)}>Laden</button><button type="button" className="button button--ghost" onClick={() => c.removeManualDefinition(item.id)} aria-label={`${item.label} löschen`}>Löschen</button></article>)}</div></section>}
       </section>}
+      {!c.manualMode && <FloatingMealControls c={c} />}
     </section>
   );
 }

@@ -5,7 +5,10 @@ import type { CatalogSearchHit } from './lib/catalog/catalogDomain';
 import { catalogProductEligibility } from './lib/resolution/catalogResolution';
 import {
   decodeSearchSession,
+  decodeMealCalculation,
+  encodeMealCalculation,
   encodeSearchSession,
+  type SavedMealCalculation,
   type SearchSessionSnapshot
 } from './lib/userDataStore';
 
@@ -102,5 +105,17 @@ describe('Lumen hard-cutover state', () => {
     expect(encoded).not.toContain('provenUnit');
     expect(decodeSearchSession(encoded)).toEqual(snapshot);
     expect(decodeSearchSession('{"schemaVersion":1}')).toBeNull();
+  });
+
+  it('validates reusable multi-product calculations at the persistence boundary', () => {
+    const meal: SavedMealCalculation = {
+      schemaVersion: 1,
+      id: 'meal-1',
+      createdAt: '2026-07-14T06:00:00.000Z',
+      items: [{ id: 'line-1', productCode: hit.code, productName: hit.displayName, amount: 2, unit: 'bar', selectedOptionId: 'bar:evidence', unitBaseValue: 21.5, carbohydratesG: 21.285 }],
+      totalCarbohydratesG: 21.285
+    };
+    expect(decodeMealCalculation(encodeMealCalculation(meal))).toEqual(meal);
+    expect(decodeMealCalculation('{"schemaVersion":1,"items":[]}')).toBeNull();
   });
 });

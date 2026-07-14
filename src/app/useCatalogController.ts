@@ -9,14 +9,17 @@ import type { CatalogCalibrationIdentity, CatalogCalibrationUnit } from '../lib/
 import { catalogSearchReducer, createCatalogSearchState } from '../lib/searchState';
 import { loadOfflineSettings, saveOfflineSettings } from '../lib/settings';
 import type { OfflineAppSettings } from '../lib/settings';
-import { clearAllUserData, clearHistoryEntries, clearSearchSession, createLocalId, findMatchingCatalogCalibrations, getUserDataCounts, isFavoriteProduct, listCatalogProductPhotos, listFavoriteProducts, listHistoryEntries, loadSearchSession, saveCatalogCalibration, saveCatalogProductPhoto, saveHistoryEntry, saveSearchSession, toggleFavoriteProduct } from '../lib/userDataStore';
-import type { AppSection, CalculationHistoryEntry, CatalogProductPhoto, FavoriteProduct, UserDataCounts } from '../lib/userDataStore';
+import { clearAllUserData, clearHistoryEntries, clearSearchSession, createLocalId, deleteMealCalculation, findMatchingCatalogCalibrations, getUserDataCounts, importHistoryData, isFavoriteProduct, listCatalogProductPhotos, listFavoriteProducts, listHistoryEntries, listMealCalculations, loadSearchSession, saveCatalogCalibration, saveCatalogProductPhoto, saveHistoryEntry, saveMealCalculation, saveSearchSession, toggleFavoriteProduct } from '../lib/userDataStore';
+import type { AppSection, CalculationHistoryEntry, CatalogProductPhoto, FavoriteProduct, SavedMealCalculation, UserDataCounts } from '../lib/userDataStore';
 import { deleteManualProduct, listManualProducts, saveManualProduct as persistManualProduct } from '../lib/userDataStore';
 import type { ManualProduct } from '../lib/userDataStore';
 import { asGenericSearchHit, genericCookedProductForQuery, genericProductByCode, isGenericCatalogProduct } from '../lib/genericFoods';
 import { clinicCatalogProducts, clinicDefaultRequest, clinicProductByCode, directClinicResolution, isClinicCatalogProduct, searchClinicCatalog } from '../lib/clinicCatalog';
 import { resizeManualProductImage } from '../lib/manualProductImage';
 import { startSpeechRecognitionSafely } from '../lib/speech';
+import { createTransferFile, parseTransferFile, serializeTransferFile } from '../lib/dataTransfer';
+import { createMealCalculationItem, totalMealCarbohydrates, updateMealCalculationItem } from '../lib/mealCalculation';
+import type { MealCalculationItem } from '../lib/mealCalculation';
 import { inferredCalibrationUnit, selectDefaultCatalogCandidate } from './catalogViewModel';
 import { parseCatalogQuery } from './queryParser';
 
@@ -43,12 +46,23 @@ function pickerRequest(request: CatalogUnitRequest): CatalogUnitRequest {
 function identity(product: CatalogProduct): CatalogCalibrationIdentity { return { catalogProductId: product.productId, barcode: /^\d{8,14}$/.test(product.code) ? product.code : null, canonicalName: product.displayName, brandCanonical: product.brand, genericFoodKey: null }; }
 const CALIBRATION_UNITS: readonly CatalogCalibrationUnit[] = ['piece', 'bar', 'slice', 'portion'];
 function productCalibrations(product: CatalogProduct) { return CALIBRATION_UNITS.flatMap((unit) => findMatchingCatalogCalibrations(identity(product), unit, false)); }
+function resolveProductUnits(product: CatalogProduct, request: CatalogUnitRequest) {
+  if (isClinicCatalogProduct(product)) {
+    const direct = directClinicResolution(product);
+    if (direct) return direct;
+  }
+  const matches = isGenericCatalogProduct(product) || (isClinicCatalogProduct(product) && product.clinic.directCarbohydratesPerUnit !== null) ? [] : productCalibrations(product).map(toMatchingUnitCalibration);
+  return resolveCatalogUnits(product, request, matches);
+}
 function defaultClinicRequest(product: Parameters<typeof clinicDefaultRequest>[0]): CatalogUnitRequest {
   const saved = productCalibrations(product)[0];
   return saved ? { amount: 1, unit: saved.unit, unitExplicit: false } : clinicDefaultRequest(product);
 }
 function diagnostic(error: unknown, operation: 'initialize' | 'search' | 'product_lookup', message: string): CatalogDiagnostics { return catalogDiagnostics(error) ?? toCatalogFailure(error, 'CATALOG_QUERY_FAILED', message, { operation }).diagnostics; }
 function firstInstall(status: CatalogStatus): boolean { if (status.state !== 'ready' || !status.catalogVersion || typeof window === 'undefined') return false; try { const previous = localStorage.getItem(VERSION_MARKER); localStorage.setItem(VERSION_MARKER, status.catalogVersion); return previous !== status.catalogVersion; } catch { return false; } }
+function savedMealFromItems(id: string, items: readonly MealCalculationItem[], createdAt = new Date().toISOString()): SavedMealCalculation {
+  return { schemaVersion: 1, id, createdAt, items: items.map((item) => ({ id: item.id, productCode: item.product.code, productName: item.product.displayName, amount: item.request.amount, unit: item.calculation.unit, selectedOptionId: item.resolution.selectedOptionId ?? item.calculation.provenance.optionId ?? '', unitBaseValue: item.calculation.unitBaseValue ?? 1, carbohydratesG: item.calculation.carbohydratesG ?? 0 })), totalCarbohydratesG: totalMealCarbohydrates(items) };
+}
 
 export function useCatalogController() {
   const [settings, setSettings] = useState<OfflineAppSettings>(() => loadOfflineSettings());
@@ -64,6 +78,7 @@ export function useCatalogController() {
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [history, setHistory] = useState<CalculationHistoryEntry[]>(() => listHistoryEntries());
+  const [savedMeals, setSavedMeals] = useState<SavedMealCalculation[]>(() => listMealCalculations());
   const [favorites, setFavorites] = useState<FavoriteProduct[]>(() => listFavoriteProducts());
   const [counts, setCounts] = useState<UserDataCounts>(() => getUserDataCounts());
   const [manual, setManual] = useState<ManualState>(INITIAL_MANUAL);
@@ -77,11 +92,20 @@ export function useCatalogController() {
   const [calibrationMessage, setCalibrationMessage] = useState<string | null>(null);
   const [speechListening, setSpeechListening] = useState(false);
   const [speechMessage, setSpeechMessage] = useState<string | null>(null);
+  const [mealItems, setMealItems] = useState<MealCalculationItem[]>([]);
+  const [mealOpen, setMealOpen] = useState(false);
+  const [editingMealItemId, setEditingMealItemId] = useState<string | null>(null);
+  const [mealMessage, setMealMessage] = useState<string | null>(null);
+  const [mealNeedsCurrentGlucose, setMealNeedsCurrentGlucose] = useState(false);
+  const [mealGlucoseFocusRequest, setMealGlucoseFocusRequest] = useState(0);
+  const [activeMealHistoryId, setActiveMealHistoryId] = useState<string | null>(null);
+  const [activeMealCreatedAt, setActiveMealCreatedAt] = useState<string | null>(null);
+  const [transferMessage, setTransferMessage] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const restored = useRef(false);
   const product = search.selectedProduct;
 
-  const refreshLocalData = useCallback(() => { setHistory(listHistoryEntries()); setFavorites(listFavoriteProducts()); setManualProducts(listManualProducts()); setProductPhotos(listCatalogProductPhotos()); setCounts(getUserDataCounts()); setRevision((v) => v + 1); }, []);
+  const refreshLocalData = useCallback(() => { setHistory(listHistoryEntries()); setSavedMeals(listMealCalculations()); setFavorites(listFavoriteProducts()); setManualProducts(listManualProducts()); setProductPhotos(listCatalogProductPhotos()); setCounts(getUserDataCounts()); setRevision((v) => v + 1); }, []);
   const initialize = useCallback(async () => {
     setStatus((s) => ({ ...s, state: 'checking', diagnostics: null, progress: null }));
     try { const next = await initializeOfflineCatalog(); setStatus(next); setInstalledFromNetwork(firstInstall(next)); }
@@ -111,12 +135,7 @@ export function useCatalogController() {
   const resolution = useMemo(() => {
     void revision;
     if (!product) return null;
-    if (isClinicCatalogProduct(product)) {
-      const direct = directClinicResolution(product);
-      if (direct) return direct;
-    }
-    const matches = isGenericCatalogProduct(product) || (isClinicCatalogProduct(product) && product.clinic.directCarbohydratesPerUnit !== null) ? [] : productCalibrations(product).map(toMatchingUnitCalibration);
-    return resolveCatalogUnits(product, request, matches);
+    return resolveProductUnits(product, request);
   }, [product, request, revision]);
   useEffect(() => { setSelectedOptionId((current) => resolution && current && resolution.options.some((o) => o.id === current) ? current : resolution?.selectedOptionId ?? null); }, [resolution]);
   useEffect(() => { void product?.code; setProductPhotoMessage(null); }, [product?.code]);
@@ -134,6 +153,8 @@ export function useCatalogController() {
   const executeSearch = useCallback(async (raw: string, page = 0) => {
     const parsed = parseCatalogQuery(raw);
     if (!parsed) { dispatch({ type: 'validation', message: 'Bitte Produktname oder Barcode eingeben.' }); return; }
+    setEditingMealItemId(null);
+    setMealOpen(false);
     const pageSize = Math.min(20, settings.searchResultLimit);
     const offset = Math.max(0, page) * pageSize;
     const clinicMatches = parsed.barcode || settings.clinicMode === 'off' ? [] : searchClinicCatalog(parsed.catalogQuery, Number.MAX_SAFE_INTEGER);
@@ -282,7 +303,133 @@ export function useCatalogController() {
   const clearHistory = () => { clearHistoryEntries(); refreshLocalData(); };
   const clearAll = () => { clearAllUserData(); refreshLocalData(); };
 
-  return { settings, updateSettings, status, setStatus, installedFromNetwork, initialize, section, setSection, manualMode, setManualMode, query, setQuery, search, dispatch, executeSearch, searchPage, searchHasNext, changeSearchPage, clinicBrowseCandidates: settings.clinicMode === 'clinic-only' ? clinicCatalogProducts() : [], startVoiceSearch, speechListening, speechMessage, product, request, setRequest, resolution, selectedOptionId, selectUnit, selectedOption, calculation, selectCandidate, calibrationUnit, changeCalibrationUnit, calibrationCount, setCalibrationCount, calibrationWeight, setCalibrationWeight, calibrationPreview, calibrationMessage, productPhotoMessage, catalogPhotoUrl, setCatalogPhoto, manual, setManual, manualCalculation, saveManual, manualProducts, manualMessage, saveManualDefinition, loadManualDefinition, removeManualDefinition, setManualPhoto, history, favorites, counts, refreshLocalData, saveCurrent, isFavorite: product ? isFavoriteProduct(product.productId) : false, toggleFavorite, clearHistory, clearSession: clearSearchSession, clearAll };
+  const startNextMealProduct = () => {
+    setMealOpen(false);
+    setEditingMealItemId(null);
+    setManualMode(false);
+    setQuery('');
+    setRequest({ amount: 1, unit: 'g', unitExplicit: false });
+    setSelectedOptionId(null);
+    dispatch({ type: 'reset' });
+  };
+  const addCurrentToMeal = () => {
+    if (!product || !resolution || calculation?.status !== 'calculated' || calculation.carbohydratesG === null) {
+      startNextMealProduct();
+      return;
+    }
+    const id = editingMealItemId ?? createLocalId('meal');
+    const item = createMealCalculationItem(id, product, request, resolution, selectedOptionId);
+    if (!item) return;
+    setMealItems((current) => editingMealItemId
+      ? current.map((existing) => existing.id === editingMealItemId ? item : existing)
+      : [...current, item]);
+    startNextMealProduct();
+  };
+  const openMealSummary = () => { setMealOpen(true); setManualMode(false); };
+  const openMealItem = (id: string) => {
+    const item = mealItems.find((candidate) => candidate.id === id);
+    if (!item) return;
+    setMealOpen(false);
+    setManualMode(false);
+    setEditingMealItemId(id);
+    setQuery(item.product.displayName);
+    setRequest({ ...item.request });
+    setSelectedOptionId(item.resolution.selectedOptionId);
+    dispatch({ type: 'resolve', query: item.product.displayName, product: item.product, candidates: [] });
+  };
+  const updateMealItem = (id: string, amount: number, optionId?: string) => setMealItems((current) => current.map((item) => item.id === id ? updateMealCalculationItem(item, amount, optionId) : item));
+  const removeMealItem = (id: string) => {
+    setMealItems((current) => current.filter((item) => item.id !== id));
+    if (mealItems.length <= 1) { setActiveMealHistoryId(null); setActiveMealCreatedAt(null); }
+    if (editingMealItemId === id || mealItems.length <= 1) startNextMealProduct();
+  };
+  const clearMeal = () => { setMealItems([]); setActiveMealHistoryId(null); setActiveMealCreatedAt(null); setMealMessage(null); setMealNeedsCurrentGlucose(false); startNextMealProduct(); };
+  const mealTotalCarbohydrates = totalMealCarbohydrates(mealItems);
+
+  useEffect(() => {
+    if (mealItems.length === 0) return;
+    const id = activeMealHistoryId ?? createLocalId('meal-history');
+    const createdAt = activeMealCreatedAt ?? new Date().toISOString();
+    if (!activeMealHistoryId) setActiveMealHistoryId(id);
+    if (!activeMealCreatedAt) setActiveMealCreatedAt(createdAt);
+    saveMealCalculation(savedMealFromItems(id, mealItems, createdAt));
+  }, [activeMealCreatedAt, activeMealHistoryId, mealItems]);
+
+  const loadSavedMeal = async (saved: SavedMealCalculation) => {
+    const loaded = await Promise.all(saved.items.map(async (line) => {
+      const productValue = genericProductByCode(line.productCode) ?? clinicProductByCode(line.productCode) ?? await getOfflineCatalogProduct(line.productCode).catch(() => null);
+      if (!productValue) return null;
+      const savedRequest: CatalogUnitRequest = { amount: line.amount, unit: line.unit, unitExplicit: true };
+      const nextResolution = resolveProductUnits(productValue, savedRequest);
+      const selected = nextResolution.options.find((option) => option.id === line.selectedOptionId)
+        ?? nextResolution.options.filter((option) => option.unit === line.unit && option.baseValue !== null).sort((a, b) => Math.abs((a.baseValue ?? 0) - line.unitBaseValue) - Math.abs((b.baseValue ?? 0) - line.unitBaseValue))[0]
+        ?? null;
+      return createMealCalculationItem(line.id, productValue, savedRequest, nextResolution, selected?.id ?? nextResolution.selectedOptionId);
+    }));
+    const available = loaded.filter((item): item is MealCalculationItem => item !== null);
+    if (available.length === 0) { setMealMessage('Die Produkte dieser Rechnung sind im aktuellen Katalog nicht mehr verfügbar.'); return; }
+    abortRef.current?.abort();
+    setSection('calculator');
+    setManualMode(false);
+    setQuery('');
+    setSelectedOptionId(null);
+    setEditingMealItemId(null);
+    dispatch({ type: 'reset' });
+    setMealItems(available);
+    setActiveMealHistoryId(saved.id);
+    setActiveMealCreatedAt(saved.createdAt);
+    setMealOpen(true);
+    setMealMessage(available.length === saved.items.length ? 'Gespeicherte Rechnung als bearbeitbare Kopie geöffnet.' : 'Rechnung geöffnet; nicht mehr verfügbare Produkte wurden ausgelassen.');
+    setMealNeedsCurrentGlucose(settings.diabeticProfileEnabled);
+    if (settings.diabeticProfileEnabled) setMealGlucoseFocusRequest((value) => value + 1);
+  };
+  const removeSavedMeal = (id: string) => { deleteMealCalculation(id); refreshLocalData(); };
+  const acknowledgeMealGlucose = () => setMealNeedsCurrentGlucose(false);
+
+  const transferFile = () => new File(
+    [serializeTransferFile(createTransferFile(settings))],
+    `fishit-kh-daten-${new Date().toISOString().slice(0, 10)}.json`,
+    { type: 'application/json' }
+  );
+  const downloadTransferFile = () => {
+    const file = transferFile();
+    const url = URL.createObjectURL(file);
+    const anchor = document.createElement('a');
+    anchor.href = url; anchor.download = file.name;
+    document.body.append(anchor); anchor.click(); anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    setTransferMessage('Datei mit Verlauf, Diabeteseinstellungen und Portions-Overrides exportiert.');
+  };
+  const shareTransferFile = async () => {
+    const file = transferFile();
+    if (typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function' || !navigator.canShare({ files: [file] })) {
+      downloadTransferFile();
+      setTransferMessage('Teilen wird hier nicht unterstützt – die Datei wurde stattdessen exportiert.');
+      return;
+    }
+    try {
+      await navigator.share({ title: 'FishIT KH Checker – Daten', text: 'Verlauf, Diabeteseinstellungen und Portions-Overrides', files: [file] });
+      setTransferMessage('Datei zum Teilen übergeben.');
+    } catch (error) {
+      setTransferMessage(error instanceof DOMException && error.name === 'AbortError' ? 'Teilen abgebrochen.' : 'Die Datei konnte nicht geteilt werden.');
+    }
+  };
+  const importTransferFile = async (file: File | null) => {
+    if (!file) return;
+    try {
+      const parsed = parseTransferFile(await file.text());
+      if (!parsed) { setTransferMessage('Diese Datei ist keine gültige FishIT-KH-Datendatei.'); return; }
+      const imported = importHistoryData(parsed.history);
+      if (!imported) { setTransferMessage('Die gespeicherten Daten in der Datei sind ungültig.'); return; }
+      updateSettings({ ...settings, diabeticProfileEnabled: parsed.diabetes.enabled, diabetesSegments: parsed.diabetes.segments });
+      refreshLocalData();
+      setTransferMessage(`${imported.meals + imported.calculations} Verlaufseinträge, ${imported.calibrations} Portions-Overrides und die Diabeteseinstellungen wurden importiert.`);
+    } catch {
+      setTransferMessage('Die Datei konnte nicht gelesen werden.');
+    }
+  };
+
+  return { settings, updateSettings, status, setStatus, installedFromNetwork, initialize, section, setSection, manualMode, setManualMode, query, setQuery, search, dispatch, executeSearch, searchPage, searchHasNext, changeSearchPage, clinicBrowseCandidates: settings.clinicMode === 'clinic-only' ? clinicCatalogProducts() : [], startVoiceSearch, speechListening, speechMessage, product, request, setRequest, resolution, selectedOptionId, selectUnit, selectedOption, calculation, selectCandidate, calibrationUnit, changeCalibrationUnit, calibrationCount, setCalibrationCount, calibrationWeight, setCalibrationWeight, calibrationPreview, calibrationMessage, productPhotoMessage, catalogPhotoUrl, setCatalogPhoto, manual, setManual, manualCalculation, saveManual, manualProducts, manualMessage, saveManualDefinition, loadManualDefinition, removeManualDefinition, setManualPhoto, history, savedMeals, favorites, counts, refreshLocalData, saveCurrent, isFavorite: product ? isFavoriteProduct(product.productId) : false, toggleFavorite, clearHistory, clearSession: clearSearchSession, clearAll, mealItems, mealOpen, editingMealItemId, mealTotalCarbohydrates, mealMessage, mealNeedsCurrentGlucose, mealGlucoseFocusRequest, transferMessage, addCurrentToMeal, startNextMealProduct, openMealSummary, openMealItem, updateMealItem, removeMealItem, clearMeal, loadSavedMeal, removeSavedMeal, acknowledgeMealGlucose, downloadTransferFile, shareTransferFile, importTransferFile };
 }
 
 export type CatalogController = ReturnType<typeof useCatalogController>;

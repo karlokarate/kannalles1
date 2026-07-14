@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { activeDiabetesSegment, calculateBolus, minuteToTimeInput } from '../lib/diabetesProfile';
 import type { OfflineAppSettings } from '../lib/settings';
 
@@ -7,6 +7,7 @@ interface DiabetesBolusPanelProps {
   carbohydratesG: number | null;
   currentGlucose: string;
   onCurrentGlucoseChange: (value: string) => void;
+  focusRequest?: number;
 }
 
 function dose(value: number | null, signed = false): string {
@@ -15,12 +16,18 @@ function dose(value: number | null, signed = false): string {
   return `${prefix}${value.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} E`;
 }
 
-export function DiabetesBolusPanel({ settings, carbohydratesG, currentGlucose, onCurrentGlucoseChange }: DiabetesBolusPanelProps) {
+export function DiabetesBolusPanel({ settings, carbohydratesG, currentGlucose, onCurrentGlucoseChange, focusRequest = 0 }: DiabetesBolusPanelProps) {
   const [now, setNow] = useState(() => new Date());
+  const glucoseInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
+  useEffect(() => {
+    if (focusRequest <= 0) return;
+    const frame = requestAnimationFrame(() => { glucoseInputRef.current?.focus(); glucoseInputRef.current?.select(); });
+    return () => cancelAnimationFrame(frame);
+  }, [focusRequest]);
   const segment = activeDiabetesSegment(settings.diabetesSegments, now);
   const parsedGlucose = Number(currentGlucose);
   const glucose = currentGlucose !== '' && Number.isFinite(parsedGlucose) && parsedGlucose >= 20 && parsedGlucose <= 600 ? parsedGlucose : null;
@@ -30,7 +37,7 @@ export function DiabetesBolusPanel({ settings, carbohydratesG, currentGlucose, o
   return (
     <section className="diabetes-bolus-panel" aria-labelledby="diabetes-bolus-title" data-testid="diabetes-bolus-panel">
       <div className="section-title-row"><div><span className="eyebrow">Aktives Diabetikerprofil</span><h2 id="diabetes-bolus-title">Bolus-Rechenhilfe</h2></div><span>{minuteToTimeInput(segment.startMinute)}–{minuteToTimeInput(segment.endMinute)} Uhr</span></div>
-      <label className="field diabetes-glucose-input"><span>Aktueller Blutzucker</span><span className="input-with-unit"><input type="number" min="20" max="600" step="1" inputMode="numeric" value={currentGlucose} onChange={(event: ChangeEvent<HTMLInputElement>) => onCurrentGlucoseChange(event.target.value)} placeholder="Wert eingeben" data-testid="current-glucose-input" /><b>mg/dL</b></span></label>
+      <label className="field diabetes-glucose-input"><span>Aktueller Blutzucker</span><span className="input-with-unit"><input ref={glucoseInputRef} type="number" min="20" max="600" step="1" inputMode="decimal" enterKeyHint="done" value={currentGlucose} onChange={(event: ChangeEvent<HTMLInputElement>) => onCurrentGlucoseChange(event.target.value)} placeholder="Wert eingeben" data-testid="current-glucose-input" /><b>mg/dL</b></span></label>
       {!configured && <p className="inline-message">Für das aktuelle Zeitsegment fehlen persönliche Werte. Bitte KH-Verhältnis, Korrekturfaktor und Zielwert in den Einstellungen eintragen.</p>}
       <dl className="bolus-values">
         <div><dt>KH-Bolus</dt><dd data-testid="carbohydrate-bolus">{dose(result.carbohydrateBolus)}</dd><small>{carbohydratesG === null ? 'Sobald KH berechnet sind' : segment.carbohydrateRatioG === null ? 'KH-Verhältnis fehlt' : `${carbohydratesG.toLocaleString('de-DE')} g KH ÷ ${segment.carbohydrateRatioG.toLocaleString('de-DE')}`}</small></div>

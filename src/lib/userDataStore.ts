@@ -60,6 +60,31 @@ export interface CatalogProductPhoto {
   updatedAt: string;
 }
 
+export interface SavedMealLine {
+  id: string;
+  productCode: string;
+  productName: string;
+  amount: number;
+  unit: RequestedUnit;
+  selectedOptionId: string;
+  unitBaseValue: number;
+  carbohydratesG: number;
+}
+
+export interface SavedMealCalculation {
+  schemaVersion: 1;
+  id: string;
+  createdAt: string;
+  items: SavedMealLine[];
+  totalCarbohydratesG: number;
+}
+
+export interface HistoryTransferData {
+  calculations: CalculationHistoryEntry[];
+  meals: SavedMealCalculation[];
+  calibrations: CatalogUnitCalibration[];
+}
+
 export type AppSection = 'calculator' | 'history' | 'favorites' | 'settings';
 
 export interface SearchSessionSnapshot {
@@ -80,6 +105,7 @@ interface UserDataEnvelope {
   favorites: FavoriteProduct[];
   manualProducts: ManualProduct[];
   productPhotos: CatalogProductPhoto[];
+  meals: SavedMealCalculation[];
   session: SearchSessionSnapshot | null;
 }
 
@@ -93,6 +119,7 @@ export interface UserDataCounts {
 
 const USER_DATA_KEY = 'kh-checker:offline-user-data:v2';
 const MAX_HISTORY_ENTRIES = 100;
+const MAX_MEAL_ENTRIES = 50;
 
 function emptyEnvelope(): UserDataEnvelope {
   return {
@@ -102,6 +129,7 @@ function emptyEnvelope(): UserDataEnvelope {
     favorites: [],
     manualProducts: [],
     productPhotos: [],
+    meals: [],
     session: null
   };
 }
@@ -183,6 +211,27 @@ function validCatalogProductPhoto(value: unknown): value is CatalogProductPhoto 
     && typeof value.updatedAt === 'string';
 }
 
+function validSavedMealLine(value: unknown): value is SavedMealLine {
+  return isRecord(value)
+    && typeof value.id === 'string'
+    && typeof value.productCode === 'string' && value.productCode.length > 0 && value.productCode.length <= 160
+    && typeof value.productName === 'string' && value.productName.trim().length > 0
+    && typeof value.amount === 'number' && Number.isFinite(value.amount) && value.amount > 0 && value.amount <= 10_000
+    && isRequestedUnit(value.unit)
+    && typeof value.selectedOptionId === 'string' && value.selectedOptionId.length > 0
+    && typeof value.unitBaseValue === 'number' && Number.isFinite(value.unitBaseValue) && value.unitBaseValue > 0
+    && typeof value.carbohydratesG === 'number' && Number.isFinite(value.carbohydratesG) && value.carbohydratesG >= 0;
+}
+
+function validSavedMeal(value: unknown): value is SavedMealCalculation {
+  return isRecord(value) && value.schemaVersion === 1
+    && typeof value.id === 'string'
+    && typeof value.createdAt === 'string'
+    && Array.isArray(value.items) && value.items.length > 0 && value.items.length <= 100
+    && value.items.every(validSavedMealLine)
+    && typeof value.totalCarbohydratesG === 'number' && Number.isFinite(value.totalCarbohydratesG) && value.totalCarbohydratesG >= 0;
+}
+
 function validSession(value: unknown): value is SearchSessionSnapshot {
   if (!isRecord(value) || value.schemaVersion !== 2) return false;
   return typeof value.query === 'string'
@@ -212,6 +261,7 @@ function normalizeEnvelope(value: unknown): UserDataEnvelope {
     favorites: Array.isArray(value.favorites) ? value.favorites.filter(validFavorite) : [],
     manualProducts: Array.isArray(value.manualProducts) ? value.manualProducts.filter(validManualProduct).slice(0, 100) : [],
     productPhotos: Array.isArray(value.productPhotos) ? value.productPhotos.filter(validCatalogProductPhoto).slice(0, 50) : [],
+    meals: Array.isArray(value.meals) ? value.meals.filter(validSavedMeal).slice(0, MAX_MEAL_ENTRIES) : [],
     session: validSession(value.session) ? value.session : null
   };
 }
@@ -305,7 +355,41 @@ export function listHistoryEntries(): CalculationHistoryEntry[] {
 export function clearHistoryEntries(): void {
   const envelope = readEnvelope();
   envelope.history = [];
+  envelope.meals = [];
   writeEnvelope(envelope);
+}
+
+export function saveMealCalculation(entry: SavedMealCalculation): void {
+  if (!validSavedMeal(entry)) return;
+  const envelope = readEnvelope();
+  envelope.meals = [entry, ...envelope.meals.filter((item) => item.id !== entry.id)].slice(0, MAX_MEAL_ENTRIES);
+  writeEnvelope(envelope);
+}
+
+export function listMealCalculations(): SavedMealCalculation[] { return readEnvelope().meals; }
+
+export function deleteMealCalculation(id: string): void {
+  const envelope = readEnvelope();
+  envelope.meals = envelope.meals.filter((item) => item.id !== id);
+  writeEnvelope(envelope);
+}
+
+export function exportHistoryData(): HistoryTransferData {
+  const envelope = readEnvelope();
+  return { calculations: envelope.history, meals: envelope.meals, calibrations: envelope.calibrations };
+}
+
+export function importHistoryData(value: unknown): { calculations: number; meals: number; calibrations: number } | null {
+  if (!isRecord(value) || !Array.isArray(value.calculations) || !Array.isArray(value.meals) || !Array.isArray(value.calibrations)) return null;
+  const calculations = value.calculations.filter(validHistoryEntry).slice(0, MAX_HISTORY_ENTRIES);
+  const meals = value.meals.filter(validSavedMeal).slice(0, MAX_MEAL_ENTRIES);
+  const calibrations = value.calibrations.map((entry) => normalizeCatalogCalibration(entry)).filter((entry): entry is CatalogUnitCalibration => entry !== null);
+  const envelope = readEnvelope();
+  envelope.history = [...calculations, ...envelope.history.filter((current) => !calculations.some((entry) => entry.id === current.id))].slice(0, MAX_HISTORY_ENTRIES);
+  envelope.meals = [...meals, ...envelope.meals.filter((current) => !meals.some((entry) => entry.id === current.id))].slice(0, MAX_MEAL_ENTRIES);
+  envelope.calibrations = [...calibrations, ...envelope.calibrations.filter((current) => !calibrations.some((entry) => entry.calibrationId === current.calibrationId || entry.scopeKey === current.scopeKey))];
+  writeEnvelope(envelope);
+  return { calculations: calculations.length, meals: meals.length, calibrations: calibrations.length };
 }
 
 export function toggleFavoriteProduct(product: CatalogProduct): boolean {
@@ -393,7 +477,7 @@ export function getUserDataCounts(): UserDataCounts {
   const envelope = readEnvelope();
   return {
     calibrations: envelope.calibrations.length,
-    history: envelope.history.length,
+    history: envelope.history.length + envelope.meals.length,
     favorites: envelope.favorites.length,
     manualProducts: envelope.manualProducts.length,
     productPhotos: envelope.productPhotos.length
@@ -419,6 +503,18 @@ export function decodeSearchSession(raw: string | null): SearchSessionSnapshot |
   try {
     const value = JSON.parse(raw);
     return validSession(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function encodeMealCalculation(entry: SavedMealCalculation): string { return JSON.stringify(entry); }
+
+export function decodeMealCalculation(raw: string | null): SavedMealCalculation | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw);
+    return validSavedMeal(value) ? value : null;
   } catch {
     return null;
   }

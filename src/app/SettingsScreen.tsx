@@ -10,6 +10,10 @@ export interface SettingsScreenProps {
   onClearHistory: () => void;
   onClearSession: () => void;
   onClearAllUserData: () => void;
+  onExportData: () => void;
+  onShareData: () => Promise<void>;
+  onImportData: (file: File | null) => Promise<void>;
+  transferMessage: string | null;
 }
 
 export function SettingsScreen({
@@ -18,7 +22,11 @@ export function SettingsScreen({
   onChange,
   onClearHistory,
   onClearSession,
-  onClearAllUserData
+  onClearAllUserData,
+  onExportData,
+  onShareData,
+  onImportData,
+  transferMessage
 }: SettingsScreenProps) {
   function update<K extends keyof OfflineAppSettings>(key: K, value: OfflineAppSettings[K]): void {
     onChange({ ...settings, [key]: value });
@@ -44,6 +52,13 @@ export function SettingsScreen({
           <p className="settings-note">Im Hybridmodus haben passende Klinikwerte Vorrang. „Klinik Off“ ignoriert die Klinikdatei vollständig; „Klinik Only“ macht alle 105 Klinikdatensätze durchsuch- und scrollbar.</p>
         </fieldset>
         <DiabetesSettings enabled={settings.diabeticProfileEnabled} segments={settings.diabetesSegments} onEnabledChange={(enabled) => update('diabeticProfileEnabled', enabled)} onSegmentsChange={(segments) => update('diabetesSegments', segments)} />
+        <fieldset className="settings-card settings-card--wide transfer-settings">
+          <legend>Auf ein anderes Gerät übertragen</legend>
+          <p>Eine einzige Datei enthält den Verlauf, die Diabeteseinstellungen und deine persönlichen Portions-, Scheiben-, Stück- und Riegel-Overrides. Kein Profil und keine Anmeldung nötig.</p>
+          <div className="button-row"><button type="button" className="button button--secondary" onClick={onExportData}>Datei exportieren</button><button type="button" className="button button--primary" onClick={() => { void onShareData(); }}>Teilen</button><label className="button button--secondary transfer-import-button">Datei importieren<input type="file" accept="application/json,.json" onChange={(event: ChangeEvent<HTMLInputElement>) => { void onImportData(event.target.files?.[0] ?? null); event.target.value = ''; }} data-testid="transfer-file-input" /></label></div>
+          <small>Beim Import werden Verlauf und Overrides zusammengeführt; die Diabeteseinstellungen aus der Datei werden übernommen. Die Datei enthält Gesundheitsdaten – teile sie nur mit Geräten, denen du vertraust.</small>
+          {transferMessage && <p className="inline-message" role="status">{transferMessage}</p>}
+        </fieldset>
         <fieldset className="settings-card">
           <legend>Berechnung</legend>
           <label className="field">
@@ -61,7 +76,7 @@ export function SettingsScreen({
         </fieldset>
         <fieldset className="settings-card">
           <legend>Lokale Speicherung</legend>
-          <label className="switch-row"><span><strong>Berechnungsverlauf speichern</strong><small>Speichert Ergebnis und Messherkunft lokal.</small></span><input type="checkbox" checked={settings.saveHistory} onChange={(event: ChangeEvent<HTMLInputElement>) => update('saveHistory', event.target.checked)} /></label>
+          <label className="switch-row"><span><strong>Einzelberechnungen speichern</strong><small>Gesamtrechnungen werden immer automatisch gespeichert; dieser Schalter gilt für einzelne Produkte.</small></span><input type="checkbox" checked={settings.saveHistory} onChange={(event: ChangeEvent<HTMLInputElement>) => update('saveHistory', event.target.checked)} /></label>
           <label className="switch-row"><span><strong>Letzte Ansicht wiederherstellen</strong><small>Speichert nur Suche, Produktcode, Menge und Einheit.</small></span><input type="checkbox" checked={settings.restoreLastSession} onChange={(event: ChangeEvent<HTMLInputElement>) => update('restoreLastSession', event.target.checked)} /></label>
         </fieldset>
         <fieldset className="settings-card">
