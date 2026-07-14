@@ -1,0 +1,36 @@
+.quantity-stepper {
+  display: inline-grid;
+  grid-template-rows: minmax(2rem, auto) minmax(2.75rem, auto) minmax(2rem, auto);
+  gap: 0.25rem;
+  width: min(100%, 10rem);
+  align-items: stretch;
+}
+
+.quantity-stepper input {
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+}
+
+.quantity-stepper__button {
+  min-height: 2rem;
+  border: 1px solid var(--border, #c8d3cd);
+  border-radius: 0.65rem;
+  background: var(--surface, #fff);
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.quantity-stepper__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.quantity-stepper__button:focus-visible,
+.quantity-stepper input:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+}
