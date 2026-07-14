@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import './QuantityStepper.css';
 
 interface QuantityStepperProps {
@@ -27,10 +27,18 @@ export function QuantityStepper({
   testId
 }: QuantityStepperProps) {
   const [draft, setDraft] = useState(String(value));
+  const previousValue = useRef(value);
 
   useEffect(() => {
+    if (previousValue.current === value) return;
+    previousValue.current = value;
     setDraft(String(value));
   }, [value]);
+
+  const buttonSubject = ariaLabel
+    .replace(/:\s*Menge$/i, '')
+    .replace(/^Menge in\s+/i, '')
+    .replace(/^Anzahl gemeinsam gewogen$/i, 'Gemeinsam gewogene Anzahl');
 
   const commit = (next: number) => {
     const clamped = Math.min(max, Math.max(min, next));
@@ -53,8 +61,8 @@ export function QuantityStepper({
   };
 
   return <div className="quantity-stepper" data-testid={testId ? `${testId}-stepper` : undefined}>
-    <button type="button" className="quantity-stepper__button" onClick={() => step(1)} disabled={value >= max} aria-label={`${ariaLabel} um 1 erhöhen`} data-testid={testId ? `${testId}-increment` : undefined}>+</button>
-    <input type="number" min={min} max={max} step={inputStep} value={draft} aria-label={ariaLabel} onChange={change} onBlur={() => { const parsed = Number(draft); if (!valid(parsed, min, max)) setDraft(String(value)); }} data-testid={testId} />
-    <button type="button" className="quantity-stepper__button" onClick={() => step(-1)} disabled={value <= min} aria-label={`${ariaLabel} um 1 verringern`} data-testid={testId ? `${testId}-decrement` : undefined}>−</button>
+    <button type="button" className="quantity-stepper__button" onClick={() => step(1)} disabled={value >= max} aria-label={`${buttonSubject}: erhöhen`} data-testid={testId ? `${testId}-increment` : undefined}>+</button>
+    <input id={testId} type="number" min={min} max={max} step={inputStep} value={draft} aria-label={ariaLabel} onChange={change} onBlur={() => { const parsed = Number(draft); if (!valid(parsed, min, max)) setDraft(String(value)); }} data-testid={testId} />
+    <button type="button" className="quantity-stepper__button" onClick={() => step(-1)} disabled={value <= min} aria-label={`${buttonSubject}: verringern`} data-testid={testId ? `${testId}-decrement` : undefined}>−</button>
   </div>;
 }

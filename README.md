@@ -1,4 +1,4 @@
-# FishIT KH Checker
+# FishIT KH Checker v2.3.1
 
 FishIT KH Checker ist eine installierbare Kohlenhydrat-Rechenhilfe, die nach der Ersteinrichtung lokal und offline arbeitet. Produktsuche, Berechnungen, Favoriten, Verlauf, eigene Produkte, persönliche Einheiten und Einstellungen werden auf dem verwendeten Gerät verarbeitet und gespeichert.
 

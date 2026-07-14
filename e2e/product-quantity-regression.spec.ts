@@ -13,7 +13,13 @@ test('alternative product variants resolve their own serving and accept cleared 
   const automaticProductId = await page.getByTestId('catalog-product').getAttribute('data-product-id');
   await results.nth(1).click();
   await expect(page.getByTestId('catalog-product')).not.toHaveAttribute('data-product-id', automaticProductId ?? '');
-  await expect(page.getByTestId('catalog-unit-select').locator('option:checked')).toHaveAttribute('value', /.+/);
+  const unitSelect = page.getByTestId('catalog-unit-select');
+  await expect(unitSelect.locator('option:checked')).toHaveAttribute('value', /.+/);
+  const calculableOption = unitSelect.locator('option[data-unit-kind="g"]');
+  const calculableOptionId = await calculableOption.getAttribute('value');
+  expect(calculableOptionId).toBeTruthy();
+  await unitSelect.selectOption(calculableOptionId ?? '');
+  await expect(page.getByTestId('catalog-calculation')).toHaveAttribute('data-status', 'calculated');
 
   const amount = page.getByTestId('catalog-amount-input');
   await amount.fill('');

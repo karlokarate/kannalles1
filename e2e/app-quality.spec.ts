@@ -107,7 +107,7 @@ test('lokale Einstellungen und manuelle Berechnung bleiben offline nutzbar', asy
     await page.getByRole('button', { name: 'Rechner', exact: true }).click();
     await page.getByRole('button', { name: 'Manuell', exact: true }).click();
     await page.getByLabel('KH pro 100 g').fill('12.5');
-    await page.getByLabel('Menge in g').fill('80');
+    await page.getByTestId('manual-product-amount').fill('80');
     await expect(page.locator('.calculation-result')).toContainText(/10(?:[,.]0)?\s*g KH/);
   } finally {
     await context.setOffline(false);

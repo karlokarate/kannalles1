@@ -97,6 +97,17 @@ export default defineConfig({
       }
     })
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        // Keep settings in an eagerly loaded sibling chunk. This holds the
+        // largest legacy file below budget without breaking offline navigation.
+        manualChunks(id) {
+          if (id.replaceAll('\\', '/').endsWith('/src/app/SettingsScreen.tsx')) return 'settings';
+        }
+      }
+    }
+  },
   server: {
     port: 5173
   }
