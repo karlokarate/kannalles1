@@ -1,0 +1,35 @@
+{
+  "contract": "kh-checker-product-quantity-and-manual-search-fix",
+  "version": 1,
+  "baseCommit": "720aaa7a667c994b5786a65cb1d06df48fe0db70",
+  "findings": [
+    {
+      "id": "ALTERNATIVE_PRODUCT_REQUEST_STATE",
+      "rootCause": "Selecting a non-clinic alternative retained the previously selected product unit as request authority instead of recomputing the alternative product's implicit serving/unit resolution.",
+      "fix": "Preserve the entered amount but reset unitExplicit for the chosen alternative so its own serving evidence is resolved."
+    },
+    {
+      "id": "CONTROLLED_NUMBER_INPUT_LOCK",
+      "rootCause": "Meal quantities were controlled directly by the last valid number and rejected the temporary empty string needed when replacing the default value.",
+      "fix": "Use one draft-aware quantity stepper for catalog, meal, manual and calibration counts, with +1 above and -1 below."
+    },
+    {
+      "id": "MANUAL_PRODUCTS_OUTSIDE_SEARCH",
+      "rootCause": "Manual products were persisted and listed only in manual mode; the offline search client never projected them into CatalogSearchHit values.",
+      "fix": "Project stable manual:<id> catalog identities and merge local matches before SQLite results, including saved-meal lookup."
+    }
+  ],
+  "touchBudget": {
+    "production": [
+      "src/app/CalculatorScreen.tsx",
+      "src/app/QuantityStepper.tsx",
+      "src/app/QuantityStepper.css",
+      "src/lib/catalog/catalogClient.ts",
+      "src/lib/manualCatalog.ts"
+    ],
+    "tests": [
+      "src/lib/manualCatalog.test.ts",
+      "e2e/product-quantity-regression.spec.ts"
+    ]
+  }
+}
