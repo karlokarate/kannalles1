@@ -1,3 +1,4 @@
+import { manualCatalogProductByCode, searchManualCatalog } from '../manualCatalog';
 import type { CatalogProduct, CatalogSearchHit, CatalogStatus } from './catalogDomain';
 import { CatalogFailure } from './catalogErrors';
 import type { CatalogWorkerRequest, CatalogWorkerResponse } from './catalogProtocol';
@@ -153,18 +154,29 @@ export async function searchOfflineCatalog(
 ): Promise<readonly CatalogSearchHit[]> {
   await initializeOfflineCatalog();
   if (signal?.aborted) throw abortFailure();
-  return post<readonly CatalogSearchHit[]>({
-    type: 'search',
-    query,
-    limit: Math.max(1, Math.min(20, Math.trunc(limit))),
-    offset: Math.max(0, Math.trunc(offset))
-  }, signal);
+  const normalizedLimit = Math.max(1, Math.min(20, Math.trunc(limit)));
+  const normalizedOffset = Math.max(0, Math.trunc(offset));
+  const manualHits = searchManualCatalog(query);
+  const manualPage = manualHits.slice(normalizedOffset, normalizedOffset + normalizedLimit);
+  const remaining = normalizedLimit - manualPage.length;
+  const sqliteOffset = Math.max(0, normalizedOffset - manualHits.length);
+  const sqliteHits = remaining > 0
+    ? await post<readonly CatalogSearchHit[]>({
+        type: 'search',
+        query,
+        limit: remaining,
+        offset: sqliteOffset
+      }, signal)
+    : [];
+  return [...manualPage, ...sqliteHits].map((hit, resultIndex) => ({ ...hit, resultIndex }));
 }
 
 export async function getOfflineCatalogProduct(
   barcode: string,
   signal?: AbortSignal
 ): Promise<CatalogProduct | null> {
+  const manual = manualCatalogProductByCode(barcode);
+  if (manual) return manual;
   await initializeOfflineCatalog();
   if (signal?.aborted) throw abortFailure();
   return post<CatalogProduct | null>({ type: 'product', barcode }, signal);
