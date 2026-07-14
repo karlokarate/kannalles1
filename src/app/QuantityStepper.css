@@ -1,6 +1,6 @@
 .quantity-stepper {
   display: inline-grid;
-  grid-template-rows: minmax(2rem, auto) minmax(2.75rem, auto) minmax(2rem, auto);
+  grid-template-rows: 2.25rem minmax(2.75rem, auto) 2.25rem;
   gap: 0.25rem;
   width: min(100%, 10rem);
   align-items: stretch;
@@ -13,7 +13,9 @@
 }
 
 .quantity-stepper__button {
-  min-height: 2rem;
+  width: 2.25rem;
+  min-height: 2.25rem;
+  justify-self: center;
   border: 1px solid var(--border, #c8d3cd);
   border-radius: 0.65rem;
   background: var(--surface, #fff);
