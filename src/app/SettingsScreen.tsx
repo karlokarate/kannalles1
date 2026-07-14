@@ -51,7 +51,7 @@ export function SettingsScreen({
           <label className="field"><span>Datenquellen bei der Produktsuche</span><select value={settings.clinicMode} onChange={(event: ChangeEvent<HTMLSelectElement>) => update('clinicMode', event.target.value as OfflineAppSettings['clinicMode'])} data-testid="clinic-mode-select"><option value="hybrid">Hybrid – Klinik bevorzugt + großer Katalog</option><option value="clinic-only">Klinik Only – nur Klinikum Leverkusen</option><option value="off">Klinik Off – nur großer SQLite-Katalog</option></select></label>
           <p className="settings-note">Im Hybridmodus haben passende Klinikwerte Vorrang. „Klinik Off“ ignoriert die Klinikdatei vollständig; „Klinik Only“ macht alle 105 Klinikdatensätze durchsuch- und scrollbar.</p>
         </fieldset>
-        <DiabetesSettings enabled={settings.diabeticProfileEnabled} segments={settings.diabetesSegments} onEnabledChange={(enabled) => update('diabeticProfileEnabled', enabled)} onSegmentsChange={(segments) => update('diabetesSegments', segments)} />
+        <DiabetesSettings enabled={settings.diabeticProfileEnabled} factorSegments={settings.diabetesFactorSegments} onEnabledChange={(enabled) => update('diabeticProfileEnabled', enabled)} onFactorSegmentsChange={(key, segments) => update('diabetesFactorSegments', { ...settings.diabetesFactorSegments, [key]: segments })} />
         <fieldset className="settings-card settings-card--wide transfer-settings">
           <legend>Auf ein anderes Gerät übertragen</legend>
           <p>Eine einzige Datei enthält den Verlauf, die Diabeteseinstellungen und deine persönlichen Portions-, Scheiben-, Stück- und Riegel-Overrides. Kein Profil und keine Anmeldung nötig.</p>

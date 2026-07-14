@@ -473,7 +473,7 @@ export function useCatalogController() {
       if (!parsed) { setTransferMessage('Diese Datei ist keine gültige FishIT-KH-Datendatei.'); return; }
       const imported = importHistoryData(parsed.history);
       if (!imported) { setTransferMessage('Die gespeicherten Daten in der Datei sind ungültig.'); return; }
-      updateSettings({ ...settings, diabeticProfileEnabled: parsed.diabetes.enabled, diabetesSegments: parsed.diabetes.segments });
+      updateSettings({ ...settings, diabeticProfileEnabled: parsed.diabetes.enabled, diabetesFactorSegments: parsed.diabetes.factorSegments });
       refreshLocalData();
       setTransferMessage(`${imported.meals + imported.calculations} Verlaufseinträge, ${imported.calibrations} Portions-Overrides und die Diabeteseinstellungen wurden importiert.`);
     } catch {

@@ -1,19 +1,17 @@
 import { useEffect, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { addDiabetesSegment, changeSegmentBoundary, minuteToTimeInput, removeDiabetesSegment, timeInputToMinute } from '../lib/diabetesProfile';
-import type { DiabetesTimeSegment } from '../lib/diabetesProfile';
+import type { DiabetesFactorKey, DiabetesFactorSegment, DiabetesFactorSegments } from '../lib/diabetesProfile';
 
 interface DiabetesSettingsProps {
   enabled: boolean;
-  segments: DiabetesTimeSegment[];
+  factorSegments: DiabetesFactorSegments;
   onEnabledChange: (enabled: boolean) => void;
-  onSegmentsChange: (segments: DiabetesTimeSegment[]) => void;
+  onFactorSegmentsChange: (key: DiabetesFactorKey, segments: DiabetesFactorSegment[]) => void;
 }
 
-type FactorKey = 'carbohydrateRatioG' | 'correctionFactorMgDl' | 'targetGlucoseMgDl';
-
 interface FactorDefinition {
-  key: FactorKey;
+  key: DiabetesFactorKey;
   title: string;
   description: string;
   fieldLabel: string;
@@ -78,9 +76,10 @@ function EditableNumberField({ id, label, unit, value, min, max, step, placehold
   </div>;
 }
 
-function FactorGroup({ definition, segments, defaultOpen, onSegmentsChange }: { definition: FactorDefinition; segments: DiabetesTimeSegment[]; defaultOpen: boolean; onSegmentsChange: (segments: DiabetesTimeSegment[]) => void }) {
-  const [open, setOpen] = useState(defaultOpen);
-  const updateValue = (index: number, value: number | null) => onSegmentsChange(segments.map((segment, current) => current === index ? { ...segment, [definition.key]: value } : segment));
+function FactorGroup({ definition, segments, defaultOpen, onSegmentsChange }: { definition: FactorDefinition; segments: DiabetesFactorSegment[]; defaultOpen: boolean; onSegmentsChange: (segments: DiabetesFactorSegment[]) => void }) {
+  const configured = segments.filter((segment) => segment.value !== null).length;
+  const [open, setOpen] = useState(defaultOpen && configured < segments.length);
+  const updateValue = (index: number, value: number | null) => onSegmentsChange(segments.map((segment, current) => current === index ? { ...segment, value } : segment));
   const updateBoundary = (boundaryIndex: number, event: ChangeEvent<HTMLInputElement>) => {
     const minute = timeInputToMinute(event.target.value);
     if (minute !== null) onSegmentsChange(changeSegmentBoundary(segments, boundaryIndex, minute));
@@ -88,9 +87,11 @@ function FactorGroup({ definition, segments, defaultOpen, onSegmentsChange }: { 
   const advance = (index: number) => {
     const next = document.getElementById(`${definition.key}-${index + 1}`) as HTMLInputElement | null;
     if (next) { next.focus(); next.select(); }
-    else (document.activeElement as HTMLElement | null)?.blur();
+    else {
+      (document.activeElement as HTMLElement | null)?.blur();
+      setOpen(false);
+    }
   };
-  const configured = segments.filter((segment) => segment[definition.key] !== null).length;
 
   return <details className="diabetes-factor-group" open={open} onToggle={(event) => setOpen(event.currentTarget.open)} data-testid={`diabetes-factor-${definition.key}`}>
     <summary><span><strong>{definition.title}</strong><small>{definition.description}</small></span><span>{configured}/{segments.length} gesetzt</span></summary>
@@ -100,7 +101,7 @@ function FactorGroup({ definition, segments, defaultOpen, onSegmentsChange }: { 
         <div className="diabetes-factor-grid">
           {index === 0 ? <div className="field"><span>Von</span><output>00:00</output></div> : <label className="field"><span>Von</span><input type="time" aria-label={`${definition.title}, Segment ${index + 1}: von`} value={minuteToTimeInput(segment.startMinute)} min={minuteToTimeInput(segments[index - 1].startMinute + 1)} max={minuteToTimeInput(segment.endMinute - 1)} onChange={(event) => updateBoundary(index, event)} /></label>}
           {index === segments.length - 1 ? <div className="field"><span>Bis</span><output>24:00</output></div> : <label className="field"><span>Bis</span><input type="time" aria-label={`${definition.title}, Segment ${index + 1}: bis`} value={minuteToTimeInput(segment.endMinute)} min={minuteToTimeInput(segment.startMinute + 1)} max={minuteToTimeInput(segments[index + 1].endMinute - 1)} onChange={(event) => updateBoundary(index + 1, event)} /></label>}
-          <EditableNumberField id={`${definition.key}-${index}`} label={definition.fieldLabel} unit={definition.unit} value={segment[definition.key]} min={definition.min} max={definition.max} step={definition.step} placeholder={definition.placeholder} testId={definition.testId} advanceLabel={index < segments.length - 1 ? 'Weiter →' : 'Fertig'} onValueChange={(value) => updateValue(index, value)} onAdvance={() => advance(index)} />
+          <EditableNumberField id={`${definition.key}-${index}`} label={definition.fieldLabel} unit={definition.unit} value={segment.value} min={definition.min} max={definition.max} step={definition.step} placeholder={definition.placeholder} testId={definition.testId} advanceLabel={index < segments.length - 1 ? 'Weiter →' : 'Fertig'} onValueChange={(value) => updateValue(index, value)} onAdvance={() => advance(index)} />
           {segments.length > 1 && <button type="button" className="button button--ghost factor-remove-button" onClick={() => onSegmentsChange(removeDiabetesSegment(segments, index))}>Segment entfernen</button>}
         </div>
       </article>)}</div>
@@ -109,13 +110,13 @@ function FactorGroup({ definition, segments, defaultOpen, onSegmentsChange }: { 
   </details>;
 }
 
-export function DiabetesSettings({ enabled, segments, onEnabledChange, onSegmentsChange }: DiabetesSettingsProps) {
+export function DiabetesSettings({ enabled, factorSegments, onEnabledChange, onFactorSegmentsChange }: DiabetesSettingsProps) {
   return <fieldset className="settings-card settings-card--wide diabetes-settings" data-testid="diabetes-settings">
     <legend>Diabetikerprofil</legend>
     <label className="switch-row"><span><strong>Bolus-Rechenhilfe aktivieren</strong><small>Zeigt KH-, Korrektur- und Gesamtbolus auf dem Rechner.</small></span><input type="checkbox" checked={enabled} onChange={(event) => onEnabledChange(event.target.checked)} data-testid="diabetes-profile-toggle" /></label>
     <p className="settings-note diabetes-warning"><strong>Wichtig:</strong> Nur mit den persönlichen, vom Behandlungsteam festgelegten Werten verwenden. Die Rechenhilfe berücksichtigt kein aktives Insulin, keine Trendpfeile, Bewegung, Krankheit oder verzögerte Mahlzeitenwirkung und gibt keine Insulindosis frei.</p>
-    <div className="section-title-row"><div><span className="eyebrow">Getrennt und übersichtlich</span><h2>Faktoren nach Zeitsegment</h2></div><span>{segments.length} Segmente</span></div>
-    <p className="settings-note">Enter oder „Weiter“ übernimmt den Wert und springt zum nächsten Zeitsegment derselben Faktorgruppe. Geänderte Zeitgrenzen gelten synchron für alle drei Gruppen.</p>
-    <div className="diabetes-factor-list">{FACTORS.map((definition, index) => <FactorGroup key={definition.key} definition={definition} segments={segments} defaultOpen={index === 0} onSegmentsChange={onSegmentsChange} />)}</div>
+    <div className="section-title-row"><div><span className="eyebrow">Getrennt und übersichtlich</span><h2>Faktoren nach Zeitsegment</h2></div><span>3 unabhängige Zeitpläne</span></div>
+    <p className="settings-note">Jede Faktorgruppe besitzt eigene Zeitsegmente und Zeitgrenzen. Enter oder „Weiter“ springt innerhalb derselben Gruppe zum nächsten Wert; „Fertig“ klappt die vollständig eingegebene Gruppe zu.</p>
+    <div className="diabetes-factor-list">{FACTORS.map((definition, index) => <FactorGroup key={definition.key} definition={definition} segments={factorSegments[definition.key]} defaultOpen={index === 0} onSegmentsChange={(segments) => onFactorSegmentsChange(definition.key, segments)} />)}</div>
   </fieldset>;
 }

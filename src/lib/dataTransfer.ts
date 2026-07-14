@@ -1,4 +1,4 @@
-import { normalizeDiabetesSegments, type DiabetesTimeSegment } from './diabetesProfile';
+import { normalizeDiabetesFactorSchedules, type DiabetesFactorSegments } from './diabetesProfile';
 import type { OfflineAppSettings } from './settings';
 import { exportHistoryData, type HistoryTransferData } from './userDataStore';
 
@@ -8,7 +8,7 @@ export interface KhCheckerTransferFile {
   exportedAt: string;
   diabetes: {
     enabled: boolean;
-    segments: DiabetesTimeSegment[];
+    factorSegments: DiabetesFactorSegments;
   };
   history: HistoryTransferData;
 }
@@ -22,7 +22,7 @@ export function createTransferFile(settings: OfflineAppSettings, exportedAt = ne
     format: 'fishit-kh-checker-transfer',
     schemaVersion: 1,
     exportedAt,
-    diabetes: { enabled: settings.diabeticProfileEnabled, segments: settings.diabetesSegments },
+    diabetes: { enabled: settings.diabeticProfileEnabled, factorSegments: settings.diabetesFactorSegments },
     history
   };
 }
@@ -35,7 +35,10 @@ export function parseTransferFile(raw: string): KhCheckerTransferFile | null {
       format: 'fishit-kh-checker-transfer',
       schemaVersion: 1,
       exportedAt: value.exportedAt,
-      diabetes: { enabled: value.diabetes.enabled, segments: normalizeDiabetesSegments(value.diabetes.segments) },
+      diabetes: {
+        enabled: value.diabetes.enabled,
+        factorSegments: normalizeDiabetesFactorSchedules(value.diabetes.factorSegments, value.diabetes.segments)
+      },
       history: { calculations: value.history.calculations as HistoryTransferData['calculations'], meals: value.history.meals as HistoryTransferData['meals'], calibrations: value.history.calibrations as HistoryTransferData['calibrations'] }
     };
   } catch {

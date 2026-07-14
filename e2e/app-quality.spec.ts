@@ -74,12 +74,19 @@ test('segmentiertes Diabetikerprofil berechnet Korrektur allein und zusammen mit
   await openAppShell(page);
   await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await page.getByTestId('diabetes-profile-toggle').check();
+  const ratioGroup = page.getByTestId('diabetes-factor-carbohydrateRatioG');
   const correctionGroup = page.getByTestId('diabetes-factor-correctionFactorMgDl');
   const targetGroup = page.getByTestId('diabetes-factor-targetGlucoseMgDl');
-  await expect(page.getByTestId('diabetes-factor-carbohydrateRatioG')).toHaveAttribute('open', '');
+  await expect(ratioGroup).toHaveAttribute('open', '');
   await expect(correctionGroup).not.toHaveAttribute('open', '');
   await correctionGroup.locator('summary').click();
   await targetGroup.locator('summary').click();
+  await ratioGroup.getByRole('button', { name: 'Zeitsegment hinzufügen' }).click();
+  await expect(ratioGroup.getByTestId('diabetes-segment')).toHaveCount(8);
+  await expect(correctionGroup.getByTestId('diabetes-segment')).toHaveCount(7);
+  await expect(targetGroup.getByTestId('diabetes-segment')).toHaveCount(7);
+  await ratioGroup.getByLabel('KH-Verhältnis, Segment 2: von').fill('03:30');
+  await expect(correctionGroup.getByLabel('Korrekturfaktor, Segment 2: von')).toHaveValue('06:00');
   for (const input of await page.getByTestId('carbohydrate-ratio-input').all()) await input.fill('10');
   for (const input of await page.getByTestId('correction-factor-input').all()) await input.fill('50');
   for (const input of await page.getByTestId('target-glucose-input').all()) await input.fill('100');
@@ -105,6 +112,15 @@ test('segmentiertes Diabetikerprofil berechnet Korrektur allein und zusammen mit
   await expect(editableTarget).toHaveValue('120');
   await editableTarget.selectText();
   await editableTarget.pressSequentially('100');
+  await page.getByTestId('target-glucose-input').last().press('Enter');
+  await expect(targetGroup).not.toHaveAttribute('open', '');
+
+  await page.reload();
+  await expect(page.locator('.app-shell')).toBeVisible();
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await expect(page.getByTestId('diabetes-factor-carbohydrateRatioG')).not.toHaveAttribute('open', '');
+  await expect(page.getByTestId('diabetes-factor-correctionFactorMgDl')).not.toHaveAttribute('open', '');
+  await expect(page.getByTestId('diabetes-factor-targetGlucoseMgDl')).not.toHaveAttribute('open', '');
 
   await page.getByRole('button', { name: 'Rechner', exact: true }).click();
   const panel = page.getByTestId('diabetes-bolus-panel');

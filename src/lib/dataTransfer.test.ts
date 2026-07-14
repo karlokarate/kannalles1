@@ -10,6 +10,26 @@ describe('portable history and diabetes settings', () => {
     const file = createTransferFile(DEFAULT_OFFLINE_SETTINGS, '2026-07-14T06:00:00.000Z', { calculations: [], meals: [], calibrations: [calibration] });
     expect(parseTransferFile(serializeTransferFile(file))).toEqual(file);
     expect(file.history.calibrations[0].unit).toBe('slice');
+    expect(file.diabetes.factorSegments.carbohydrateRatioG).not.toBe(file.diabetes.factorSegments.correctionFactorMgDl);
+  });
+
+  it('imports legacy transfer files with shared segments without losing values', () => {
+    const legacySegments = DEFAULT_OFFLINE_SETTINGS.diabetesFactorSegments.carbohydrateRatioG.map((segment) => ({
+      ...segment,
+      carbohydrateRatioG: 11,
+      correctionFactorMgDl: 55,
+      targetGlucoseMgDl: 105
+    }));
+    const parsed = parseTransferFile(JSON.stringify({
+      format: 'fishit-kh-checker-transfer',
+      schemaVersion: 1,
+      exportedAt: '2026-07-14T06:00:00.000Z',
+      diabetes: { enabled: true, segments: legacySegments },
+      history: { calculations: [], meals: [], calibrations: [] }
+    }));
+    expect(parsed?.diabetes.factorSegments.carbohydrateRatioG[0].value).toBe(11);
+    expect(parsed?.diabetes.factorSegments.correctionFactorMgDl[0].value).toBe(55);
+    expect(parsed?.diabetes.factorSegments.targetGlucoseMgDl[0].value).toBe(105);
   });
 
   it('rejects unrelated JSON files', () => {
