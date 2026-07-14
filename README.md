@@ -2,6 +2,8 @@
 
 FishIT KH Checker ist eine installierbare, offlinefähige Web-App zur nachvollziehbaren Kohlenhydratberechnung. Produktsuche und Nährwerte kommen aus dem versionierten SQLite-Katalog im Repository. Die App lädt weder Suchergebnisse noch Produktdetails über eine API oder ein Gateway.
 
+**[App direkt öffnen](https://karlokarate.github.io/kannalles1/)** – öffentlich und ohne GitHub- oder Vercel-Konto.
+
 ## Produktionspfad
 
 ```text
@@ -48,7 +50,7 @@ Die Browserjourneys dürfen Produktnetzwerkzugriffe nicht mocken. Sie prüfen de
 
 ## Deployment
 
-`.github/workflows/build-deploy-pages.yml` baut und prüft das manifestgesteuerte Artefakt. Der Deploy-Job startet erst, wenn sowohl die Qualitäts- als auch die echten Browsergates grün sind. Die Zielplattform ist GitHub Pages; ein App-Server ist nicht erforderlich.
+`.github/workflows/build-deploy-pages.yml` baut und prüft das manifestgesteuerte Artefakt. Der Deploy-Job startet erst, wenn sowohl die Qualitäts- als auch die echten Browsergates grün sind. Die Zielplattform ist die öffentliche Adresse [karlokarate.github.io/kannalles1](https://karlokarate.github.io/kannalles1/); ein Vercel-Konto oder App-Server ist nicht erforderlich.
 
 ## Datenschutz und Sicherheit
 

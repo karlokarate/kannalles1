@@ -7,7 +7,10 @@ Ein API-Server, Gateway oder Benutzerkonto ist nicht erforderlich.
 
 ERSTER START
 ------------
-1. Die GitHub-Pages-Adresse in Chrome, Edge oder Safari öffnen.
+Öffentliche App (kein Benutzerkonto erforderlich):
+https://karlokarate.github.io/kannalles1/
+
+1. Die Adresse oben in Chrome, Edge oder Safari öffnen.
 2. Warten, bis der Katalog unter Einstellungen als bereit angezeigt wird.
 3. Ein Produkt suchen, auswählen und eine Menge berechnen.
 4. Die App über die Browserfunktion installieren.
