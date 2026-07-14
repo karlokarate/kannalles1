@@ -25,6 +25,43 @@ test('App-Shell, Hauptnavigation und Startansicht bleiben zugänglich', async ({
   forbidden.assertNone();
 });
 
+test('iPhone-Sprachbutton öffnet bei fehlender Web-Speech-API den nativen Diktierweg', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1' });
+    Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: undefined });
+    Object.defineProperty(window, 'webkitSpeechRecognition', { configurable: true, value: undefined });
+  });
+  await openAppShell(page);
+  await page.getByTestId('catalog-speech-search').click();
+  await expect(page.getByTestId('catalog-search-input')).toBeFocused();
+  await expect(page.locator('.speech-message')).toContainText('Siri und Diktierfunktion');
+  await expect(page.locator('.speech-message')).toContainText('Mikrofon der geöffneten Tastatur');
+});
+
+test('iPhone-Sprachbutton erklärt eine blockierte Safari-Mikrofonfreigabe', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1' });
+    class DeniedWebkitSpeechRecognition {
+      lang = '';
+      interimResults = false;
+      continuous = false;
+      onstart: (() => void) | null = null;
+      onresult: ((event: unknown) => void) | null = null;
+      onerror: ((event: { error: string }) => void) | null = null;
+      onend: (() => void) | null = null;
+      start() { setTimeout(() => this.onerror?.({ error: 'not-allowed' }), 0); }
+      stop() { this.onend?.(); }
+    }
+    Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: undefined });
+    Object.defineProperty(window, 'webkitSpeechRecognition', { configurable: true, value: DeniedWebkitSpeechRecognition });
+  });
+  await openAppShell(page);
+  await page.getByTestId('catalog-speech-search').click();
+  await expect(page.getByTestId('catalog-search-input')).toBeFocused();
+  await expect(page.locator('.speech-message')).toContainText('Website-Einstellungen');
+  await expect(page.locator('.speech-message')).toContainText('Mikrofon');
+});
+
 test('deterministische manuelle Berechnung funktioniert ohne Produktnetzwerk', async ({ page }) => {
   const forbidden = collectForbiddenProductRequests(page);
   await openAppShell(page);

@@ -121,7 +121,7 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
           <label htmlFor="catalog-search-input">Produktname oder Barcode</label>
           <div className="search-row">
             <input id="catalog-search-input" data-testid="catalog-search-input" type="search" inputMode="search" autoComplete="off" maxLength={120} placeholder={c.speechListening ? 'Höre zu …' : 'z. B. 3 Riegel Kinder Bueno'} value={c.query} onChange={(event: ChangeEvent<HTMLInputElement>) => c.setQuery(event.target.value)} />
-            <button type="button" className="button button--secondary speech-button" onClick={c.startVoiceSearch} aria-pressed={c.speechListening} data-testid="catalog-speech-search">{c.speechListening ? 'Höre zu …' : '🎙 Sprechen'}</button>
+            <button type="button" className="button button--secondary speech-button" onClick={c.startVoiceSearch} aria-pressed={c.speechListening} aria-label={c.speechListening ? 'Spracheingabe beenden' : 'Spracheingabe starten'} data-testid="catalog-speech-search">{c.speechListening ? '■ Stoppen' : '🎙 Sprechen'}</button>
             <button type="submit" className="button button--primary" data-testid="catalog-search-submit">{c.search.phase === 'searching' ? 'Neu suchen' : 'Suchen'}</button>
           </div>
           {c.speechListening && <div className="speech-recording" role="status" aria-live="polite"><span aria-hidden="true" />Höre zu …</div>}

@@ -83,17 +83,20 @@ test('übernimmt eine gesprochene Produktliste samt Einzelmengen direkt in die G
       lang = '';
       interimResults = false;
       continuous = false;
+      onstart: (() => void) | null = null;
       onresult: ((event: unknown) => void) | null = null;
       onerror: ((event: unknown) => void) | null = null;
       onend: (() => void) | null = null;
       start() {
         setTimeout(() => {
+          this.onstart?.();
           this.onresult?.({ results: [[{ transcript: '100 g Reis mit 150 g Nudeln und 200 g Kartoffeln' }]] });
           this.onend?.();
         }, 0);
       }
     }
-    Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: MultiProductSpeechRecognition });
+    Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: undefined });
+    Object.defineProperty(window, 'webkitSpeechRecognition', { configurable: true, value: MultiProductSpeechRecognition });
   });
   await openCatalogApp(page);
   await expectCatalogReady(page);
@@ -182,11 +185,13 @@ test('zeigt Trefferbilder, nutzt Sprache für gekochten Reis und speichert eine 
       lang = '';
       interimResults = false;
       continuous = false;
+      onstart: (() => void) | null = null;
       onresult: ((event: unknown) => void) | null = null;
       onerror: ((event: unknown) => void) | null = null;
       onend: (() => void) | null = null;
       start() {
         setTimeout(() => {
+          this.onstart?.();
           this.onresult?.({ results: [[{ transcript: 'Reis' }]] });
           this.onend?.();
         }, 0);

@@ -16,7 +16,7 @@ import type { ManualProduct } from '../lib/userDataStore';
 import { asGenericSearchHit, genericCookedProductForQuery, genericProductByCode, isGenericCatalogProduct } from '../lib/genericFoods';
 import { clinicCatalogProducts, clinicDefaultRequest, clinicProductByCode, directClinicResolution, isClinicCatalogProduct, searchClinicCatalog } from '../lib/clinicCatalog';
 import { resizeManualProductImage } from '../lib/manualProductImage';
-import { startSpeechRecognitionSafely } from '../lib/speech';
+import { isAppleMobileSpeechClient, speechRecognitionErrorMessage, startSpeechRecognitionSafely, unavailableSpeechMessage } from '../lib/speech';
 import { createTransferFile, parseTransferFile, serializeTransferFile } from '../lib/dataTransfer';
 import { createMealCalculationItem, totalMealCarbohydrates, updateMealCalculationItem } from '../lib/mealCalculation';
 import type { MealCalculationItem } from '../lib/mealCalculation';
@@ -102,6 +102,7 @@ export function useCatalogController() {
   const [activeMealCreatedAt, setActiveMealCreatedAt] = useState<string | null>(null);
   const [transferMessage, setTransferMessage] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const speechRecognitionRef = useRef<SpeechRecognition | null>(null);
   const restored = useRef(false);
   const product = search.selectedProduct;
 
@@ -112,7 +113,7 @@ export function useCatalogController() {
     catch (error) { const d = diagnostic(error, 'initialize', 'Der lokale Produktkatalog konnte nicht geöffnet werden.'); setStatus({ state: 'unavailable', activeSlot: d.activeSlot, rollbackSlot: d.rollbackSlot, slotStates: { a: 'empty', b: 'empty' }, catalogVersion: d.catalogVersion, productCount: null, persistent: false, progress: null, diagnostics: d, retryAllowedImmediately: true }); }
   }, []);
 
-  useEffect(() => { void initialize(); return () => { abortRef.current?.abort(); cancelOfflineCatalogRequests(); }; }, [initialize]);
+  useEffect(() => { void initialize(); return () => { abortRef.current?.abort(); try { speechRecognitionRef.current?.stop(); } catch {} cancelOfflineCatalogRequests(); }; }, [initialize]);
   useEffect(() => { const listener = () => refreshLocalData(); addEventListener('kh:offline-user-data-changed', listener); return () => removeEventListener('kh:offline-user-data-changed', listener); }, [refreshLocalData]);
   useEffect(() => {
     if (restored.current || status.state !== 'ready') return;
@@ -297,14 +298,50 @@ export function useCatalogController() {
   };
 
   const startVoiceSearch = () => {
+    if (speechRecognitionRef.current) {
+      try { speechRecognitionRef.current.stop(); } catch {}
+      speechRecognitionRef.current = null;
+      setSpeechListening(false);
+      setSpeechMessage('Spracheingabe beendet.');
+      return;
+    }
+    const appleMobile = isAppleMobileSpeechClient(navigator);
+    const focusNativeDictation = () => {
+      const input = document.getElementById('catalog-search-input') as HTMLInputElement | null;
+      input?.focus();
+      input?.select();
+    };
     const Constructor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-    if (!Constructor) { setSpeechMessage('Sprachsuche wird von diesem Browser nicht unterstützt. Die Texteingabe bleibt verfügbar.'); return; }
+    if (!Constructor) {
+      focusNativeDictation();
+      setSpeechMessage(unavailableSpeechMessage(appleMobile));
+      return;
+    }
     const recognition = new Constructor();
+    speechRecognitionRef.current = recognition;
     recognition.lang = 'de-DE'; recognition.interimResults = false; recognition.continuous = false;
-    recognition.onresult = (event) => { const transcript = event.results[0]?.[0]?.transcript?.trim(); if (transcript) { setQuery(transcript); setSpeechMessage(`Erkannt: „${transcript}“`); void executeSpokenSearch(transcript); } };
-    recognition.onerror = () => { setSpeechListening(false); setSpeechMessage('Spracheingabe fehlgeschlagen. Du kannst sofort erneut starten oder Text eingeben.'); };
-    recognition.onend = () => setSpeechListening(false);
-    startSpeechRecognitionSafely(recognition, setSpeechListening, () => setSpeechMessage('Die Spracheingabe konnte nicht gestartet werden. Die Texteingabe bleibt verfügbar.'));
+    recognition.onstart = () => { setSpeechListening(true); setSpeechMessage(appleMobile ? 'iPhone-Mikrofon aktiv – bitte jetzt sprechen.' : 'Mikrofon aktiv – bitte jetzt sprechen.'); };
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results).slice(event.resultIndex ?? 0).map((result) => result[0]?.transcript ?? '').join(' ').trim();
+      if (transcript) { setQuery(transcript); setSpeechMessage(`Erkannt: „${transcript}“`); void executeSpokenSearch(transcript); }
+    };
+    recognition.onerror = (event) => {
+      setSpeechListening(false);
+      speechRecognitionRef.current = null;
+      setSpeechMessage(speechRecognitionErrorMessage(event.error, appleMobile));
+      if (appleMobile && (event.error === 'not-allowed' || event.error === 'service-not-allowed' || event.error === 'audio-capture')) focusNativeDictation();
+    };
+    recognition.onend = () => {
+      if (speechRecognitionRef.current === recognition) speechRecognitionRef.current = null;
+      setSpeechListening(false);
+    };
+    setSpeechMessage(appleMobile ? 'iPhone-Mikrofon wird gestartet …' : 'Mikrofon wird gestartet …');
+    startSpeechRecognitionSafely(recognition, setSpeechListening, (error) => {
+      speechRecognitionRef.current = null;
+      const code = error instanceof DOMException && error.name === 'NotAllowedError' ? 'not-allowed' : 'start-failed';
+      setSpeechMessage(speechRecognitionErrorMessage(code, appleMobile));
+      if (appleMobile) focusNativeDictation();
+    });
   };
   const saveCurrent = () => {
     if (!settings.saveHistory || !product || !selectedOption || calculation?.status !== 'calculated' || calculation.carbohydratesG === null || calculation.unitBaseValue === null) return;
