@@ -94,6 +94,14 @@ test('lokale Einstellungen und manuelle Berechnung bleiben offline nutzbar', asy
   try {
     await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Einstellungen' })).toBeVisible();
+    const legalNotice = page.getByTestId('legal-notice');
+    await expect(legalNotice.getByRole('heading', { name: 'Impressum & Lizenzen' })).toBeVisible();
+    await expect(legalNotice).toContainText('C. Fischer');
+    await expect(legalNotice).toContainText('Leverkusen, Deutschland');
+    await expect(legalNotice.getByRole('link', { name: 'fishit.apps@gmail.com' })).toHaveAttribute('href', 'mailto:fishit.apps@gmail.com');
+    await expect(legalNotice).toContainText('private, nicht kommerzielle Nutzung');
+    await expect(legalNotice).toContainText('keine Dosierfreigabe');
+    await expect(legalNotice).toContainText('zwingender gesetzlicher Haftung');
     await page.locator('input[name="visual-theme"][value="standard"]').check();
     await expect(page.locator('.app-shell')).toHaveAttribute('data-visual-theme', 'standard');
     await page.getByRole('button', { name: 'Rechner', exact: true }).click();

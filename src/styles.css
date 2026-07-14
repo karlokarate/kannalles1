@@ -231,6 +231,16 @@ input:disabled, select:disabled { opacity: 0.6; }
 .transfer-settings > small { display: block; margin-top: 12px; color: var(--muted); }
 .transfer-import-button { position: relative; overflow: hidden; }
 .transfer-import-button input { position: absolute; width: 1px; min-height: 1px; opacity: 0; pointer-events: none; }
+.legal-notice { display: grid; gap: 18px; }
+.legal-notice > h2, .legal-notice h3, .legal-notice p { margin: 0; }
+.legal-notice > h2 { padding: 0; }
+.legal-notice h3 { font-size: 0.96rem; }
+.legal-notice p { color: var(--muted); line-height: 1.55; }
+.legal-notice a { color: var(--primary-strong); font-weight: 700; overflow-wrap: anywhere; }
+.legal-notice__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.legal-notice__grid > section, .legal-notice__liability, .legal-notice__off { display: grid; align-content: start; gap: 9px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-muted); }
+.legal-notice__liability { border-color: #e7c071; background: var(--warning-soft); }
+.legal-notice__links { padding-top: 3px; }
 .theme-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .theme-picker label { position: relative; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 3px 10px; padding: 15px; border: 2px solid var(--line); border-radius: 18px; background: var(--surface-muted); cursor: pointer; }
 .theme-picker label > input { position: absolute; width: 1px; min-height: 1px; opacity: 0; }
@@ -379,7 +389,7 @@ input:disabled, select:disabled { opacity: 0.6; }
   .clinic-tag--compact img { width: 82px; }
   .product-card__header { grid-template-columns: auto minmax(0, 1fr); }
   .favorite-button { grid-column: 1 / -1; grid-template-columns: auto 1fr; width: 100%; }
-  .calculation-grid, .manual-grid, .calibration-fields, .settings-grid { grid-template-columns: 1fr; }
+  .calculation-grid, .manual-grid, .calibration-fields, .settings-grid, .legal-notice__grid { grid-template-columns: 1fr; }
   .diabetes-segment-grid, .bolus-values, .theme-picker, .pen-bolus-inputs { grid-template-columns: 1fr; }
   .diabetes-factor-grid { grid-template-columns: 1fr 1fr; }
   .factor-value-field { grid-column: 1 / -1; }

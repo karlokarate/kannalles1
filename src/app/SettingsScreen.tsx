@@ -89,6 +89,34 @@ export function SettingsScreen({
           <dl className="data-counts"><div><dt>Kalibrierungen</dt><dd>{counts.calibrations}</dd></div><div><dt>Verlauf</dt><dd>{counts.history}</dd></div><div><dt>Favoriten</dt><dd>{counts.favorites}</dd></div><div><dt>Eigene Produkte</dt><dd>{counts.manualProducts}</dd></div><div><dt>Produktfotos</dt><dd>{counts.productPhotos}</dd></div></dl>
           <div className="button-stack"><button type="button" className="button button--secondary" onClick={onClearHistory}>Verlauf löschen</button><button type="button" className="button button--secondary" onClick={onClearSession}>Gespeicherte Ansicht löschen</button><button type="button" className="button button--danger" onClick={onClearAllUserData}>Alle lokalen Nutzerdaten löschen</button></div>
         </section>
+        <section className="settings-card settings-card--wide legal-notice" aria-labelledby="legal-notice-title" data-testid="legal-notice">
+          <h2 id="legal-notice-title">Impressum &amp; Lizenzen</h2>
+          <div className="legal-notice__grid">
+            <section aria-labelledby="developer-contact-title">
+              <h3 id="developer-contact-title">Entwicklerkontakt</h3>
+              <p><strong>C. Fischer</strong><br />Leverkusen, Deutschland</p>
+              <p>Fehlerberichte, Wünsche und sonstige Rückmeldungen bitte per E-Mail an <a href="mailto:fishit.apps@gmail.com">fishit.apps@gmail.com</a>.</p>
+            </section>
+            <section aria-labelledby="app-license-title">
+              <h3 id="app-license-title">Web-App und Software</h3>
+              <p>Die öffentlich bereitgestellte Web-App ist ausschließlich für die private, nicht kommerzielle Nutzung bestimmt und wird lizenzkostenfrei angeboten. Der Quellcode des FishIT KH Checkers steht unabhängig davon unter der <a href="https://opensource.org/license/mit" target="_blank" rel="noreferrer">MIT-Lizenz</a>; deren Bedingungen gelten für die Weiterverwendung des Quellcodes.</p>
+              <p>Die App verwendet <a href="https://react.dev/" target="_blank" rel="noreferrer">React, React DOM und Scheduler</a> unter der MIT-Lizenz sowie <a href="https://github.com/sqlite/sqlite-wasm" target="_blank" rel="noreferrer">SQLite Wasm</a> unter Apache-2.0. Der eingebettete SQLite-Kern ist gemeinfrei (Public Domain).</p>
+            </section>
+          </div>
+          <section className="legal-notice__liability" aria-labelledby="usage-liability-title">
+            <h3 id="usage-liability-title">Nutzung &amp; Haftung</h3>
+            <p>Die App ist ausschließlich eine unverbindliche Rechen- und Orientierungshilfe. Sie ersetzt weder medizinische Beratung, Diagnose oder Behandlung noch die Prüfung durch qualifiziertes medizinisches Fachpersonal. Insbesondere stellt eine angezeigte Insulinmenge keine Dosierfreigabe dar. Behandlungs- oder Dosierungsentscheidungen dürfen nicht allein auf Grundlage der App getroffen werden und sind mit dem persönlichen Behandlungsteam abzustimmen.</p>
+            <p>Trotz sorgfältiger Entwicklung können Produktdaten, persönliche Eingaben, Berechnungen, Darstellungen oder Funktionen der App unvollständig, veraltet oder fehlerhaft sein. Es wird keine Gewähr für Richtigkeit, Vollständigkeit, Eignung, Verfügbarkeit oder Fehlerfreiheit übernommen. Die Nutzung und die Kontrolle aller Ergebnisse erfolgen eigenverantwortlich.</p>
+            <p>Soweit gesetzlich zulässig, ist eine Haftung für Schäden oder nachteilige Folgen ausgeschlossen, die aus der Nutzung oder Nichtverfügbarkeit der App, aus fehlerhaften Daten oder Berechnungen oder aus darauf gestützten Behandlungsentscheidungen entstehen. Unberührt bleibt die Haftung bei Vorsatz und grober Fahrlässigkeit, bei Verletzung von Leben, Körper oder Gesundheit sowie in allen Fällen zwingender gesetzlicher Haftung.</p>
+          </section>
+          <section className="legal-notice__off" aria-labelledby="off-license-title">
+            <h3 id="off-license-title">Open Food Facts (OFF)</h3>
+            <p>Der große Offline-Produktkatalog enthält Informationen aus <a href="https://world.openfoodfacts.org/" target="_blank" rel="noreferrer">Open Food Facts</a>. Die Datenbank ist unter der <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noreferrer">Open Database License (ODbL) 1.0</a> verfügbar; einzelne Datenbankinhalte stehen unter der <a href="https://opendatacommons.org/licenses/dbcl/1-0/" target="_blank" rel="noreferrer">Database Contents License (DbCL) 1.0</a>. Der für diese App aufbereitete Offline-Katalog unterliegt ebenfalls der ODbL 1.0.</p>
+            <p>Von Open Food Facts geladene Produktbilder stehen unter <a href="https://creativecommons.org/licenses/by-sa/3.0/deed.de" target="_blank" rel="noreferrer">Creative Commons Namensnennung – Weitergabe unter gleichen Bedingungen 3.0 (CC BY-SA 3.0)</a>. Abgebildete Verpackungen, Marken, Logos und sonstige Kennzeichen können zusätzlichen Rechten ihrer jeweiligen Inhaber unterliegen.</p>
+            <p>OFF-Daten werden gemeinschaftlich zusammengetragen und können unvollständig, veraltet oder fehlerhaft sein. Nährwertangaben und Berechnungsergebnisse müssen bei gesundheitlich wichtigen Entscheidungen anhand der Produktverpackung oder verlässlicher Fachinformationen geprüft werden. Open Food Facts ist weder Herausgeber noch Anbieter dieser App und unterstützt sie nicht offiziell.</p>
+            <p className="legal-notice__links"><a href="https://openfoodfacts.github.io/documentation/docs/Product-Opener/api/tutorials/license-be-on-the-legal-side/" target="_blank" rel="noreferrer">OFF-Lizenzhinweise und Bedingungen zur Weiterverwendung</a></p>
+          </section>
+        </section>
       </div>
     </section>
   );
