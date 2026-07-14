@@ -434,10 +434,10 @@ export function useCatalogController() {
   const removeSavedMeal = (id: string) => { deleteMealCalculation(id); refreshLocalData(); };
   const acknowledgeMealGlucose = () => setMealNeedsCurrentGlucose(false);
 
-  const transferFile = () => new File(
+  const transferFile = (forNativeShare = false) => new File(
     [serializeTransferFile(createTransferFile(settings))],
-    `fishit-kh-daten-${new Date().toISOString().slice(0, 10)}.json`,
-    { type: 'application/json' }
+    `fishit-kh-daten-${new Date().toISOString().slice(0, 10)}.${forNativeShare ? 'txt' : 'json'}`,
+    { type: forNativeShare ? 'text/plain' : 'application/json' }
   );
   const downloadTransferFile = () => {
     const file = transferFile();
@@ -449,8 +449,12 @@ export function useCatalogController() {
     setTransferMessage('Datei mit Verlauf, Diabeteseinstellungen und Portions-Overrides exportiert.');
   };
   const shareTransferFile = async () => {
-    const file = transferFile();
-    if (typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function' || !navigator.canShare({ files: [file] })) {
+    const file = transferFile(true);
+    let nativeFileShareAvailable = typeof navigator.share === 'function';
+    if (nativeFileShareAvailable && typeof navigator.canShare === 'function') {
+      try { nativeFileShareAvailable = navigator.canShare({ files: [file] }); } catch { nativeFileShareAvailable = false; }
+    }
+    if (!nativeFileShareAvailable) {
       downloadTransferFile();
       setTransferMessage('Teilen wird hier nicht unterstützt – die Datei wurde stattdessen exportiert.');
       return;

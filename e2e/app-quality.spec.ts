@@ -93,6 +93,7 @@ test('segmentiertes Diabetikerprofil berechnet Korrektur allein und zusammen mit
   await firstRatio.press('Enter');
   await expect(secondRatio).toBeFocused();
   await expect.poll(() => secondRatio.evaluate((input) => ({ start: (input as HTMLInputElement).selectionStart, end: (input as HTMLInputElement).selectionEnd, length: (input as HTMLInputElement).value.length }))).toEqual({ start: 0, end: 2, length: 2 });
+  await firstRatio.fill('10');
   await targetGroup.getByRole('button', { name: 'Weiter →' }).first().click();
   await expect(page.getByTestId('target-glucose-input').nth(1)).toBeFocused();
 
@@ -142,8 +143,8 @@ test('exportiert, teilt und importiert Verlauf, Diabeteseinstellungen und Portio
   const transferred = JSON.parse(contents);
   expect(transferred).toMatchObject({ format: 'fishit-kh-checker-transfer', schemaVersion: 1, diabetes: { enabled: true }, history: { calculations: [], meals: [], calibrations: [] } });
 
-  await page.getByRole('button', { name: 'Teilen', exact: true }).click();
-  await expect.poll(() => page.evaluate(() => (window as typeof window & { sharedFileName?: string }).sharedFileName ?? '')).toMatch(/^fishit-kh-daten-.*\.json$/);
+  await page.getByRole('button', { name: 'Nativ teilen', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { sharedFileName?: string }).sharedFileName ?? '')).toMatch(/^fishit-kh-daten-.*\.txt$/);
 
   await page.getByTestId('carbohydrate-ratio-input').first().fill('20');
   await page.getByTestId('transfer-file-input').setInputFiles({ name: 'fishit-kh-daten.json', mimeType: 'application/json', buffer: Buffer.from(contents) });
