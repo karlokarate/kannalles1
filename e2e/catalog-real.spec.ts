@@ -77,6 +77,39 @@ test('löst den Bueno-Barcode auf die kleinste bewiesene Einheit auf und rechnet
   forbidden.assertNone();
 });
 
+test('übernimmt eine gesprochene Produktliste samt Einzelmengen direkt in die Gesamtrechnung', async ({ page }) => {
+  await page.addInitScript(() => {
+    class MultiProductSpeechRecognition {
+      lang = '';
+      interimResults = false;
+      continuous = false;
+      onresult: ((event: unknown) => void) | null = null;
+      onerror: ((event: unknown) => void) | null = null;
+      onend: (() => void) | null = null;
+      start() {
+        setTimeout(() => {
+          this.onresult?.({ results: [[{ transcript: '100 g Reis mit 150 g Nudeln und 200 g Kartoffeln' }]] });
+          this.onend?.();
+        }, 0);
+      }
+    }
+    Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: MultiProductSpeechRecognition });
+  });
+  await openCatalogApp(page);
+  await expectCatalogReady(page);
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await page.getByTestId('clinic-mode-select').selectOption('off');
+  await page.getByRole('button', { name: 'Rechner', exact: true }).click();
+  await page.getByTestId('catalog-speech-search').click();
+
+  await expect(page.getByTestId('meal-summary')).toBeVisible();
+  await expect(page.getByTestId('meal-item')).toHaveCount(3);
+  await expect(page.getByLabel('Reis, gekocht: Menge')).toHaveValue('100');
+  await expect(page.getByLabel('Nudeln, gekocht: Menge')).toHaveValue('150');
+  await expect(page.getByLabel('Kartoffeln, gekocht: Menge')).toHaveValue('200');
+  await expect.poll(async () => Number(await page.getByTestId('meal-total').getAttribute('data-total-carbs-g'))).toBeCloseTo(99.484, 10);
+});
+
 test('sammelt mehrere Produkte, hält die Summe schwebend und unterstützt Bearbeiten, Details sowie Reset', async ({ page }) => {
   await openCatalogApp(page);
   await expectCatalogReady(page);

@@ -125,7 +125,7 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
             <button type="submit" className="button button--primary" data-testid="catalog-search-submit">{c.search.phase === 'searching' ? 'Neu suchen' : 'Suchen'}</button>
           </div>
           {c.speechListening && <div className="speech-recording" role="status" aria-live="polite"><span aria-hidden="true" />Höre zu …</div>}
-          <small>Die Produktsuche bleibt vollständig lokal; die Spracheingabe wird vom Browser bereitgestellt.</small>
+          <small>Die Produktsuche bleibt vollständig lokal. Per Sprache kannst du auch mehrere Produkte nennen, z. B. „2 Scheiben Brot mit 20 g Nutella und eine Sprite“.</small>
           {c.speechMessage && <small className="speech-message" role="status">{c.speechMessage}</small>}
           {(c.query || c.product || c.search.phase !== 'idle') && <div className="search-reset-row"><button type="button" className="button button--ghost" onClick={c.startNextMealProduct}>Suche zurücksetzen</button></div>}
         </form></search>

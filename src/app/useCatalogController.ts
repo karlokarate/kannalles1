@@ -21,7 +21,7 @@ import { createTransferFile, parseTransferFile, serializeTransferFile } from '..
 import { createMealCalculationItem, totalMealCarbohydrates, updateMealCalculationItem } from '../lib/mealCalculation';
 import type { MealCalculationItem } from '../lib/mealCalculation';
 import { inferredCalibrationUnit, selectDefaultCatalogCandidate } from './catalogViewModel';
-import { parseCatalogQuery } from './queryParser';
+import { parseCatalogQuery, parseSpokenProductList } from './queryParser';
 
 const VERSION_MARKER = 'kh-checker:installed-catalog-version:v1';
 const INITIAL_STATUS: CatalogStatus = {
@@ -248,12 +248,60 @@ export function useCatalogController() {
     setCalibrationMessage(saved ? 'Persönliche Einheit geladen.' : null);
   };
 
+  const executeSpokenSearch = async (transcript: string) => {
+    const parts = parseSpokenProductList(transcript);
+    if (parts.length <= 1) { await executeSearch(transcript); return; }
+    if (status.state !== 'ready' && settings.clinicMode !== 'clinic-only') { await executeSearch(parts[0] ?? transcript); return; }
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const added: MealCalculationItem[] = [];
+    const failures: string[] = [];
+    try {
+      for (const part of parts) {
+        const parsed = parseCatalogQuery(part);
+        if (!parsed) { failures.push(part); continue; }
+        let preferred: CatalogProduct | null = null;
+        if (parsed.barcode) preferred = await getOfflineCatalogProduct(parsed.barcode, controller.signal);
+        else {
+          const clinicMatches = settings.clinicMode === 'off' ? [] : searchClinicCatalog(parsed.catalogQuery, 20);
+          const generic = settings.clinicMode === 'clinic-only' ? null : genericCookedProductForQuery(parsed.catalogQuery);
+          const localMatches = generic ? [...clinicMatches, asGenericSearchHit(generic)] : clinicMatches;
+          const sqliteHits = settings.clinicMode === 'clinic-only' ? [] : await searchOfflineCatalog(parsed.catalogQuery, Math.max(1, 20 - localMatches.length), controller.signal, 0);
+          const hits = [...localMatches, ...sqliteHits].slice(0, 20).map((hit, resultIndex) => ({ ...hit, resultIndex }));
+          preferred = selectDefaultCatalogCandidate(hits, parsed.catalogQuery, hits.map((hit) => catalogProductEligibility(hit).eligible));
+        }
+        if (!preferred || !catalogProductEligibility(preferred).eligible) { failures.push(part); continue; }
+        let nextRequest = pickerRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit });
+        if (isGenericCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) nextRequest = { amount: 200, unit: 'g', unitExplicit: true };
+        else if (isClinicCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) nextRequest = defaultClinicRequest(preferred);
+        const nextResolution = resolveProductUnits(preferred, nextRequest);
+        const item = createMealCalculationItem(createLocalId('meal'), preferred, nextRequest, nextResolution, nextResolution.selectedOptionId);
+        if (item) added.push(item); else failures.push(part);
+      }
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) failures.push(...parts.filter((part) => !failures.includes(part)));
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
+    }
+    if (added.length > 0) {
+      setMealItems((current) => [...current, ...added]);
+      setManualMode(false);
+      setEditingMealItemId(null);
+      setMealMessage(`${added.length} ${added.length === 1 ? 'Produkt wurde' : 'Produkte wurden'} per Sprache zur Gesamtrechnung hinzugefügt.${failures.length > 0 ? ` Noch zu prüfen: ${failures.join(', ')}.` : ''}`);
+      dispatch({ type: 'reset' });
+      setQuery('');
+      setMealOpen(failures.length === 0);
+    }
+    if (failures.length > 0) await executeSearch(failures[0]);
+  };
+
   const startVoiceSearch = () => {
     const Constructor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
     if (!Constructor) { setSpeechMessage('Sprachsuche wird von diesem Browser nicht unterstützt. Die Texteingabe bleibt verfügbar.'); return; }
     const recognition = new Constructor();
     recognition.lang = 'de-DE'; recognition.interimResults = false; recognition.continuous = false;
-    recognition.onresult = (event) => { const transcript = event.results[0]?.[0]?.transcript?.trim(); if (transcript) { setQuery(transcript); setSpeechMessage(`Erkannt: „${transcript}“`); void executeSearch(transcript); } };
+    recognition.onresult = (event) => { const transcript = event.results[0]?.[0]?.transcript?.trim(); if (transcript) { setQuery(transcript); setSpeechMessage(`Erkannt: „${transcript}“`); void executeSpokenSearch(transcript); } };
     recognition.onerror = () => { setSpeechListening(false); setSpeechMessage('Spracheingabe fehlgeschlagen. Du kannst sofort erneut starten oder Text eingeben.'); };
     recognition.onend = () => setSpeechListening(false);
     startSpeechRecognitionSafely(recognition, setSpeechListening, () => setSpeechMessage('Die Spracheingabe konnte nicht gestartet werden. Die Texteingabe bleibt verfügbar.'));

@@ -21,6 +21,12 @@ const UNIT_WORDS: Array<{ pattern: RegExp; unit: RequestedUnit }> = [
   { pattern: /^(?:milliliter|ml)\b/i, unit: 'ml' }
 ];
 
+const SPOKEN_AMOUNTS: Readonly<Record<string, number>> = {
+  ein: 1, eine: 1, einen: 1, einem: 1, einer: 1,
+  zwei: 2, drei: 3, vier: 4, fünf: 5, fuenf: 5, sechs: 6,
+  sieben: 7, acht: 8, neun: 9, zehn: 10, elf: 11, zwölf: 12, zwoelf: 12
+};
+
 function localizedNumber(value: string): number | null {
   const normalized = value.replace(/\s/g, '').replace(',', '.');
   const parsed = Number(normalized);
@@ -29,6 +35,15 @@ function localizedNumber(value: string): number | null {
 
 export function normalizeCatalogQuery(value: string): string {
   return value.normalize('NFKC').replace(/\s+/g, ' ').trim();
+}
+
+export function parseSpokenProductList(rawInput: string): string[] {
+  const normalized = normalizeCatalogQuery(rawInput);
+  if (!normalized) return [];
+  return normalized
+    .split(/\s*(?:,|\b(?:mit|und|plus|sowie)\b)\s*/i)
+    .map((part) => normalizeCatalogQuery(part))
+    .filter(Boolean);
 }
 
 export function parseCatalogQuery(rawInput: string): ParsedCatalogQuery | null {
@@ -61,6 +76,14 @@ export function parseCatalogQuery(rawInput: string): ParsedCatalogQuery | null {
       amount = parsed;
       amountExplicit = true;
       remainder = remainder.slice(amountMatch[0].length).trimStart();
+    }
+  } else {
+    const spokenMatch = remainder.match(/^([a-zäöüß]+)\s+/i);
+    const spokenAmount = spokenMatch ? SPOKEN_AMOUNTS[spokenMatch[1].toLocaleLowerCase('de-DE')] : undefined;
+    if (spokenMatch && spokenAmount !== undefined) {
+      amount = spokenAmount;
+      amountExplicit = true;
+      remainder = remainder.slice(spokenMatch[0].length).trimStart();
     }
   }
 

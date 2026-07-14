@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCatalogQuery } from './app/queryParser';
+import { parseCatalogQuery, parseSpokenProductList } from './app/queryParser';
 import { autoSelectionEligibility, catalogProductImageUrl, selectDefaultCatalogCandidate } from './app/catalogViewModel';
 import type { CatalogSearchHit } from './lib/catalog/catalogDomain';
 import { catalogProductEligibility } from './lib/resolution/catalogResolution';
@@ -51,6 +51,9 @@ describe('Lumen hard-cutover state', () => {
       amount: 1,
       unitExplicit: false
     });
+    expect(parseCatalogQuery('zwei Scheiben Mehrkornbrot')).toMatchObject({ amount: 2, unit: 'slice', catalogQuery: 'Mehrkornbrot' });
+    expect(parseCatalogQuery('eine Sprite')).toMatchObject({ amount: 1, amountExplicit: true, catalogQuery: 'Sprite' });
+    expect(parseSpokenProductList('2 Scheiben Mehrkornbrot mit 20 g Nutella und eine Sprite')).toEqual(['2 Scheiben Mehrkornbrot', '20 g Nutella', 'eine Sprite']);
   });
 
   it('uses the frozen structured catalog evidence directly at the resolver boundary', () => {
