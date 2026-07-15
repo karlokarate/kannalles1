@@ -1,10 +1,11 @@
 import { CatalogIssueBanner } from './app/CatalogIssueBanner';
 import { CatalogStatus } from './app/CatalogStatus';
 import { CalculatorScreen } from './app/CalculatorScreen';
+import { MealReplacementPanel } from './app/MealReplacementPanel';
 import { SettingsScreen } from './app/SettingsScreen';
 import { SmartUnitPromptOverlay } from './app/SmartUnitPromptOverlay';
 import { unitLabel } from './app/catalogViewModel';
-import { useSmartCatalogController } from './app/useSmartCatalogController';
+import { useMealReplacementController } from './app/useMealReplacementController';
 import type { CatalogController } from './app/useCatalogController';
 import { formatCarbohydrates } from './lib/settings';
 
@@ -22,7 +23,7 @@ function HistoryScreen({ c }: { c: CatalogController }) {
 }
 
 export default function App() {
-  const c = useSmartCatalogController();
+  const c = useMealReplacementController();
   return (
     <div className="app-shell" data-app-mode="offline-catalog" data-visual-theme={c.settings.visualTheme} data-catalog-state={c.status.state} data-catalog-version={c.status.catalogVersion ?? ''} data-product-count={c.status.productCount ?? ''} data-persistent={String(c.status.persistent)} data-installed-from-network={String(c.installedFromNetwork)} data-active-slot={c.status.activeSlot ?? ''} data-search-state={c.search.phase} data-product-state={c.product ? 'selected' : 'none'} data-unit-state={c.resolution?.status ?? 'idle'} data-calculation-state={c.calculation?.status ?? 'idle'}>
       <a className="skip-link" href="#main-content">Zum Inhalt springen</a>
@@ -32,7 +33,7 @@ export default function App() {
       {c.search.diagnostics && <CatalogIssueBanner diagnostics={c.search.diagnostics} onRetry={() => void c.executeSearch(c.query)} onDismiss={() => c.dispatch({ type: 'clear-message' })} />}
 
       <main id="main-content" className="app-main">
-        {c.section === 'calculator' && <CalculatorScreen c={c} />}
+        {c.section === 'calculator' && <><CalculatorScreen c={c} /><MealReplacementPanel c={c} /></>}
         {c.section === 'history' && <HistoryScreen c={c} />}
         {c.section === 'favorites' && <section className="screen" aria-labelledby="favorites-title"><header className="screen-heading"><div><span className="eyebrow">Schnellzugriff</span><h1 id="favorites-title">Favoriten</h1></div></header>{c.favorites.length === 0 ? <div className="empty-state"><strong>Noch keine Favoriten</strong><p>Markiere ein geöffnetes Katalogprodukt mit „Merken“.</p></div> : <div className="result-list">{c.favorites.map((favorite) => <button key={favorite.productId} type="button" className="product-result" onClick={() => { const query = favorite.code.startsWith('generic:') ? favorite.displayName : favorite.code; c.setSection('calculator'); c.setManualMode(false); c.setQuery(query); void c.executeSearch(query); }}><span className="result-copy"><strong>{favorite.displayName}</strong><small>{favorite.brand ?? favorite.code}</small></span><span aria-hidden="true">→</span></button>)}</div>}</section>}
         {c.section === 'settings' && <SettingsScreen settings={c.settings} counts={c.counts} onChange={c.updateSettings} onClearHistory={c.clearHistory} onClearSession={() => { c.clearSession(); c.refreshLocalData(); }} onClearAllUserData={c.clearAll} onExportData={c.downloadTransferFile} onShareData={c.shareTransferFile} onImportData={c.importTransferFile} transferMessage={c.transferMessage} />}
