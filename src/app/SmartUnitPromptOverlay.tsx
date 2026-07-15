@@ -65,7 +65,9 @@ function PromptCard({ prompt, testId, onChange, onConfirm, valid }: PromptCardPr
 }
 
 export function SmartUnitPromptOverlay({ c }: { c: SmartCatalogController }) {
-  const mealPrompts = c.mealItems.filter((item) => item.smartUnitPrompt !== null);
+  const mealPrompts = c.mealItems.flatMap((item) => item.smartUnitPrompt
+    ? [{ item, prompt: item.smartUnitPrompt }]
+    : []);
   const promptCount = (c.smartUnitPrompt ? 1 : 0) + mealPrompts.length + c.pendingSmartUnitItems.length;
   if (promptCount === 0) return null;
 
@@ -91,14 +93,14 @@ export function SmartUnitPromptOverlay({ c }: { c: SmartCatalogController }) {
           />
         )}
 
-        {mealPrompts.map((item) => (
+        {mealPrompts.map(({ item, prompt }) => (
           <PromptCard
             key={`meal-${item.id}`}
-            prompt={item.smartUnitPrompt!}
+            prompt={prompt}
             testId={`meal-smart-unit-${item.id}`}
             onChange={(value) => c.updateMealItemSmartUnit(item.id, value)}
             onConfirm={() => c.confirmMealItemSmartUnit(item.id)}
-            valid={c.promptIsValid(item.smartUnitPrompt!)}
+            valid={c.promptIsValid(prompt)}
           />
         ))}
 
