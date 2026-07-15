@@ -1,0 +1,114 @@
+.meal-replacement-panel,
+.meal-replacement-context {
+  display: grid;
+  gap: 14px;
+  padding: clamp(16px, 3vw, 22px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.meal-replacement-panel > p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.meal-replacement-list {
+  display: grid;
+  gap: 10px;
+}
+
+.meal-replacement-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  min-height: 64px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  text-align: left;
+  background: var(--surface-muted);
+  cursor: pointer;
+}
+
+.meal-replacement-button > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.meal-replacement-button strong,
+.meal-replacement-button small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meal-replacement-button small {
+  color: var(--muted);
+}
+
+.meal-replacement-button > b {
+  flex: 0 0 auto;
+  color: var(--primary-strong);
+  white-space: nowrap;
+}
+
+.meal-replacement-button:hover {
+  border-color: var(--primary);
+  background: #eaf7fb;
+  transform: translateY(-1px);
+}
+
+.meal-replacement-context {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-color: var(--primary);
+  background: #eaf7fb;
+}
+
+.meal-replacement-context > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.meal-replacement-context small {
+  color: var(--muted);
+}
+
+.app-shell[data-visual-theme="comic"] .meal-replacement-panel,
+.app-shell[data-visual-theme="comic"] .meal-replacement-context {
+  border: 2px solid #5a397f;
+  background: linear-gradient(135deg, #fff5c7, #e2fbf8);
+  box-shadow: 5px 6px 0 rgba(90, 57, 127, 0.14);
+}
+
+.app-shell[data-visual-theme="comic"] .meal-replacement-button {
+  border: 2px solid #72518f;
+  background: #fffef8;
+  box-shadow: 2px 3px 0 rgba(90, 57, 127, 0.12);
+}
+
+@media (max-width: 600px) {
+  .meal-replacement-context {
+    grid-template-columns: 1fr;
+  }
+
+  .meal-replacement-context .button {
+    width: 100%;
+  }
+
+  .meal-replacement-button {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .meal-replacement-button > b {
+    white-space: normal;
+  }
+}
