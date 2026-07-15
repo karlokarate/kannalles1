@@ -1,0 +1,149 @@
+.diabetes-quick-access {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: clamp(10px, 2.5vw, 18px);
+  margin-bottom: 14px;
+}
+
+.diabetes-quick-access > * {
+  min-width: 0;
+}
+
+.diabetes-quick-access .diabetes-glucose-input {
+  max-width: none;
+  margin: 0;
+}
+
+.diabetes-total-bolus {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 4px;
+  min-height: 108px;
+  padding: 18px 14px;
+  border: 2px solid #246aa4;
+  border-radius: var(--radius-md);
+  color: #fff;
+  text-align: center;
+  background: linear-gradient(145deg, #159ee6, #2767d6);
+  box-shadow: 0 10px 24px rgba(30, 102, 177, 0.2);
+}
+
+.diabetes-total-bolus > span {
+  font-size: clamp(0.76rem, 2.5vw, 0.95rem);
+  font-weight: 900;
+}
+
+.diabetes-total-bolus > strong {
+  font-size: clamp(1.7rem, 6vw, 2.65rem);
+  font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.diabetes-total-bolus > small {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: clamp(0.62rem, 2vw, 0.76rem);
+  font-weight: 700;
+}
+
+.app-shell[data-visual-theme="comic"] .diabetes-quick-access {
+  gap: clamp(10px, 2.5vw, 18px);
+  margin: 8px 14px 24px;
+}
+
+.app-shell[data-visual-theme="comic"] .diabetes-glucose-input {
+  max-width: none;
+  margin: 0;
+  padding: 20px 16px 24px;
+  border-radius: 48% 52% 45% 55% / 54% 44% 56% 46%;
+  transform: rotate(-1deg);
+}
+
+.app-shell[data-visual-theme="comic"] .diabetes-glucose-input > span:first-child {
+  font-size: clamp(0.72rem, 2.7vw, 0.95rem);
+  line-height: 1.05;
+}
+
+.app-shell[data-visual-theme="comic"] .diabetes-glucose-input .input-with-unit input {
+  min-width: 0;
+  padding: 12px 7px;
+  font-size: clamp(0.76rem, 3.1vw, 0.98rem);
+}
+
+.app-shell[data-visual-theme="comic"] .diabetes-glucose-input .input-with-unit b {
+  padding: 0 6px;
+  font-size: clamp(0.62rem, 2.2vw, 0.76rem);
+}
+
+.app-shell[data-visual-theme="comic"] .diabetes-total-bolus {
+  position: relative;
+  isolation: isolate;
+  min-height: 0;
+  padding: 20px 12px 24px;
+  border: 0;
+  border-radius: 53% 47% 55% 45% / 45% 55% 46% 54%;
+  color: #fff;
+  background: #138fe5;
+  filter: drop-shadow(5px 6px 0 rgba(16, 73, 133, 0.28));
+  box-shadow: none;
+  transform: rotate(1deg);
+}
+
+.app-shell[data-visual-theme="comic"] .diabetes-total-bolus::before,
+.app-shell[data-visual-theme="comic"] .diabetes-total-bolus::after {
+  position: absolute;
+  z-index: -1;
+  content: "";
+  border-radius: 50%;
+  background: #138fe5;
+}
+
+.app-shell[data-visual-theme="comic"] .diabetes-total-bolus::before {
+  right: 8px;
+  bottom: -12px;
+  width: 23px;
+  height: 23px;
+  box-shadow: 17px 11px 0 -7px #138fe5;
+}
+
+.app-shell[data-visual-theme="comic"] .diabetes-total-bolus::after {
+  left: -8px;
+  top: 18px;
+  width: 18px;
+  height: 18px;
+  box-shadow: -10px -9px 0 -6px #138fe5;
+}
+
+.app-shell[data-visual-theme="comic"] .diabetes-total-bolus > span {
+  text-shadow: 1px 2px 0 #07518d;
+}
+
+.app-shell[data-visual-theme="comic"] .diabetes-total-bolus > strong {
+  text-shadow: 2px 3px 0 #07518d;
+}
+
+@media (max-width: 430px) {
+  .diabetes-quick-access {
+    gap: 8px;
+  }
+
+  .app-shell[data-visual-theme="comic"] .diabetes-quick-access {
+    margin-right: 4px;
+    margin-left: 4px;
+  }
+
+  .app-shell[data-visual-theme="comic"] .diabetes-glucose-input,
+  .app-shell[data-visual-theme="comic"] .diabetes-total-bolus {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .app-shell[data-visual-theme="comic"] .diabetes-glucose-input::before,
+  .app-shell[data-visual-theme="comic"] .diabetes-glucose-input::after,
+  .app-shell[data-visual-theme="comic"] .diabetes-total-bolus::before,
+  .app-shell[data-visual-theme="comic"] .diabetes-total-bolus::after {
+    transform: scale(0.78);
+  }
+}
