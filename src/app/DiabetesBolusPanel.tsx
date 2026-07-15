@@ -51,7 +51,14 @@ export function DiabetesBolusPanel({ settings, carbohydratesG, currentGlucose, o
 
   return (
     <section className="diabetes-bolus-panel" aria-label="Diabetiker-Bolus-Rechenhilfe" data-testid="diabetes-bolus-panel" data-collapsed={String(!detailsOpen)}>
-      <label className="field diabetes-glucose-input"><span>Aktueller Blutzucker</span><span className="input-with-unit"><input ref={glucoseInputRef} type="number" min="20" max="600" step="1" inputMode="decimal" enterKeyHint="done" value={currentGlucose} onChange={(event: ChangeEvent<HTMLInputElement>) => onCurrentGlucoseChange(event.target.value)} placeholder="Wert eingeben" data-testid="current-glucose-input" /><b>mg/dL</b></span></label>
+      <div className="diabetes-quick-access" data-testid="diabetes-quick-access">
+        <label className="field diabetes-glucose-input"><span>Aktueller Blutzucker</span><span className="input-with-unit"><input ref={glucoseInputRef} type="number" min="20" max="600" step="1" inputMode="decimal" enterKeyHint="done" value={currentGlucose} onChange={(event: ChangeEvent<HTMLInputElement>) => onCurrentGlucoseChange(event.target.value)} placeholder="Wert eingeben" data-testid="current-glucose-input" /><b>mg/dL</b></span></label>
+        <output className="diabetes-total-bolus" aria-live="polite" data-testid="quick-total-bolus" data-calculation-ready={String(result.totalBolus !== null)}>
+          <span>Gesamtbolus</span>
+          <strong>{dose(result.totalBolus)}</strong>
+          <small>Aktuell berechnet</small>
+        </output>
+      </div>
       <details className="calibration-card diabetes-bolus-details" open={detailsOpen} onToggle={(event) => setDetailsOpen(event.currentTarget.open)} data-testid="diabetes-bolus-details">
         <summary data-testid="diabetes-bolus-toggle"><span><span className="eyebrow">Aktives Diabetikerprofil</span><strong>Bolus-Rechenhilfe</strong></span><small>{detailsOpen ? 'Details einklappen' : 'Details aufklappen'}</small></summary>
         <div className="calibration-card__body">
