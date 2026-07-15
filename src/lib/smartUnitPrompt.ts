@@ -4,7 +4,8 @@ import type {
   CatalogUnitRequest,
   CatalogUnitResolution,
   MatchingUnitCalibration,
-  RequestedUnit
+  RequestedUnit,
+  ResolvedUnitOption
 } from './resolution/catalogResolution';
 import type { CatalogCalibrationUnit } from './resolution/catalogCalibration';
 
@@ -19,8 +20,14 @@ export interface SmartUnitPrompt {
   value: string;
   defaultValue: number | null;
   wholeWeightG: number | null;
+  baseValueG: number | null;
   question: string;
   explanation: string;
+}
+
+export interface SmartUnitResolutionState {
+  resolution: CatalogUnitResolution;
+  prompt: SmartUnitPrompt | null;
 }
 
 const CALIBRATABLE_UNITS: readonly RequestedUnit[] = ['piece', 'bar', 'slice', 'portion'];
@@ -51,19 +58,23 @@ function label(unit: CatalogCalibrationUnit): string {
   return 'Stück';
 }
 
+function numericValue(value: string): number | null {
+  const parsed = Number(value.replace(',', '.'));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 /**
- * Returns a prompt only when the exact requested unit has no deterministic base value.
- * Proven catalog evidence, manufacturer servings and saved user calibrations always win.
+ * Creates a prompt only when the exact requested unit lacks deterministic evidence.
+ * Proven catalog units, manufacturer servings and saved user calibrations always win.
  */
 export function createSmartUnitPrompt(
   product: CatalogProduct,
   request: CatalogUnitRequest,
   resolution: CatalogUnitResolution
 ): SmartUnitPrompt | null {
-  if (!request.unitExplicit || !isCalibratableUnit(request.unit)) return null;
-  const selected = resolution.options.find((option) => option.id === resolution.selectedOptionId)
-    ?? resolution.options.find((option) => option.unit === request.unit);
-  if (selected?.baseValue !== null && selected?.baseValue !== undefined) return null;
+  if (!request.unitExplicit || !isCalibratableUnit(request.unit) || product.nutrition.basis !== 'mass') return null;
+  const exactResolved = resolution.options.some((option) => option.unit === request.unit && option.baseValue !== null);
+  if (exactResolved) return null;
 
   const unit = request.unit;
   const productName = product.displayName;
@@ -80,6 +91,7 @@ export function createSmartUnitPrompt(
       value: '8',
       defaultValue: 8,
       wholeWeightG,
+      baseValueG: wholeWeightG / 8,
       question: 'In wie viele Stücke ist die ganze Pizza geschnitten?',
       explanation: `Standard sind 8 Stück. Das Gewicht je ${label(unit)} wird aus ${wholeWeightG.toLocaleString('de-DE')} g Gesamtgewicht berechnet.`
     };
@@ -97,6 +109,7 @@ export function createSmartUnitPrompt(
     value: genericPortion === null ? '' : String(genericPortion),
     defaultValue: genericPortion,
     wholeWeightG: null,
+    baseValueG: genericPortion,
     question: `Wie viel Gramm wiegt eine ${label(unit)}?`,
     explanation: genericPortion === null
       ? `Für ${label(unit)} ist keine belastbare Einzelmenge im Katalog vorhanden. Die Eingabe wird nur für dieses Produkt und diese Einheit gespeichert.`
@@ -104,9 +117,56 @@ export function createSmartUnitPrompt(
   };
 }
 
+export function updateSmartUnitPromptValue(prompt: SmartUnitPrompt, value: string): SmartUnitPrompt {
+  const parsed = numericValue(value);
+  const baseValueG = prompt.mode === 'whole-split'
+    ? parsed !== null && Number.isInteger(parsed) && prompt.wholeWeightG !== null
+      ? prompt.wholeWeightG / parsed
+      : null
+    : parsed;
+  return { ...prompt, value, baseValueG };
+}
+
+export function applySmartUnitPromptDefault(
+  resolution: CatalogUnitResolution,
+  prompt: SmartUnitPrompt | null
+): CatalogUnitResolution {
+  if (!prompt || prompt.baseValueG === null) return resolution;
+  const id = `${prompt.unit}:app_default:${String(prompt.baseValueG)}`;
+  const option: ResolvedUnitOption = {
+    id,
+    unit: prompt.unit,
+    label: label(prompt.unit),
+    basis: 'mass',
+    baseValue: prompt.baseValueG,
+    source: 'app_default',
+    recommended: true,
+    smallestEdibleUnit: prompt.unit !== 'portion',
+    priority: 50,
+    note: prompt.mode === 'whole-split'
+      ? `Veränderbarer Standard aus ${prompt.value} Stücken pro ganzer Pizza.`
+      : 'Veränderbarer Standardwert; bitte Portionsgröße prüfen.'
+  };
+  const options = [option, ...resolution.options.filter((candidate) => candidate.id !== id).map((candidate) => ({ ...candidate, recommended: false }))];
+  return { ...resolution, status: 'resolved', selectedOptionId: id, options, reason: 'explicit-unit-preserved' };
+}
+
+export function resolveSmartUnitState(
+  product: CatalogProduct,
+  request: CatalogUnitRequest,
+  baseResolution: CatalogUnitResolution,
+  valueOverride?: string
+): SmartUnitResolutionState {
+  const initialPrompt = createSmartUnitPrompt(product, request, baseResolution);
+  const prompt = initialPrompt && valueOverride !== undefined
+    ? updateSmartUnitPromptValue(initialPrompt, valueOverride)
+    : initialPrompt;
+  return { resolution: applySmartUnitPromptDefault(baseResolution, prompt), prompt };
+}
+
 export function smartUnitPromptCalibration(prompt: SmartUnitPrompt): MatchingUnitCalibration | null {
-  const value = Number(prompt.value.replace(',', '.'));
-  if (!Number.isFinite(value) || value <= 0) return null;
+  const value = numericValue(prompt.value);
+  if (value === null) return null;
   if (prompt.mode === 'whole-split') {
     if (!Number.isInteger(value) || prompt.wholeWeightG === null) return null;
     return {
@@ -115,27 +175,17 @@ export function smartUnitPromptCalibration(prompt: SmartUnitPrompt): MatchingUni
       unit: prompt.unit,
       measuredCount: value,
       measuredTotalWeightG: prompt.wholeWeightG,
-      updatedAt: new Date(0).toISOString(),
+      updatedAt: new Date().toISOString(),
       active: true
     };
   }
   return {
     calibrationId: `smart:${prompt.productId}:${prompt.unit}:weight`,
-    scope: isGenericCatalogProductCode(prompt.productId) ? 'generic-food' : 'catalog-product',
+    scope: 'catalog-product',
     unit: prompt.unit,
     measuredCount: 1,
     measuredTotalWeightG: value,
-    updatedAt: new Date(0).toISOString(),
+    updatedAt: new Date().toISOString(),
     active: true
   };
-}
-
-// Generic products use stable negative ids. The controller supplies the final persistence scope.
-function isGenericCatalogProductCode(productId: number): boolean {
-  return productId < 0;
-}
-
-export function smartUnitPromptUnitWeight(prompt: SmartUnitPrompt): number | null {
-  const calibration = smartUnitPromptCalibration(prompt);
-  return calibration === null ? null : calibration.measuredTotalWeightG / calibration.measuredCount;
 }
