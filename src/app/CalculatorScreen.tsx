@@ -96,6 +96,7 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
   const clinicBrowsePageSize = 20;
   const clinicBrowse = c.clinicBrowseCandidates.slice(clinicBrowsePage * clinicBrowsePageSize, (clinicBrowsePage + 1) * clinicBrowsePageSize);
   const carbohydratesForBolus = c.manualMode ? c.manualCalculation : calculation?.status === 'calculated' ? calculation.carbohydratesG : null;
+  const diabetesPanel = c.settings.diabeticProfileEnabled ? <DiabetesBolusPanel settings={c.settings} carbohydratesG={carbohydratesForBolus} currentGlucose={currentGlucose} onCurrentGlucoseChange={setCurrentGlucose} lastBolusTime={c.lastBolusTime} lastBolusUnits={c.lastBolusUnits} onLastBolusTimeChange={c.setLastBolusTime} onLastBolusUnitsChange={c.setLastBolusUnits} /> : null;
   const chooseCandidate = (hit: (typeof c.search.candidates)[number]) => {
     c.selectCandidate(hit);
     if (!isClinicCatalogProduct(hit)) c.setRequest((current) => ({ amount: current.amount, unit: hit.nutrition.basis === 'mass' ? 'g' : 'ml', unitExplicit: false }));
@@ -119,8 +120,6 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
         </fieldset>
       </header>
 
-      {c.settings.diabeticProfileEnabled && (c.manualMode || !product) && <DiabetesBolusPanel settings={c.settings} carbohydratesG={carbohydratesForBolus} currentGlucose={currentGlucose} onCurrentGlucoseChange={setCurrentGlucose} lastBolusTime={c.lastBolusTime} lastBolusUnits={c.lastBolusUnits} onLastBolusTimeChange={c.setLastBolusTime} onLastBolusUnitsChange={c.setLastBolusUnits} />}
-
       {!c.manualMode ? <>
         <search><form className="search-card" onSubmit={submit} data-search-phase={c.search.phase}>
           <label htmlFor="catalog-search-input">Produktname oder Barcode</label>
@@ -134,6 +133,8 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
           {c.speechMessage && <small className="speech-message" role="status">{c.speechMessage}</small>}
           {(c.query || c.product || c.search.phase !== 'idle') && <div className="search-reset-row"><button type="button" className="button button--ghost" onClick={c.startNextMealProduct}>Suche zurücksetzen</button></div>}
         </form></search>
+
+        {diabetesPanel}
 
         {c.search.validationMessage && <div className="inline-message" role="alert">{c.search.validationMessage}</div>}
         {c.search.phase === 'not_found' && <section className="empty-state" data-search-outcome="not_found"><strong>Kein passendes Produkt gefunden</strong><p>Es wird kein fremdes Ersatzprodukt eingesetzt.</p></section>}
@@ -170,8 +171,6 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
             <span>Kohlenhydrate gesamt</span><strong>{formatCarbohydrates(calculation.carbohydratesG, c.settings.decimalPlaces)} g KH</strong><small>{isClinicCatalogProduct(product) && product.clinic.directCarbohydratesPerUnit !== null ? `Direkter Klinikwert · ${c.request.amount.toLocaleString('de-DE')} × ${product.clinic.directCarbohydratesPerUnit.toLocaleString('de-DE')} g KH je Stück` : `Intern ohne Zwischenrundung berechnet · ${c.request.amount.toLocaleString('de-DE')} × ${calculation.unitBaseValue?.toLocaleString('de-DE')} × ${product.nutrition.carbohydratesPer100.toLocaleString('de-DE')} / 100`}</small><button type="button" className="button button--secondary" onClick={c.addCurrentToMeal}>{c.editingMealItemId ? 'Änderung übernehmen & weiter' : '+ Zur Gesamtrechnung'}</button>{c.settings.saveHistory && <button type="button" className="button button--secondary" onClick={c.saveCurrent}>Im Verlauf speichern</button>}
           </section> : <section className="missing-calculation" data-testid="catalog-calculation" data-status={calculation?.status ?? 'not_calculable'}><strong>Für diese Einheit fehlt noch ein belastbares Gewicht.</strong><p>Du kannst die Einheit direkt unten durch gemeinsames Wiegen festlegen.</p></section>}
 
-          {c.settings.diabeticProfileEnabled && <DiabetesBolusPanel settings={c.settings} carbohydratesG={carbohydratesForBolus} currentGlucose={currentGlucose} onCurrentGlucoseChange={setCurrentGlucose} lastBolusTime={c.lastBolusTime} lastBolusUnits={c.lastBolusUnits} onLastBolusTimeChange={c.setLastBolusTime} onLastBolusUnitsChange={c.setLastBolusUnits} />}
-
           {product.nutrition.basis === 'mass' && !isGenericCatalogProduct(product) && !isManualCatalogProduct(product) && (!isClinicCatalogProduct(product) || product.clinic.directCarbohydratesPerUnit === null) && <details className="calibration-card" open={calibrationOpen} onToggle={(event) => setCalibrationOpen(event.currentTarget.open)} data-testid="catalog-calibration" data-status="always-available">
             <summary><span><span className="eyebrow">Persönliche Standard-Einheit</span><strong>Serving-Einheit selbst abwiegen</strong></span><small>{hasDefinedServing ? 'Bereits definiert · bei Bedarf ändern' : 'Noch keine Portion definiert'}</small></summary>
             <div className="calibration-card__body"><p>Wiege eine frei wählbare Anzahl gemeinsam. Das Einzelgewicht wird automatisch berechnet, gespeichert, sofort ausgewählt und bei jeder späteren Suche als Standard verwendet.</p>
@@ -191,6 +190,7 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
         <div className="button-row"><button type="button" className="button button--primary" onClick={c.saveManualDefinition} data-testid="manual-product-save">{c.manual.id ? 'Änderungen speichern' : 'Produkt lokal speichern'}</button><button type="button" className="button button--secondary" onClick={() => c.setManual({ id: null, label: '', carbohydratesPer100: '', amount: '100', basis: 'mass', imageDataUrl: null })}>Neues Produkt</button></div>
         {c.manualMessage && <p className="inline-message" role="status">{c.manualMessage}</p>}
         <section className="calculation-result" aria-live="polite"><span>Kohlenhydrate gesamt</span><strong>{formatCarbohydrates(c.manualCalculation, c.settings.decimalPlaces)} g KH</strong>{c.settings.saveHistory && c.manualCalculation !== null && <button type="button" className="button button--secondary" onClick={c.saveManual}>Im Verlauf speichern</button>}</section>
+        {diabetesPanel}
         {c.manualProducts.length > 0 && <section className="saved-manual-products" aria-labelledby="saved-manual-title"><div className="section-title-row"><div><span className="eyebrow">Lokal gespeichert</span><h3 id="saved-manual-title">Eigene Produkte</h3></div><span>{c.manualProducts.length}</span></div><div className="result-list">{c.manualProducts.map((item) => <article className="saved-manual-product" key={item.id}>{item.imageDataUrl ? <img src={item.imageDataUrl} alt="" /> : <span className="manual-product-photo manual-product-photo--empty" aria-hidden="true">▧</span>}<div><strong>{item.label}</strong><small>{item.carbohydratesPer100.toLocaleString('de-DE')} g KH / 100 {item.basis === 'mass' ? 'g' : 'ml'}</small></div><button type="button" className="button button--secondary" onClick={() => c.loadManualDefinition(item)}>Laden</button><button type="button" className="button button--ghost" onClick={() => c.removeManualDefinition(item.id)} aria-label={`${item.label} löschen`}>Löschen</button></article>)}</div></section>}
       </section>}
       {!c.manualMode && <FloatingMealControls c={c} />}
