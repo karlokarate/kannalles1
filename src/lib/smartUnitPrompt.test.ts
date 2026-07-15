@@ -31,7 +31,8 @@ describe('smart unit prompts', () => {
     const request = { amount: 1, unit: 'portion' as const, unitExplicit: true };
     const state = resolveSmartUnitState(noodles!, request, resolveCatalogUnits(noodles!, request));
     expect(state.prompt).toMatchObject({ mode: 'unit-weight', value: '200', baseValueG: 200 });
-    expect(state.resolution.options[0]).toMatchObject({ unit: 'portion', source: 'app_default', baseValue: 200 });
+    expect(state.resolution.options[0]).toMatchObject({ unit: 'portion', source: 'unresolved', baseValue: 200 });
+    expect(state.resolution.options[0]?.id).toContain('editable_default');
     const calculation = calculateCatalogCarbohydrates(noodles!, request, state.resolution);
     expect(calculation.totalMassG).toBe(200);
     expect(calculation.carbohydratesG).toBeCloseTo(57.36, 10);
@@ -78,6 +79,20 @@ describe('smart unit prompts', () => {
     });
     const request = { amount: 4, unit: 'piece' as const, unitExplicit: true };
     expect(createSmartUnitPrompt(bons, request, resolveCatalogUnits(bons, request))).toBeNull();
+  });
+
+  it('does not ask again for an existing manufacturer portion', () => {
+    const cereal = product({
+      displayName: 'Müsli',
+      unitEvidence: {
+        manufacturerServing: { baseValue: 45, basis: 'mass' },
+        productQuantity: { baseValue: 500, basis: 'mass' },
+        provenSmallestUnit: null,
+        defaultUnitKind: 'portion'
+      }
+    });
+    const request = { amount: 1, unit: 'portion' as const, unitExplicit: true };
+    expect(createSmartUnitPrompt(cereal, request, resolveCatalogUnits(cereal, request))).toBeNull();
   });
 
   it('asks for a missing piece weight without inventing a default', () => {
