@@ -1,6 +1,7 @@
 import { CatalogIssueBanner } from './app/CatalogIssueBanner';
 import { CatalogStatus } from './app/CatalogStatus';
 import { CalculatorScreen } from './app/CalculatorScreen';
+import { MealReplacementPanel } from './app/MealReplacementPanel';
 import { SettingsScreen } from './app/SettingsScreen';
 import { SmartUnitPromptOverlay } from './app/SmartUnitPromptOverlay';
 import { unitLabel } from './app/catalogViewModel';
@@ -32,7 +33,7 @@ export default function App() {
       {c.search.diagnostics && <CatalogIssueBanner diagnostics={c.search.diagnostics} onRetry={() => void c.executeSearch(c.query)} onDismiss={() => c.dispatch({ type: 'clear-message' })} />}
 
       <main id="main-content" className="app-main">
-        {c.section === 'calculator' && <CalculatorScreen c={c} />}
+        {c.section === 'calculator' && <><CalculatorScreen c={c} /><MealReplacementPanel c={c} /></>}
         {c.section === 'history' && <HistoryScreen c={c} />}
         {c.section === 'favorites' && <section className="screen" aria-labelledby="favorites-title"><header className="screen-heading"><div><span className="eyebrow">Schnellzugriff</span><h1 id="favorites-title">Favoriten</h1></div></header>{c.favorites.length === 0 ? <div className="empty-state"><strong>Noch keine Favoriten</strong><p>Markiere ein geöffnetes Katalogprodukt mit „Merken“.</p></div> : <div className="result-list">{c.favorites.map((favorite) => <button key={favorite.productId} type="button" className="product-result" onClick={() => { const query = favorite.code.startsWith('generic:') ? favorite.displayName : favorite.code; c.setSection('calculator'); c.setManualMode(false); c.setQuery(query); void c.executeSearch(query); }}><span className="result-copy"><strong>{favorite.displayName}</strong><small>{favorite.brand ?? favorite.code}</small></span><span aria-hidden="true">→</span></button>)}</div>}</section>}
         {c.section === 'settings' && <SettingsScreen settings={c.settings} counts={c.counts} onChange={c.updateSettings} onClearHistory={c.clearHistory} onClearSession={() => { c.clearSession(); c.refreshLocalData(); }} onClearAllUserData={c.clearAll} onExportData={c.downloadTransferFile} onShareData={c.shareTransferFile} onImportData={c.importTransferFile} transferMessage={c.transferMessage} />}
