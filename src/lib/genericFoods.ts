@@ -8,13 +8,14 @@ interface GenericFoodDefinition {
   label: string;
   blsCode: string;
   carbohydratesPer100g: number;
+  defaultPortionGrams: number;
   query: RegExp;
 }
 
 const GENERIC_FOODS: readonly GenericFoodDefinition[] = [
-  { id: 'pasta-cooked', productId: -401032, label: 'Nudeln, gekocht', blsCode: 'E401032', carbohydratesPer100g: 28.68, query: /^(?:nudeln?|pasta|spaghetti|macaroni|maccheroni)(?:\s+(?:gekocht|zubereitet|verzehrfertig))?$/ },
-  { id: 'rice-cooked', productId: -352032, label: 'Reis, gekocht', blsCode: 'C352032', carbohydratesPer100g: 24.8, query: /^(?:reis|rice)(?:\s+(?:gekocht|zubereitet|verzehrfertig))?$/ },
-  { id: 'potatoes-boiled', productId: -110132, label: 'Kartoffeln, gekocht', blsCode: 'K110132', carbohydratesPer100g: 15.832, query: /^(?:kartoffeln?)(?:\s+(?:gekocht|zubereitet|verzehrfertig))?$/ }
+  { id: 'pasta-cooked', productId: -401032, label: 'Nudeln, gekocht', blsCode: 'E401032', carbohydratesPer100g: 28.68, defaultPortionGrams: 200, query: /^(?:nudeln?|pasta|spaghetti|macaroni|maccheroni)(?:\s+(?:gekocht|zubereitet|verzehrfertig))?$/ },
+  { id: 'rice-cooked', productId: -352032, label: 'Reis, gekocht', blsCode: 'C352032', carbohydratesPer100g: 24.8, defaultPortionGrams: 200, query: /^(?:reis|rice)(?:\s+(?:gekocht|zubereitet|verzehrfertig))?$/ },
+  { id: 'potatoes-boiled', productId: -110132, label: 'Kartoffeln, gekocht', blsCode: 'K110132', carbohydratesPer100g: 15.832, defaultPortionGrams: 200, query: /^(?:kartoffeln?)(?:\s+(?:gekocht|zubereitet|verzehrfertig))?$/ }
 ];
 
 function normalize(value: string): string {
@@ -46,6 +47,11 @@ export function genericCookedProductForQuery(query: string): CatalogProduct | nu
 export function genericProductByCode(code: string): CatalogProduct | null {
   const food = GENERIC_FOODS.find((candidate) => `${GENERIC_PRODUCT_CODE_PREFIX}${candidate.id}` === code);
   return food ? toProduct(food) : null;
+}
+
+export function genericDefaultPortionGrams(product: CatalogProduct): number | null {
+  const food = GENERIC_FOODS.find((candidate) => `${GENERIC_PRODUCT_CODE_PREFIX}${candidate.id}` === product.code);
+  return food?.defaultPortionGrams ?? null;
 }
 
 export function isGenericCatalogProduct(product: CatalogProduct): boolean {
