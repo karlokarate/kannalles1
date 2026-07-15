@@ -12,7 +12,7 @@ test('favorisierte Produktvariante wird bei breiter Suche erster Treffer und Def
   const product = page.getByTestId('catalog-product');
   const initialName = (await product.getByRole('heading').textContent())?.trim() ?? '';
   const results = page.getByTestId('catalog-search-result');
-  await expect(results).toHaveCount(await results.count());
+  expect(await results.count()).toBeGreaterThan(1);
   const names = await results.locator('.result-copy strong').allTextContents();
   const alternativeIndex = names.findIndex((name) => /pizza/i.test(name) && name.trim() !== initialName);
   expect(alternativeIndex).toBeGreaterThanOrEqual(0);
