@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CatalogProduct, CatalogSearchHit } from '../lib/catalog/catalogDomain';
+import type { CatalogProduct } from '../lib/catalog/catalogDomain';
 import { getOfflineCatalogProduct, searchOfflineCatalog } from '../lib/catalog/catalogClient';
 import { catalogProductEligibility, calculateCatalogCarbohydrates, resolveCatalogUnits } from '../lib/resolution/catalogResolution';
 import type { CatalogUnitRequest } from '../lib/resolution/catalogResolution';
@@ -106,6 +106,7 @@ function savedSmartMeal(id: string, items: readonly MealCalculationItem[], creat
 
 export function useSmartCatalogController() {
   const base = useCatalogController();
+  const refreshLocalData = base.refreshLocalData;
   const [smartItems, setSmartItems] = useState<MealCalculationItem[]>([]);
   const [pendingSmartUnitItems, setPendingSmartUnitItems] = useState<PendingSmartUnitItem[]>([]);
   const [smartMealOpen, setSmartMealOpen] = useState(false);
@@ -177,18 +178,21 @@ export function useSmartCatalogController() {
     });
     setSmartRevision((value) => value + 1);
     setSmartUnitMessage(`${product.displayName}: Einheitengröße gespeichert.`);
-    base.refreshLocalData();
+    refreshLocalData();
     return true;
   };
 
   const setCurrentSmartUnitPromptValue = (value: string) => {
-    if (!base.product || !smartUnitPrompt) return;
-    setSmartUnitValues((current) => ({ ...current, [smartUnitKey(base.product!, smartUnitPrompt)]: value }));
+    const product = base.product;
+    if (!product || !smartUnitPrompt) return;
+    const key = smartUnitKey(product, smartUnitPrompt);
+    setSmartUnitValues((current) => ({ ...current, [key]: value }));
     setSmartUnitMessage(null);
   };
 
   const confirmCurrentSmartUnitPrompt = () => {
-    if (base.product && smartUnitPrompt) persistSmartPrompt(base.product, smartUnitPrompt);
+    const product = base.product;
+    if (product && smartUnitPrompt) persistSmartPrompt(product, smartUnitPrompt);
   };
 
   const resolveInputPart = async (part: string, signal: AbortSignal): Promise<{ item: MealCalculationItem | null; pending: PendingSmartUnitItem | null }> => {
@@ -364,15 +368,19 @@ export function useSmartCatalogController() {
   const mealOpen = base.mealOpen || smartMealOpen;
 
   const addCurrentToMeal = () => {
-    if (!base.product || !resolution) {
+    const product = base.product;
+    if (!product || !resolution) {
       base.startNextMealProduct();
       return;
     }
     const itemId = editingSmartItemId ?? createLocalId('meal');
-    const item = createMealCalculationItem(itemId, base.product, base.request, resolution, selectedOptionId, smartUnitPrompt);
+    const item = createMealCalculationItem(itemId, product, base.request, resolution, selectedOptionId, smartUnitPrompt);
     if (!item) return;
     if (item.calculation.carbohydratesG === null && smartUnitPrompt) {
-      setPendingSmartUnitItems((current) => [...current.filter((candidate) => candidate.id !== itemId), { id: itemId, product: base.product!, request: base.request, prompt: smartUnitPrompt }]);
+      setPendingSmartUnitItems((current) => [
+        ...current.filter((candidate) => candidate.id !== itemId),
+        { id: itemId, product, request: base.request, prompt: smartUnitPrompt }
+      ]);
     } else {
       setSmartItems((current) => editingSmartItemId
         ? current.map((candidate) => candidate.id === editingSmartItemId ? item : candidate)
@@ -405,7 +413,11 @@ export function useSmartCatalogController() {
     base.setQuery(item.product.displayName);
     base.setRequest({ ...item.request });
     base.dispatch({ type: 'resolve', query: item.product.displayName, product: item.product, candidates: [] });
-    if (item.smartUnitPrompt) setSmartUnitValues((current) => ({ ...current, [smartUnitKey(item.product, item.smartUnitPrompt!)]: item.smartUnitPrompt!.value }));
+    const prompt = item.smartUnitPrompt;
+    if (prompt) {
+      const key = smartUnitKey(item.product, prompt);
+      setSmartUnitValues((current) => ({ ...current, [key]: prompt.value }));
+    }
   };
 
   const updateMealItem = (id: string, amount: number, optionId?: string) => {
@@ -451,8 +463,8 @@ export function useSmartCatalogController() {
     if (!smartHistoryId) setSmartHistoryId(id);
     if (!smartHistoryCreatedAt) setSmartHistoryCreatedAt(createdAt);
     saveMealCalculation(savedSmartMeal(id, smartItems, createdAt));
-    base.refreshLocalData();
-  }, [smartHistoryCreatedAt, smartHistoryId, smartItems]);
+    refreshLocalData();
+  }, [refreshLocalData, smartHistoryCreatedAt, smartHistoryId, smartItems]);
 
   const promptIsValid = (prompt: SmartUnitPrompt): boolean => {
     const value = readPromptNumber(prompt.value);
