@@ -41,8 +41,14 @@ describe('smart unit prompts against the production SQLite catalog', () => {
           expect(prompt, `${product.displayName} already has deterministic ${evidenceUnit} evidence`).toBeNull();
           expect(resolution.options.some((option) => option.unit === evidenceUnit && option.baseValue !== null)).toBe(true);
         } else {
-          expect(prompt, `${product.displayName} needs a piece-size prompt`).not.toBeNull();
-          expect(prompt?.baseValueG).toBeNull();
+          expect(prompt, `${product.displayName} needs a piece-size decision`).not.toBeNull();
+          if (prompt?.mode === 'whole-split') {
+            expect(prompt.defaultValue).toBe(8);
+            expect(prompt.wholeWeightG).toBe(product.unitEvidence.productQuantity?.baseValue ?? null);
+            expect(prompt.baseValueG).toBe((prompt.wholeWeightG ?? 0) / 8);
+          } else {
+            expect(prompt?.baseValueG).toBeNull();
+          }
         }
 
         return {
@@ -50,7 +56,8 @@ describe('smart unit prompts against the production SQLite catalog', () => {
           name: product.displayName,
           requestedUnit,
           evidence: evidenceUnit ?? 'none',
-          prompt: prompt?.mode ?? 'not-required'
+          prompt: prompt?.mode ?? 'not-required',
+          defaultValue: prompt?.defaultValue ?? null
         };
       });
 
