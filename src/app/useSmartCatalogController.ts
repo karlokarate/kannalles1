@@ -365,7 +365,8 @@ export function useSmartCatalogController() {
 
   const mealItems = [...base.mealItems, ...smartItems];
   const mealTotalCarbohydrates = base.mealTotalCarbohydrates + totalMealCarbohydrates(smartItems);
-  const mealOpen = base.mealOpen || smartMealOpen;
+  const smartMealOwnsView = smartItems.length > 0 || pendingSmartUnitItems.length > 0;
+  const mealOpen = smartMealOwnsView ? smartMealOpen : base.mealOpen;
 
   const addCurrentToMeal = () => {
     const product = base.product;
@@ -404,6 +405,7 @@ export function useSmartCatalogController() {
   const openMealItem = (id: string) => {
     const item = smartItems.find((candidate) => candidate.id === id);
     if (!item) {
+      setSmartMealOpen(false);
       base.openMealItem(id);
       return;
     }
