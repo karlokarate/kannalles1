@@ -132,14 +132,14 @@ export function applySmartUnitPromptDefault(
   prompt: SmartUnitPrompt | null
 ): CatalogUnitResolution {
   if (!prompt || prompt.baseValueG === null) return resolution;
-  const id = `${prompt.unit}:app_default:${String(prompt.baseValueG)}`;
+  const id = `${prompt.unit}:editable_default:${String(prompt.baseValueG)}`;
   const option: ResolvedUnitOption = {
     id,
     unit: prompt.unit,
     label: label(prompt.unit),
     basis: 'mass',
     baseValue: prompt.baseValueG,
-    source: 'app_default',
+    source: 'unresolved',
     recommended: true,
     smallestEdibleUnit: prompt.unit !== 'portion',
     priority: 50,
