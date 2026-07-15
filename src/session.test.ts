@@ -53,10 +53,12 @@ describe('Lumen hard-cutover state', () => {
     });
     expect(parseCatalogQuery('zwei Scheiben Mehrkornbrot')).toMatchObject({ amount: 2, unit: 'slice', catalogQuery: 'Mehrkornbrot' });
     expect(parseCatalogQuery('2 Scheiben Mehrkornbrot')).toMatchObject({ amount: 2, unit: 'slice', catalogQuery: 'Mehrkornbrot' });
+    expect(parseCatalogQuery('zwei Stücke Pizza')).toMatchObject({ amount: 2, unit: 'piece', catalogQuery: 'Pizza' });
     expect(parseCatalogQuery('eine Sprite')).toMatchObject({ amount: 1, amountExplicit: true, catalogQuery: 'Sprite' });
     expect(parseSpokenProductList('2 Scheiben Mehrkornbrot mit 20 g Nutella und eine Sprite')).toEqual(['2 Scheiben Mehrkornbrot', '20 g Nutella', 'eine Sprite']);
     expect(parseProductList('2 Scheiben Mehrkornbrot mit Nutella und 400 ml Sprite')).toEqual(['2 Scheiben Mehrkornbrot', 'Nutella', '400 ml Sprite']);
     expect(parseProductList('zwei Scheiben Mehrkornbrot mit Nutella und 400 Milliliter Sprite')).toEqual(['zwei Scheiben Mehrkornbrot', 'Nutella', '400 Milliliter Sprite']);
+    expect(parseProductList('zwei Stücke Pizza und eine Portion Nudeln')).toEqual(['zwei Stücke Pizza', 'eine Portion Nudeln']);
     expect(parseCatalogQuery('400 ml Sprite')).toMatchObject({ amount: 400, unit: 'ml', catalogQuery: 'Sprite' });
   });
 
