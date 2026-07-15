@@ -2,8 +2,9 @@ import { CatalogIssueBanner } from './app/CatalogIssueBanner';
 import { CatalogStatus } from './app/CatalogStatus';
 import { CalculatorScreen } from './app/CalculatorScreen';
 import { SettingsScreen } from './app/SettingsScreen';
+import { SmartUnitPromptOverlay } from './app/SmartUnitPromptOverlay';
 import { unitLabel } from './app/catalogViewModel';
-import { useCatalogController } from './app/useCatalogController';
+import { useSmartCatalogController } from './app/useSmartCatalogController';
 import type { CatalogController } from './app/useCatalogController';
 import { formatCarbohydrates } from './lib/settings';
 
@@ -21,7 +22,7 @@ function HistoryScreen({ c }: { c: CatalogController }) {
 }
 
 export default function App() {
-  const c = useCatalogController();
+  const c = useSmartCatalogController();
   return (
     <div className="app-shell" data-app-mode="offline-catalog" data-visual-theme={c.settings.visualTheme} data-catalog-state={c.status.state} data-catalog-version={c.status.catalogVersion ?? ''} data-product-count={c.status.productCount ?? ''} data-persistent={String(c.status.persistent)} data-installed-from-network={String(c.installedFromNetwork)} data-active-slot={c.status.activeSlot ?? ''} data-search-state={c.search.phase} data-product-state={c.product ? 'selected' : 'none'} data-unit-state={c.resolution?.status ?? 'idle'} data-calculation-state={c.calculation?.status ?? 'idle'}>
       <a className="skip-link" href="#main-content">Zum Inhalt springen</a>
@@ -37,6 +38,7 @@ export default function App() {
         {c.section === 'settings' && <SettingsScreen settings={c.settings} counts={c.counts} onChange={c.updateSettings} onClearHistory={c.clearHistory} onClearSession={() => { c.clearSession(); c.refreshLocalData(); }} onClearAllUserData={c.clearAll} onExportData={c.downloadTransferFile} onShareData={c.shareTransferFile} onImportData={c.importTransferFile} transferMessage={c.transferMessage} />}
       </main>
 
+      {c.section === 'calculator' && <SmartUnitPromptOverlay c={c} />}
       <nav className="bottom-nav" aria-label="Hauptnavigation">{([['calculator', 'Rechner', '⌕'], ['history', 'Verlauf', '↺'], ['favorites', 'Favoriten', '★'], ['settings', 'Einstellungen', '⚙']] as const).map(([value, label, icon]) => <button key={value} type="button" className={c.section === value ? 'is-active' : ''} aria-current={c.section === value ? 'page' : undefined} onClick={() => c.setSection(value)}><span aria-hidden="true">{icon}</span>{label}</button>)}</nav>
     </div>
   );

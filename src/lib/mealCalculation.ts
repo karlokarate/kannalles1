@@ -1,4 +1,5 @@
 import type { CatalogProduct } from './catalog/catalogDomain';
+import type { SmartUnitPrompt } from './smartUnitPrompt';
 import {
   calculateCatalogCarbohydrates,
   type CatalogCarbohydrateCalculation,
@@ -12,6 +13,7 @@ export interface MealCalculationItem {
   request: CatalogUnitRequest;
   resolution: CatalogUnitResolution;
   calculation: CatalogCarbohydrateCalculation;
+  smartUnitPrompt: SmartUnitPrompt | null;
 }
 
 export function createMealCalculationItem(
@@ -19,12 +21,13 @@ export function createMealCalculationItem(
   product: CatalogProduct,
   request: CatalogUnitRequest,
   resolution: CatalogUnitResolution,
-  selectedOptionId: string | null
+  selectedOptionId: string | null,
+  smartUnitPrompt: SmartUnitPrompt | null = null
 ): MealCalculationItem | null {
   const effectiveResolution = { ...resolution, selectedOptionId };
   const calculation = calculateCatalogCarbohydrates(product, request, effectiveResolution);
-  if (calculation.status !== 'calculated' || calculation.carbohydratesG === null) return null;
-  return { id, product, request: { ...request }, resolution: effectiveResolution, calculation };
+  if ((calculation.status !== 'calculated' || calculation.carbohydratesG === null) && smartUnitPrompt === null) return null;
+  return { id, product, request: { ...request }, resolution: effectiveResolution, calculation, smartUnitPrompt };
 }
 
 export function updateMealCalculationItem(
@@ -36,7 +39,7 @@ export function updateMealCalculationItem(
   const selected = item.resolution.options.find((option) => option.id === selectedOptionId);
   if (!selected || selected.baseValue === null) return item;
   const request: CatalogUnitRequest = { amount, unit: selected.unit, unitExplicit: true };
-  return createMealCalculationItem(item.id, item.product, request, item.resolution, selectedOptionId) ?? item;
+  return createMealCalculationItem(item.id, item.product, request, item.resolution, selectedOptionId, item.smartUnitPrompt) ?? item;
 }
 
 export function totalMealCarbohydrates(items: readonly MealCalculationItem[]): number {

@@ -1,0 +1,100 @@
+.smart-unit-overlay {
+  position: fixed;
+  z-index: 80;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: calc(5.4rem + env(safe-area-inset-bottom));
+  left: max(1rem, env(safe-area-inset-left));
+  max-width: 920px;
+  max-height: min(72vh, 720px);
+  margin-inline: auto;
+  overflow: auto;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+  border-radius: 1.25rem;
+  background: color-mix(in srgb, var(--surface) 96%, var(--accent));
+  box-shadow: 0 1.4rem 4rem rgb(0 0 0 / 24%);
+  backdrop-filter: blur(18px);
+}
+
+.smart-unit-overlay__header {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 0.85rem;
+}
+
+.smart-unit-overlay__header h2,
+.smart-unit-prompt-card h3 {
+  margin: 0.15rem 0;
+}
+
+.smart-unit-overlay__header p,
+.smart-unit-prompt-card p {
+  margin: 0.35rem 0 0;
+}
+
+.smart-unit-overlay__count {
+  display: grid;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast, white);
+  font-weight: 800;
+}
+
+.smart-unit-overlay__list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.smart-unit-prompt-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(155px, 220px) auto;
+  gap: 0.8rem;
+  align-items: end;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.smart-unit-prompt-card__copy strong {
+  display: block;
+  margin-top: 0.35rem;
+}
+
+.smart-unit-prompt-card__field {
+  margin: 0;
+}
+
+.smart-unit-prompt-card__confirm {
+  min-height: 2.9rem;
+  white-space: nowrap;
+}
+
+.smart-unit-overlay__message {
+  margin: 0.8rem 0 0;
+}
+
+@media (max-width: 720px) {
+  .smart-unit-overlay {
+    right: 0.55rem;
+    bottom: calc(4.9rem + env(safe-area-inset-bottom));
+    left: 0.55rem;
+    max-height: 76vh;
+    padding: 0.75rem;
+    border-radius: 1rem;
+  }
+
+  .smart-unit-prompt-card {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .smart-unit-prompt-card__confirm {
+    width: 100%;
+  }
+}

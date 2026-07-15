@@ -11,7 +11,7 @@ export interface ParsedCatalogQuery {
 }
 
 const UNIT_WORDS: Array<{ pattern: RegExp; unit: RequestedUnit }> = [
-  { pattern: /^(?:stück|stueck|stk\.?|pieces?)\b/i, unit: 'piece' },
+  { pattern: /^(?:stück(?:e)?|stueck(?:e)?|stk\.?|pieces?)\b/i, unit: 'piece' },
   { pattern: /^(?:riegel|bars?)\b/i, unit: 'bar' },
   { pattern: /^(?:scheiben?|slices?)\b/i, unit: 'slice' },
   { pattern: /^(?:portion(?:en)?|portions?)\b/i, unit: 'portion' },
