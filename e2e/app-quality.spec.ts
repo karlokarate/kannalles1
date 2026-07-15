@@ -171,8 +171,17 @@ test('segmentiertes Diabetikerprofil berechnet Korrektur allein und zusammen mit
 
   await page.getByRole('button', { name: 'Rechner', exact: true }).click();
   const panel = page.getByTestId('diabetes-bolus-panel');
+  const details = page.getByTestId('diabetes-bolus-details');
   await expect(panel).toBeVisible();
+  await expect(panel).toHaveAttribute('data-collapsed', 'true');
+  await expect(details).not.toHaveAttribute('open', '');
+  await expect(page.getByTestId('current-glucose-input')).toBeVisible();
+  await expect(page.getByTestId('correction-bolus')).toBeHidden();
+  expect(await panel.evaluate((node) => node.previousElementSibling?.tagName.toLowerCase())).toBe('search');
   await page.getByTestId('current-glucose-input').fill('200');
+  await page.getByTestId('diabetes-bolus-toggle').click();
+  await expect(details).toHaveAttribute('open', '');
+  await expect(panel).toHaveAttribute('data-collapsed', 'false');
   await expect(page.getByTestId('correction-bolus')).toHaveText('+2,0 E');
   await expect(page.getByTestId('total-bolus')).toHaveText('2,0 E');
   const currentTime = await page.evaluate(() => `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`);
@@ -185,6 +194,8 @@ test('segmentiertes Diabetikerprofil berechnet Korrektur allein und zusammen mit
   await page.getByRole('button', { name: 'Manuell', exact: true }).click();
   await page.getByLabel('KH pro 100 g').fill('40');
   await page.getByLabel('Menge in g').fill('100');
+  await expect(page.getByTestId('diabetes-bolus-details')).not.toHaveAttribute('open', '');
+  await page.getByTestId('diabetes-bolus-toggle').click();
   await expect(page.getByTestId('carbohydrate-bolus')).toHaveText('4,0 E');
   await expect(page.getByTestId('total-bolus')).toHaveText('5,0 E');
   await page.getByTestId('current-glucose-input').fill('50');
