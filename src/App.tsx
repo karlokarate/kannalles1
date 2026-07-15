@@ -5,7 +5,7 @@ import { MealReplacementPanel } from './app/MealReplacementPanel';
 import { SettingsScreen } from './app/SettingsScreen';
 import { SmartUnitPromptOverlay } from './app/SmartUnitPromptOverlay';
 import { unitLabel } from './app/catalogViewModel';
-import { useMealReplacementController } from './app/useMealReplacementController';
+import { useFavoriteSearchController } from './app/useFavoriteSearchController';
 import type { CatalogController } from './app/useCatalogController';
 import { formatCarbohydrates } from './lib/settings';
 
@@ -23,7 +23,7 @@ function HistoryScreen({ c }: { c: CatalogController }) {
 }
 
 export default function App() {
-  const c = useMealReplacementController();
+  const c = useFavoriteSearchController();
   return (
     <div className="app-shell" data-app-mode="offline-catalog" data-visual-theme={c.settings.visualTheme} data-catalog-state={c.status.state} data-catalog-version={c.status.catalogVersion ?? ''} data-product-count={c.status.productCount ?? ''} data-persistent={String(c.status.persistent)} data-installed-from-network={String(c.installedFromNetwork)} data-active-slot={c.status.activeSlot ?? ''} data-search-state={c.search.phase} data-product-state={c.product ? 'selected' : 'none'} data-unit-state={c.resolution?.status ?? 'idle'} data-calculation-state={c.calculation?.status ?? 'idle'}>
       <a className="skip-link" href="#main-content">Zum Inhalt springen</a>
