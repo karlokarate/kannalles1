@@ -15,7 +15,7 @@ test('manuelles Produkt unterstützt direkte Stück-KH und dieselbe Feinmessung 
   await expect(page.getByTestId('manual-derived-per100')).toContainText(/40(?:[,.]0)? g KH \/ 100 g/);
   await expect(page.getByTestId('manual-calculation')).toContainText(/24(?:[,.]0)? g KH/);
   await page.getByTestId('manual-product-save').click();
-  await expect(page.getByRole('status')).toContainText('12 g KH je Riegel mit 30 g gespeichert');
+  await expect(page.getByText('Hausgemachter Müsliriegel: 12 g KH je Riegel mit 30 g gespeichert.', { exact: true })).toBeVisible();
 
   const saved = page.locator('.saved-manual-product').filter({ hasText: 'Hausgemachter Müsliriegel' });
   await expect(saved).toContainText(/Riegel 30 g/);
@@ -38,6 +38,6 @@ test('manuelles Produkt unterstützt direkte Stück-KH und dieselbe Feinmessung 
   const preview = page.getByTestId('catalog-calibration-preview');
   await expect(preview).toHaveAttribute('data-derived-unit-weight-g', '35');
   await expect(preview).toHaveAttribute('data-derived-carbs-per-unit-g', '14');
-  await expect(page.getByRole('status')).toContainText('35 g je Riegel gespeichert');
+  await expect(page.getByText('35 g je Riegel gespeichert.', { exact: true })).toBeVisible();
   await expect(page.getByTestId('catalog-calculation')).toHaveAttribute('data-total-carbs-g', '14');
 });
