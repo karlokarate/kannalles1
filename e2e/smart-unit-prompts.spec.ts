@@ -23,10 +23,11 @@ test('fragt zwei generische Portionen einzeln mit 200 g Default ab und speichert
   await expect(prompts.nth(1).getByRole('spinbutton')).toHaveValue('200');
   await expect.poll(async () => Number(await page.getByTestId('meal-total').getAttribute('data-total-carbs-g'))).toBeCloseTo(89.024, 10);
 
-  const noodles = page.getByTestId('meal-item').filter({ hasText: 'Nudeln, gekocht' });
-  await noodles.getByRole('spinbutton', { name: /Gramm je Portion/ }).fill('250');
-  await noodles.getByRole('button', { name: 'Größe übernehmen' }).click();
-  await expect(noodles.locator('.smart-unit-prompt')).toBeHidden();
+  const noodlesPrompt = prompts.filter({ hasText: 'Nudeln, gekocht' });
+  await noodlesPrompt.getByRole('spinbutton', { name: /Gramm je Portion/ }).fill('250');
+  await noodlesPrompt.getByRole('button', { name: 'Größe übernehmen' }).click();
+  await expect(noodlesPrompt).toBeHidden();
+  await expect(prompts).toHaveCount(1);
   await expect.poll(async () => Number(await page.getByTestId('meal-total').getAttribute('data-total-carbs-g'))).toBeCloseTo(103.364, 10);
 
   page.once('dialog', (dialog) => dialog.accept());
@@ -43,5 +44,5 @@ test('verwendet bewiesene Kinder-Bueno-Riegel ohne zusätzliche Größenfrage', 
   await searchCatalog(page, BUENO_GTIN);
   await expect(page.getByTestId('catalog-product')).toContainText(/Kinder Bueno/i);
   await expect(page.getByTestId('catalog-unit-select').locator('option:checked')).toHaveAttribute('data-unit-kind', 'bar');
-  await expect(page.getByTestId('catalog-smart-unit-prompt')).toBeHidden();
+  await expect(page.getByTestId('smart-unit-overlay')).toBeHidden();
 });
