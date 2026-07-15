@@ -1,0 +1,19 @@
+{
+  "feature": "favorite-search-priority",
+  "version": "1.0.0",
+  "rules": {
+    "matchingFavoritesBeforeCatalog": true,
+    "favoriteOrder": "local-favorites-list-order",
+    "nonFavoriteOrder": "unchanged-existing-search-order",
+    "firstEligibleFavoriteBecomesDefault": true,
+    "barcodeLookupRemainsExact": true,
+    "manualAlternativeSelectionRemainsAllowed": true,
+    "favoriteOutsideFirstPageIsInjected": true,
+    "networkProductAuthorityAdded": false
+  },
+  "examples": [
+    "Pizza Cracker is displaced by a matching favorite Pizza variant",
+    "multiple matching Pizza favorites remain grouped at the top",
+    "a manually selected non-favorite remains selected until the next search"
+  ]
+}
