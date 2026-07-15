@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { CatalogSearchHit } from '../lib/catalog/catalogDomain';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { CatalogProduct, CatalogSearchHit } from '../lib/catalog/catalogDomain';
 import type { CatalogUnitRequest } from '../lib/resolution/catalogResolution';
 import { isClinicCatalogProduct } from '../lib/clinicCatalog';
 import type { MealCalculationItem } from '../lib/mealCalculation';
@@ -14,7 +14,7 @@ interface PendingReplacementCommit {
   cleanupRequested: boolean;
 }
 
-function replacementRequest(item: MealCalculationItem, product: CatalogSearchHit): CatalogUnitRequest {
+function replacementRequest(item: MealCalculationItem, product: CatalogProduct): CatalogUnitRequest {
   const amount = item.request.amount;
   if (isClinicCatalogProduct(product) && product.clinic.directCarbohydratesPerUnit !== null) {
     return { amount, unit: 'piece', unitExplicit: true };
@@ -35,6 +35,10 @@ function replacementRequest(item: MealCalculationItem, product: CatalogSearchHit
   };
 }
 
+function sameRequest(left: CatalogUnitRequest, right: CatalogUnitRequest): boolean {
+  return left.amount === right.amount && left.unit === right.unit && left.unitExplicit === right.unitExplicit;
+}
+
 export function useMealReplacementController() {
   const base = useSmartCatalogController();
   const [replacingMealItemId, setReplacingMealItemId] = useState<string | null>(null);
@@ -46,12 +50,18 @@ export function useMealReplacementController() {
     [base.mealItems, replacingMealItemId]
   );
 
-  const finishReplacement = (commit: PendingReplacementCommit) => {
+  const finishReplacement = useCallback((commit: PendingReplacementCommit) => {
     setPendingCommit(null);
     setReplacingMealItemId(null);
     setReplacementMessage(`${commit.originalProductName} wurde durch ${commit.replacementProductName} ersetzt.`);
     base.openMealSummary();
-  };
+  }, [base.openMealSummary]);
+
+  useEffect(() => {
+    if (!replacingMealItem || !base.product) return;
+    const next = replacementRequest(replacingMealItem, base.product);
+    base.setRequest((current) => sameRequest(current, next) ? current : next);
+  }, [base.product?.productId, replacingMealItemId]);
 
   useEffect(() => {
     if (!pendingCommit) return;
@@ -69,10 +79,8 @@ export function useMealReplacementController() {
       return;
     }
 
-    if (pendingCommit.cleanupRequested && !original) {
-      finishReplacement(pendingCommit);
-    }
-  }, [base.mealItems, pendingCommit]);
+    if (pendingCommit.cleanupRequested && !original) finishReplacement(pendingCommit);
+  }, [base.mealItems, base.removeMealItem, finishReplacement, pendingCommit]);
 
   const startMealItemReplacement = async (id: string) => {
     const item = base.mealItems.find((candidate) => candidate.id === id);
@@ -91,11 +99,7 @@ export function useMealReplacementController() {
     base.openMealSummary();
   };
 
-  const selectCandidate = (hit: CatalogSearchHit) => {
-    const item = replacingMealItem;
-    base.selectCandidate(hit);
-    if (item) base.setRequest(replacementRequest(item, hit));
-  };
+  const selectCandidate = (hit: CatalogSearchHit) => base.selectCandidate(hit);
 
   const addCurrentToMeal = () => {
     if (!replacingMealItemId || !replacingMealItem || !base.product) {
