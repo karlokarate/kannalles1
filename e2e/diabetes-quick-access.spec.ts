@@ -2,9 +2,17 @@ import { expect, test } from '@playwright/test';
 import { openAppShell } from './catalog-harness';
 
 test('Comic-Quick-Access zeigt Blutzucker und Gesamtbolus halbiert nebeneinander', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   await openAppShell(page);
   await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await page.getByTestId('diabetes-profile-toggle').check();
+
+  const ratioGroup = page.getByTestId('diabetes-factor-carbohydrateRatioG');
+  const correctionGroup = page.getByTestId('diabetes-factor-correctionFactorMgDl');
+  const targetGroup = page.getByTestId('diabetes-factor-targetGlucoseMgDl');
+  await expect(ratioGroup).toHaveAttribute('open', '');
+  await correctionGroup.locator('summary').click();
+  await targetGroup.locator('summary').click();
   for (const input of await page.getByTestId('carbohydrate-ratio-input').all()) await input.fill('10');
   for (const input of await page.getByTestId('correction-factor-input').all()) await input.fill('50');
   for (const input of await page.getByTestId('target-glucose-input').all()) await input.fill('100');
