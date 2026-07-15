@@ -170,8 +170,17 @@ export function ManualProductEditor({ c, diabetesPanel }: ManualProductEditorPro
 
   const openDetails = (item: ManualProduct) => {
     if (item.imageDataUrl) saveCatalogProductPhoto(manualProductCode(item.id), item.imageDataUrl);
-    const product = manualProductToCatalogProduct(item);
+    const baseProduct = manualProductToCatalogProduct(item);
     const calibration = storedManualCalibration(item);
+    const product = calibration
+      ? {
+          ...baseProduct,
+          unitEvidence: {
+            ...baseProduct.unitEvidence,
+            defaultUnitKind: calibration.unit
+          }
+        }
+      : baseProduct;
     c.setManualMode(false);
     c.setQuery(item.label);
     c.setRequest(calibration
