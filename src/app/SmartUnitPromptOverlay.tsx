@@ -1,4 +1,5 @@
 import type { ChangeEvent } from 'react';
+import type { RequestedUnit } from '../lib/resolution/catalogResolution';
 import type { SmartUnitPrompt } from '../lib/smartUnitPrompt';
 import type { SmartCatalogController } from './useSmartCatalogController';
 import '../smart-unit-prompts.css';
@@ -15,6 +16,17 @@ function unitLabel(prompt: SmartUnitPrompt): string {
   if (prompt.unit === 'bar') return 'Riegel';
   if (prompt.unit === 'slice') return 'Scheibe';
   if (prompt.unit === 'portion') return 'Portion';
+  return 'Stück';
+}
+
+function requestedUnitLabel(unit: RequestedUnit): string {
+  if (unit === 'g') return 'Gramm';
+  if (unit === 'kg') return 'Kilogramm';
+  if (unit === 'ml') return 'Milliliter';
+  if (unit === 'bar') return 'Riegel';
+  if (unit === 'slice') return 'Scheibe';
+  if (unit === 'portion') return 'Portion';
+  if (unit === 'package') return 'Packung';
   return 'Stück';
 }
 
@@ -105,14 +117,37 @@ export function SmartUnitPromptOverlay({ c }: { c: SmartCatalogController }) {
         ))}
 
         {c.pendingSmartUnitItems.map((item) => (
-          <PromptCard
-            key={`pending-${item.id}`}
-            prompt={item.prompt}
-            testId={`pending-smart-unit-${item.id}`}
-            onChange={(value) => c.updatePendingSmartUnit(item.id, value)}
-            onConfirm={() => c.confirmPendingSmartUnit(item.id)}
-            valid={c.promptIsValid(item.prompt)}
-          />
+          <div className="smart-unit-pending-group" key={`pending-${item.id}`}>
+            <article className="meal-item smart-unit-pending-item" data-testid="meal-item" data-calculation-status="pending-unit-size">
+              <div className="meal-item__product">
+                <strong>{item.product.displayName}</strong>
+                <small>{item.product.brand ?? 'Lokales Katalogprodukt'} · Einheitengröße ausstehend</small>
+              </div>
+              <label className="field meal-item__amount">
+                <span>Menge</span>
+                <input
+                  type="number"
+                  value={item.request.amount}
+                  readOnly
+                  aria-label={`${item.product.displayName}: Menge`}
+                />
+              </label>
+              <label className="field meal-item__unit">
+                <span>Einheit</span>
+                <select value={item.request.unit} disabled aria-label={`${item.product.displayName}: Einheit`}>
+                  <option value={item.request.unit}>{requestedUnitLabel(item.request.unit)}</option>
+                </select>
+              </label>
+              <strong className="meal-item__carbs">– g KH</strong>
+            </article>
+            <PromptCard
+              prompt={item.prompt}
+              testId={`pending-smart-unit-${item.id}`}
+              onChange={(value) => c.updatePendingSmartUnit(item.id, value)}
+              onConfirm={() => c.confirmPendingSmartUnit(item.id)}
+              valid={c.promptIsValid(item.prompt)}
+            />
+          </div>
         ))}
       </div>
       {c.smartUnitMessage && <p className="inline-message smart-unit-overlay__message" role="status">{c.smartUnitMessage}</p>}
