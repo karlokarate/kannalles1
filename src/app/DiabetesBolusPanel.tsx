@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { activeDiabetesFactors, activeInsulinFromClockTime, calculateBolus } from '../lib/diabetesProfile';
 import type { OfflineAppSettings } from '../lib/settings';
+import '../diabetes-quick-access.css';
 
 interface DiabetesBolusPanelProps {
   settings: OfflineAppSettings;
