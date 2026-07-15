@@ -1,0 +1,92 @@
+{
+  "contract": "kh-checker-smart-unit-prompts",
+  "version": "1.0.0",
+  "branch": "agent/smart-unit-prompts",
+  "contractOverrideRights": {
+    "catalogEvidenceWins": true,
+    "manufacturerServingWins": true,
+    "savedUserCalibrationWins": true,
+    "promptOnlyWhenExactRequestedUnitUnresolved": true,
+    "noGuessedPieceWeight": true
+  },
+  "step0Audit": {
+    "parser": {
+      "current": "amount and unit are parsed before catalog lookup",
+      "gap": "German plural Stücke was not recognized",
+      "fix": "recognize Stück, Stücke, Stueck and Stuecke"
+    },
+    "resolver": {
+      "current": "explicit units are preserved and unresolved units receive null baseValue",
+      "gap": "no interactive policy layer converted selected unresolved units into editable defaults",
+      "fix": "resolver-owned app_default option plus explicit smart prompt metadata"
+    },
+    "genericFoods": {
+      "current": "Nudeln, Reis and Kartoffeln default to 200 g only when no amount or unit is spoken",
+      "gap": "spoken Portion remained unresolved",
+      "fix": "editable 200 g portion default for explicit Portion"
+    },
+    "pizza": {
+      "current": "explicit Stück without proven unit weight remained unresolved",
+      "gap": "whole-pizza product quantity was not converted into an editable slice denominator",
+      "fix": "default eight-piece split when a mass-based whole-product quantity exists"
+    },
+    "multiProduct": {
+      "current": "unresolved items were discarded from the meal and reopened as a single search failure",
+      "gap": "per-item unit questions were lost",
+      "fix": "retain pending or default-calculable smart prompts on each meal item"
+    }
+  },
+  "strictTouchBudget": {
+    "productionMaximum": 7,
+    "productionFiles": [
+      "src/app/queryParser.ts",
+      "src/app/useCatalogController.ts",
+      "src/app/CalculatorScreen.tsx",
+      "src/lib/genericFoods.ts",
+      "src/lib/resolution/catalogResolution.ts",
+      "src/lib/smartUnitPrompt.ts",
+      "src/lib/mealCalculation.ts"
+    ],
+    "testMaximum": 4,
+    "testFiles": [
+      "src/lib/smartUnitPrompt.test.ts",
+      "src/lib/smartUnitPrompt.catalog.test.ts",
+      "src/session.test.ts",
+      "e2e/smart-unit-prompts.spec.ts"
+    ]
+  },
+  "validation": {
+    "productionCatalogSample": {
+      "count": 10,
+      "selection": "reproducibly random mass-based rows using fixed seed 20260715",
+      "database": "Catalog/kh-checker-dach-v1.sqlite",
+      "assertions": [
+        "exact proven piece/bar/slice/portion evidence never prompts",
+        "manufacturer serving never prompts for Portion",
+        "missing deterministic piece evidence prompts exactly once",
+        "no piece weight is invented"
+      ]
+    },
+    "commands": [
+      "npm test -- --run src/lib/smartUnitPrompt.test.ts src/lib/smartUnitPrompt.catalog.test.ts src/session.test.ts",
+      "npm run typecheck",
+      "npm run lint",
+      "npm run build",
+      "npx playwright test e2e/smart-unit-prompts.spec.ts --project=chromium-desktop"
+    ]
+  },
+  "findingsBacklog": [
+    {
+      "id": "SMART-UNIT-001",
+      "severity": "medium",
+      "finding": "Products with volume nutrition cannot safely accept gram-based piece calibration.",
+      "disposition": "Do not prompt; leave them unresolved until a volume-specific deterministic model exists."
+    },
+    {
+      "id": "SMART-UNIT-002",
+      "severity": "low",
+      "finding": "Generic Pizza is not a built-in BLS reference product.",
+      "disposition": "Use the catalog-selected default Pizza and its structured whole-product quantity; never invent nutrition data."
+    }
+  ]
+}
