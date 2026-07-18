@@ -53,7 +53,19 @@ jobs:
         run: npm run typecheck
 
       - name: Lint browser and test sources
-        run: npm run lint
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run lint 2>&1 | tee lint-output.log
+
+      - name: Upload lint diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
+        with:
+          name: lint-output
+          path: lint-output.log
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: Run deterministic and contract tests
         run: npm test
