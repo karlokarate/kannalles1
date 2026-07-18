@@ -6,6 +6,42 @@ import {
 
 let started = false;
 
+async function activateWaitingServiceWorker(registration: ServiceWorkerRegistration): Promise<void> {
+  if (!registration.waiting) {
+    await registration.update();
+  }
+  const waiting = registration.waiting;
+  if (!waiting) {
+    throw new Error('Die vorbereitete App-Version ist noch nicht aktivierbar. Bitte erneut nach Updates suchen.');
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
+      if (error) reject(error);
+      else resolve();
+    };
+    const onControllerChange = () => {
+      finish();
+      window.location.reload();
+    };
+    const timeout = window.setTimeout(() => {
+      finish(new Error('Die neue App-Version wurde nicht rechtzeitig aktiviert. Bitte erneut versuchen.'));
+    }, 20_000);
+
+    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+    // Workbox generateSW in prompt mode exposes this explicit activation
+    // protocol. Address the registration's actual waiting worker directly so
+    // externally triggered registration.update() checks cannot desynchronise
+    // the virtual module's internal Workbox instance.
+    waiting.postMessage({ type: 'SKIP_WAITING' });
+  });
+}
+
 export function startPwaUpdateRuntime(): void {
   if (started) return;
   started = true;
@@ -13,10 +49,9 @@ export function startPwaUpdateRuntime(): void {
   const controller = getPwaUpdateController();
   if (!('serviceWorker' in navigator)) return;
 
-  let updateServiceWorker: (reloadPage?: boolean) => Promise<void> = async () => undefined;
   let lifecycleBound = false;
 
-  updateServiceWorker = registerSW({
+  registerSW({
     immediate: true,
     onRegisteredSW(swUrl, registration) {
       if (!registration) {
@@ -27,7 +62,7 @@ export function startPwaUpdateRuntime(): void {
       controller.attachServiceWorker({
         swUrl,
         registration,
-        applyUpdate: () => updateServiceWorker(true)
+        applyUpdate: () => activateWaitingServiceWorker(registration)
       });
 
       if (!lifecycleBound) {
