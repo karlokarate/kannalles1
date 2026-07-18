@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
   BUENO_GTIN,
   expectCatalogReady,
@@ -9,7 +9,7 @@ import {
 
 test.describe.configure({ mode: 'serial' });
 
-async function setClinicMode(page: Parameters<typeof openCatalogApp>[0], mode: 'clinic-only' | 'hybrid' | 'off') {
+async function setClinicMode(page: Page, mode: 'clinic-only' | 'hybrid' | 'off') {
   await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await page.getByTestId('clinic-mode-select').selectOption(mode);
   await page.getByRole('button', { name: 'Rechner', exact: true }).click();
@@ -45,8 +45,9 @@ test('bewahrt bei direkten Klinikwerten eine explizite Grammanfrage und rechnet 
   await expect(product).toHaveAttribute('data-unit-resolution-status', 'not_calculable');
   const unitSelect = page.getByTestId('catalog-unit-select');
   await expect(unitSelect.locator('option:checked')).toHaveAttribute('data-unit-kind', 'g');
-  await expect(page.getByTestId('catalog-calculation')).toHaveAttribute('data-status', 'not_calculable');
-  await expect(page.getByTestId('catalog-calculation')).not.toHaveAttribute('data-total-carbs-g', /\S+/);
+  const unavailable = page.getByTestId('catalog-calculation');
+  await expect(unavailable).toHaveAttribute('data-status', 'not_calculable');
+  expect(await unavailable.getAttribute('data-total-carbs-g')).toBeNull();
 
   const pieceOption = unitSelect.locator('option[data-unit-kind="piece"]');
   const pieceValue = await pieceOption.getAttribute('value');
@@ -64,7 +65,8 @@ test('persistiert eine konkrete Nutzerkalibrierung über Reload und erneute SQLi
   await searchCatalog(page, BUENO_GTIN);
 
   const calibration = page.getByTestId('catalog-calibration');
-  if (!await calibration.getAttribute('open')) await calibration.locator('summary').click();
+  const isOpen = await calibration.evaluate((element) => (element as HTMLDetailsElement).open);
+  if (!isOpen) await calibration.locator('summary').click();
   await page.getByTestId('catalog-calibration-unit').selectOption('bar');
   await page.getByTestId('catalog-calibration-count').fill('10');
   await page.getByTestId('catalog-calibration-weight').fill('200');
