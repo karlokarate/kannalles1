@@ -1,24 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CatalogProduct } from '../lib/catalog/catalogDomain';
 import { getOfflineCatalogProduct, searchOfflineCatalog } from '../lib/catalog/catalogClient';
-import { catalogProductEligibility, calculateCatalogCarbohydrates, resolveCatalogUnits } from '../lib/resolution/catalogResolution';
+import { catalogProductEligibility, calculateCatalogCarbohydrates } from '../lib/resolution/catalogResolution';
 import type { CatalogUnitRequest } from '../lib/resolution/catalogResolution';
-import { createCatalogCalibration, toMatchingUnitCalibration } from '../lib/resolution/catalogCalibration';
-import type { CatalogCalibrationIdentity, CatalogCalibrationUnit } from '../lib/resolution/catalogCalibration';
+import { createCatalogCalibration } from '../lib/resolution/catalogCalibration';
 import { asGenericSearchHit, genericCookedProductForQuery, isGenericCatalogProduct } from '../lib/genericFoods';
-import { clinicDefaultRequest, directClinicResolution, isClinicCatalogProduct, searchClinicCatalog } from '../lib/clinicCatalog';
+import { isClinicCatalogProduct, searchClinicCatalog } from '../lib/clinicCatalog';
 import { searchManualCatalog } from '../lib/manualCatalog';
 import { createMealCalculationItem, totalMealCarbohydrates, updateMealCalculationItem } from '../lib/mealCalculation';
 import type { MealCalculationItem } from '../lib/mealCalculation';
 import {
-  resolveSmartUnitState,
   smartUnitPromptCalibration,
   updateSmartUnitPromptValue
 } from '../lib/smartUnitPrompt';
 import type { SmartUnitPrompt } from '../lib/smartUnitPrompt';
 import {
   createLocalId,
-  findMatchingCatalogCalibrations,
   saveCatalogCalibration,
   saveMealCalculation
 } from '../lib/userDataStore';
@@ -29,6 +26,12 @@ import {
   startSpeechRecognitionSafely,
   unavailableSpeechMessage
 } from '../lib/speech';
+import {
+  catalogCalibrationIdentity,
+  defaultClinicCatalogUnitRequest,
+  normalizeCatalogUnitRequest,
+  resolveCatalogUnitRuntime
+} from './catalogUnitRuntime';
 import { selectDefaultCatalogCandidate } from './catalogViewModel';
 import { parseCatalogQuery, parseProductList } from './queryParser';
 import { useCatalogController } from './useCatalogController';
@@ -45,44 +48,8 @@ function readPromptNumber(value: string): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-function pickerRequest(request: CatalogUnitRequest): CatalogUnitRequest {
-  return request.unit === 'kg'
-    ? { amount: request.amount * 1_000, unit: 'g', unitExplicit: true }
-    : request;
-}
-
-function identity(product: CatalogProduct): CatalogCalibrationIdentity {
-  return {
-    catalogProductId: product.productId,
-    barcode: /^\d{8,14}$/.test(product.code) ? product.code : null,
-    canonicalName: product.displayName,
-    brandCanonical: product.brand,
-    genericFoodKey: isGenericCatalogProduct(product) ? product.code.slice('generic:'.length) : null
-  };
-}
-
-const CALIBRATION_UNITS: readonly CatalogCalibrationUnit[] = ['piece', 'bar', 'slice', 'portion'];
-
-function productCalibrations(product: CatalogProduct) {
-  return CALIBRATION_UNITS.flatMap((unit) => findMatchingCatalogCalibrations(identity(product), unit, true));
-}
-
 function smartUnitKey(product: CatalogProduct, prompt: SmartUnitPrompt): string {
   return `${product.productId}:${prompt.unit}`;
-}
-
-function resolveProductUnitState(product: CatalogProduct, request: CatalogUnitRequest, valueOverride?: string) {
-  if (isClinicCatalogProduct(product)) {
-    const direct = directClinicResolution(product);
-    if (direct) return { resolution: direct, prompt: null };
-  }
-  const calibrations = productCalibrations(product).map(toMatchingUnitCalibration);
-  return resolveSmartUnitState(product, request, resolveCatalogUnits(product, request, calibrations), valueOverride);
-}
-
-function defaultClinicUnitRequest(product: Parameters<typeof clinicDefaultRequest>[0]): CatalogUnitRequest {
-  const saved = productCalibrations(product)[0];
-  return saved ? { amount: 1, unit: saved.unit, unitExplicit: false } : clinicDefaultRequest(product);
 }
 
 function savedSmartMeal(id: string, items: readonly MealCalculationItem[], createdAt: string): SavedMealCalculation {
@@ -131,9 +98,11 @@ export function useSmartCatalogController() {
   const currentUnitState = useMemo(() => {
     void smartRevision;
     if (!base.product) return null;
-    const initial = resolveProductUnitState(base.product, base.request);
+    const initial = resolveCatalogUnitRuntime(base.product, base.request, 'smart');
     const override = initial.prompt ? smartUnitValues[smartUnitKey(base.product, initial.prompt)] : undefined;
-    return override === undefined ? initial : resolveProductUnitState(base.product, base.request, override);
+    return override === undefined
+      ? initial
+      : resolveCatalogUnitRuntime(base.product, base.request, 'smart', override);
   }, [base.product, base.request, smartRevision, smartUnitValues]);
 
   const resolution = currentUnitState?.resolution ?? base.resolution;
@@ -160,7 +129,7 @@ export function useSmartCatalogController() {
     const record = createCatalogCalibration({
       calibrationId: createLocalId('cal'),
       scope: 'catalog-product',
-      identity: identity(product),
+      identity: catalogCalibrationIdentity(product, 'smart'),
       unit: prompt.unit,
       measuredCount: measurement.measuredCount,
       measuredTotalWeightG: measurement.measuredTotalWeightG,
@@ -217,10 +186,10 @@ export function useSmartCatalogController() {
 
     for (const candidate of candidates) {
       if (!catalogProductEligibility(candidate).eligible) continue;
-      let request = pickerRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit });
+      let request = normalizeCatalogUnitRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit });
       if (isGenericCatalogProduct(candidate) && !parsed.amountExplicit && !parsed.unitExplicit) request = { amount: 200, unit: 'g', unitExplicit: true };
-      else if (isClinicCatalogProduct(candidate) && !parsed.amountExplicit && !parsed.unitExplicit) request = defaultClinicUnitRequest(candidate);
-      const state = resolveProductUnitState(candidate, request);
+      else if (isClinicCatalogProduct(candidate) && !parsed.amountExplicit && !parsed.unitExplicit) request = defaultClinicCatalogUnitRequest(candidate, 'smart');
+      const state = resolveCatalogUnitRuntime(candidate, request, 'smart');
       const item = createMealCalculationItem(createLocalId('meal'), candidate, request, state.resolution, state.resolution.selectedOptionId, state.prompt);
       if (!item) continue;
       if (item.calculation.carbohydratesG === null && state.prompt) {
@@ -334,7 +303,7 @@ export function useSmartCatalogController() {
     setSmartItems((current) => current.map((item) => {
       if (item.id !== id || !item.smartUnitPrompt) return item;
       const prompt = updateSmartUnitPromptValue(item.smartUnitPrompt, value);
-      const state = resolveProductUnitState(item.product, item.request, value);
+      const state = resolveCatalogUnitRuntime(item.product, item.request, 'smart', value);
       return createMealCalculationItem(item.id, item.product, item.request, state.resolution, state.resolution.selectedOptionId, state.prompt ?? prompt) ?? item;
     }));
   };
@@ -342,7 +311,7 @@ export function useSmartCatalogController() {
   const confirmMealItemSmartUnit = (id: string) => {
     const item = smartItems.find((candidate) => candidate.id === id);
     if (!item?.smartUnitPrompt || !persistSmartPrompt(item.product, item.smartUnitPrompt)) return;
-    const state = resolveProductUnitState(item.product, item.request);
+    const state = resolveCatalogUnitRuntime(item.product, item.request, 'smart');
     const next = createMealCalculationItem(item.id, item.product, item.request, state.resolution, state.resolution.selectedOptionId, state.prompt);
     if (next) setSmartItems((current) => current.map((candidate) => candidate.id === id ? next : candidate));
   };
@@ -356,7 +325,7 @@ export function useSmartCatalogController() {
   const confirmPendingSmartUnit = (id: string) => {
     const pending = pendingSmartUnitItems.find((item) => item.id === id);
     if (!pending || !persistSmartPrompt(pending.product, pending.prompt)) return;
-    const state = resolveProductUnitState(pending.product, pending.request);
+    const state = resolveCatalogUnitRuntime(pending.product, pending.request, 'smart');
     const item = createMealCalculationItem(pending.id, pending.product, pending.request, state.resolution, state.resolution.selectedOptionId, state.prompt);
     if (!item || item.calculation.carbohydratesG === null) return;
     setPendingSmartUnitItems((current) => current.filter((candidate) => candidate.id !== id));
