@@ -65,7 +65,7 @@ export interface PwaUpdateController {
   markRegistrationError: (error: unknown) => void;
 }
 
-interface MutableUpdateState extends Omit<PwaUpdateSnapshot, 'canCheck' | 'canApply'> {}
+type MutableUpdateState = Omit<PwaUpdateSnapshot, 'canCheck' | 'canApply'>;
 
 function safeVersion(value: unknown): string | null {
   return typeof value === 'string' && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(value)
@@ -155,6 +155,22 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
     for (const listener of listeners) listener();
   }
 
+  function publishWaitingUpdate(showPrompt: boolean, message = 'Eine neue App-Version ist verfügbar.'): void {
+    publish({
+      phase: 'update-available',
+      message,
+      updatePromptVisible: showPrompt,
+      offlineReadyNoticeVisible: false
+    });
+  }
+
+  function preserveWaitingUpdate(message?: string): void {
+    const showPrompt = mutable.phase === 'update-available'
+      ? mutable.updatePromptVisible
+      : true;
+    publishWaitingUpdate(showPrompt, message);
+  }
+
   function observeInstallingWorker(worker: ServiceWorker | null): void {
     if (!worker || observedWorkers.has(worker)) return;
     observedWorkers.add(worker);
@@ -171,12 +187,7 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
   }
 
   function markUpdateAvailable(): void {
-    publish({
-      phase: 'update-available',
-      message: 'Eine neue App-Version ist verfügbar.',
-      updatePromptVisible: true,
-      offlineReadyNoticeVisible: false
-    });
+    publishWaitingUpdate(true);
   }
 
   function attachServiceWorker(nextBridge: PwaUpdateBridge): void {
@@ -210,6 +221,7 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
       });
       return;
     }
+    if (mutable.phase === 'applying') return;
 
     const startedAt = environment.now();
     if (!force && lastAttemptAt !== null
@@ -217,6 +229,16 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
       return;
     }
     lastAttemptAt = startedAt;
+
+    // A worker that is already waiting is a complete, locally downloaded
+    // update. It remains actionable without a network connection and a
+    // dismissed banner must not reappear on every focus event.
+    if (bridge.registration.waiting) {
+      preserveWaitingUpdate(environment.isOnline()
+        ? undefined
+        : 'Eine neue App-Version ist bereits lokal vorbereitet und kann auch offline aktiviert werden.');
+      return;
+    }
 
     if (!environment.isOnline()) {
       publish({
@@ -260,9 +282,13 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
 
       await bridge.registration.update();
       const checkedAt = environment.now();
-      if (mutable.phase === 'update-available' || bridge.registration.waiting) {
+      if (mutable.phase === 'update-available') {
         publish({ checkedAt });
-        if (mutable.phase !== 'update-available') markUpdateAvailable();
+        return;
+      }
+      if (bridge.registration.waiting) {
+        publish({ checkedAt });
+        markUpdateAvailable();
         return;
       }
 
@@ -292,6 +318,10 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
         message: 'Eine neue Version wurde gefunden, konnte aber noch nicht vorbereitet werden. Bitte erneut prüfen.'
       });
     } catch (error) {
+      if (bridge.registration.waiting) {
+        preserveWaitingUpdate('Eine neue App-Version ist bereits lokal vorbereitet und kann trotz fehlgeschlagener Onlineprüfung aktiviert werden.');
+        return;
+      }
       publish({
         phase: environment.isOnline() ? 'error' : 'offline',
         message: environment.isOnline()
