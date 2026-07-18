@@ -13,6 +13,8 @@ const app = source('src/App.tsx');
 const settings = source('src/app/SettingsScreen.tsx');
 const preparePublic = source('scripts/prepare-public.mjs');
 const verifyPages = source('scripts/verify-pages-build.mjs');
+const defaultPlaywright = source('playwright.config.ts');
+const updatePlaywright = source('e2e/playwright.pwa-update.config.ts');
 const packageJson = JSON.parse(source('package.json')) as { scripts?: Record<string, string> };
 
 describe('PWA deployment update architecture', () => {
@@ -63,6 +65,13 @@ describe('PWA deployment update architecture', () => {
     expect(preparePublic).toContain("path.join(targetDir, 'app-update.json')");
     expect(verifyPages).toContain("const updateManifestFile = 'app-update.json'");
     expect(verifyPages).toContain('Service Worker darf ${excluded} nicht als App-Shell precachen.');
+  });
+
+  it('runs the switchable two-deployment journey only with its dedicated server', () => {
+    expect(defaultPlaywright).toContain("testIgnore: '**/pwa-update.spec.ts'");
+    expect(updatePlaywright).toContain("testMatch: 'pwa-update.spec.ts'");
+    expect(updatePlaywright).toContain("command: 'node start-pwa-update-preview.mjs'");
+    expect(updatePlaywright).toContain("baseURL: 'http://127.0.0.1:4174'");
   });
 
   it('exposes both a startup prompt and a persistent manual settings action', () => {
