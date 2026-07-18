@@ -81,6 +81,23 @@ describe('Lumen hard-cutover state', () => {
     ]);
   });
 
+  it('does not split connector words inside an exact clinic product name', () => {
+    expect(parseProductList('100 g Pfannkuchen mit Quark')).toEqual([
+      '100 g Pfannkuchen mit Quark'
+    ]);
+    expect(parseCatalogQuery('100 g Pfannkuchen mit Quark')).toMatchObject({
+      amount: 100,
+      unit: 'g',
+      unitExplicit: true,
+      catalogQuery: 'Pfannkuchen mit Quark'
+    });
+    expect(parseProductList('Pfannkuchen mit Quark und eine Portion Reis')).toEqual([
+      'Pfannkuchen',
+      'Quark',
+      'eine Portion Reis'
+    ]);
+  });
+
   it('uses the frozen structured catalog evidence directly at the resolver boundary', () => {
     expect(hit.unitEvidence.provenSmallestUnit).toEqual({
       baseValue: 21.5,
