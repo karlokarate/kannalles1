@@ -1,8 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { registerSW } from 'virtual:pwa-register';
 import App from './App';
 import ErrorBoundary from './ErrorBoundary';
+import { startPwaUpdateRuntime } from './pwa';
 import './styles.css';
 
 const isAndroidLocalFileViewer =
@@ -32,30 +32,6 @@ async function cleanLocalViewerState(): Promise<void> {
 async function bootstrap() {
   await cleanLocalViewerState();
 
-  if (!isAndroidLocalFileViewer) {
-    const updateServiceWorker = registerSW({
-      immediate: true,
-      onOfflineReady() {
-        window.dispatchEvent(new CustomEvent('kh:pwa-status', {
-          detail: { message: 'Die App ist jetzt für die Offline-Nutzung vorbereitet.' }
-        }));
-      },
-      onNeedRefresh() {
-        window.dispatchEvent(new CustomEvent('kh:pwa-update-available', {
-          detail: { apply: () => updateServiceWorker(true) }
-        }));
-      },
-      onRegisterError(error) {
-        console.warn('Service Worker registration failed', error);
-        window.dispatchEvent(new CustomEvent('kh:pwa-status', {
-          detail: {
-            message: 'Die Offline-Installation ist in diesem Browser derzeit nicht verfügbar. Die geöffnete App bleibt nutzbar.'
-          }
-        }));
-      }
-    });
-  }
-
   const rootElement = document.getElementById('root');
   if (!rootElement) throw new Error('Das Root-Element der App fehlt.');
   document.getElementById('compatibility-fallback')?.remove();
@@ -67,6 +43,8 @@ async function bootstrap() {
       </ErrorBoundary>
     </StrictMode>
   );
+
+  if (!isAndroidLocalFileViewer) startPwaUpdateRuntime();
 }
 
 void bootstrap().catch((error: unknown) => {
