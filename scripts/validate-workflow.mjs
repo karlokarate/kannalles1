@@ -42,8 +42,13 @@ const matrix = specs.get('browser-matrix.spec.ts');
 const quality = specs.get('app-quality.spec.ts');
 const catalog = specs.get('catalog-real.spec.ts');
 const runtime = specs.get('catalog-unit-runtime.spec.ts');
+const pwaUpdate = specs.get('pwa-update.spec.ts');
 const harness = sources.get('catalog-harness.ts');
-if (!matrix || !quality || !catalog || !runtime || !harness) fail('Verpflichtende Sentinel-E2E-Dateien fehlen.');
+const pwaUpdateConfig = sources.get('playwright.pwa-update.config.ts');
+const pwaUpdateServer = sources.get('start-pwa-update-preview.mjs');
+if (!matrix || !quality || !catalog || !runtime || !pwaUpdate || !harness || !pwaUpdateConfig || !pwaUpdateServer) {
+  fail('Verpflichtende Sentinel-E2E-Dateien fehlen.');
+}
 
 const projectNames = ['chromium-desktop', 'chromium-android', 'firefox-desktop', 'webkit-iphone'];
 const supportedProjectNames = ['chromium-desktop', 'chromium-android', 'firefox-desktop'];
@@ -128,6 +133,26 @@ function validateTests() {
     'data-default-value',
     'eine Portion Reis'
   ]) requireText(runtime, fragment, 'Unit-Runtime-E2E-Coverage');
+  for (const fragment of [
+    "const OLD_BUILD = 'pwa-old'",
+    "const NEW_BUILD = 'pwa-new'",
+    '/__pwa_test__/activate/new',
+    'data-pwa-update-state',
+    'pwa-update-apply',
+    "localStorage.getItem('kh:pwa-update-e2e')",
+    'updateManifestCached'
+  ]) requireText(pwaUpdate, fragment, 'PWA-Update-E2E-Coverage');
+  for (const fragment of [
+    `serviceWorkers: 'allow'`,
+    'start-pwa-update-preview.mjs',
+    "name: 'chromium-pwa-update'"
+  ]) requireText(pwaUpdateConfig, fragment, 'PWA-Update-Playwright-Konfiguration');
+  for (const fragment of [
+    '/__pwa_test__/activate/',
+    "activeBuild = 'old'",
+    "'Cache-Control', 'no-store, no-cache, must-revalidate'",
+    "'Service-Worker-Allowed', '/'"
+  ]) requireText(pwaUpdateServer, fragment, 'PWA-Update-Testserver');
 }
 
 function validateBrowserSupport() {
@@ -169,6 +194,8 @@ function validateBrowserSupport() {
   requireText(harness, 'sourceManifest.database.products', 'Manifestbasierte E2E-Produktzahl');
   requireText(catalog, 'CATALOG_DATABASE_FILENAME', 'Manifestbasierter Katalogtest');
   requireText(verifyPages, 'sourceManifest.database.file', 'Manifestbasierte Pages-Prüfung');
+  requireText(verifyPages, "const updateManifestFile = 'app-update.json'", 'Update-Manifest-Prüfung');
+  requireText(preparePublic, "contract: 'kh-checker-app-update'", 'Update-Manifest-Erzeugung');
   if (preparePublic.includes(`path.join(catalogTargetDir, 'kh-checker-dach.sqlite')`)) {
     fail('BLOCKER: prepare-public benennt die Manifestdatenbank noch um.');
   }
@@ -177,6 +204,8 @@ function validateBrowserSupport() {
   const knip = String(packageJson.scripts?.['check:knip'] ?? '');
   const runtimeTests = String(packageJson.scripts?.['test:runtime'] ?? '');
   const runtimeE2e = String(packageJson.scripts?.['test:e2e:runtime'] ?? '');
+  const pwaUpdateTests = String(packageJson.scripts?.['test:pwa-update'] ?? '');
+  const pwaUpdateE2e = String(packageJson.scripts?.['test:e2e:pwa-update'] ?? '');
   if (packageJson.devDependencies?.['dependency-cruiser'] !== '18.1.0' ||
       !architecture.includes('depcruise') || !architecture.includes('dependency-cruiser.config.cjs')) {
     fail('dependency-cruiser ist nicht exakt gepinnt oder konfiguriert.');
@@ -196,6 +225,11 @@ function validateBrowserSupport() {
     'e2e/smart-unit-prompts.spec.ts',
     '--project=chromium-desktop'
   ]) requireText(runtimeE2e, fragment, 'Gezielte Unit-Runtime-E2E-Tests');
+  for (const fragment of [
+    'src/lib/pwaUpdate.test.ts',
+    'scripts/pwa-update.architecture.test.ts'
+  ]) requireText(pwaUpdateTests, fragment, 'Gezielte PWA-Update-Tests');
+  requireText(pwaUpdateE2e, 'scripts/run-pwa-update-e2e.mjs', 'Realer PWA-Update-Test');
 
   const evidence = validateEvidence();
   if (evidence.state === 'failed') fail(`Browser-Support ist als failed dokumentiert: ${support.currentEvidence.failureSummary}`);
@@ -240,7 +274,7 @@ for (const job of Object.values(workflow.jobs ?? {})) for (const step of job.ste
 }
 
 const jobs = Object.keys(workflow.jobs ?? {});
-if (jobs.join(',') !== 'quality,build,browser-e2e,deploy') fail(`Jobs weichen ab: ${jobs.join(',')}`);
+if (jobs.join(',') !== 'quality,build,browser-e2e,deploy') fail(`Jobs weichen ab: ${jobs.join(', ')}`);
 if (workflow.concurrency?.group !== 'pages-$' + '{{ github.ref }}' || workflow.concurrency?.['cancel-in-progress'] !== true) fail('Concurrency-Vertrag ungültig.');
 if (workflow.env && Object.keys(workflow.env).length > 0) fail('Der Offline-Build darf keine Runtime-Umschaltvariablen besitzen.');
 const commands = (job) => (job?.steps ?? []).map((step) => String(step?.run ?? '')).join('\n');
@@ -253,7 +287,8 @@ requireText(workflowText, 'node-version: $' + '{{ matrix.node-version }}', 'Node
 const qualityCommands = commands(qualityJob);
 for (const command of ['npm ci --no-audit --no-fund', 'npm ci --prefix Catalog/runtime --no-audit --no-fund',
   'npm run check:catalog', 'npm run check:workflow', 'npm run check:browser-support', 'npm run typecheck',
-  'npm run lint', 'npm run test:runtime', 'npm test', 'npm run check:architecture', 'npm run check:knip']) {
+  'npm run lint', 'npm run test:runtime', 'npm run test:pwa-update', 'npm test',
+  'npm run check:architecture', 'npm run check:knip']) {
   requireText(qualityCommands, command, 'Quality-Command');
 }
 
@@ -273,7 +308,7 @@ const browser = workflow.jobs['browser-e2e'];
 if (browser?.needs !== 'quality') fail('Browser-E2E muss von quality abhängen.');
 const browserCommands = commands(browser);
 for (const command of ['npm ci --no-audit --no-fund', 'npm ci --prefix Catalog/runtime --no-audit --no-fund',
-  'npm run test:e2e:install', 'npm run test:e2e:runtime', 'npm run test:e2e']) {
+  'npm run test:e2e:install', 'npm run test:e2e:pwa-update', 'npm run test:e2e:runtime', 'npm run test:e2e']) {
   requireText(browserCommands, command, 'Browser-E2E-Command');
 }
 
@@ -284,8 +319,10 @@ if (deploy?.permissions?.pages !== 'write' || deploy?.permissions?.['id-token'] 
 if (deploy?.environment?.name !== 'github-pages') fail('Deploy-Environment ungültig.');
 const deployCommands = commands(deploy);
 for (const fragment of ['Catalog/catalog-manifest.v1.json', 'manifest.database.file',
-  'Online OFF/Search-a-licious product access: disabled']) requireText(deployCommands, fragment, 'Deployment-Summary');
+  'app-update.json', 'Online OFF/Search-a-licious product access: disabled']) {
+  requireText(deployCommands, fragment, 'Deployment-Summary');
+}
 
-console.log(JSON.stringify({ workflowValid: true, mode: 'hard-cutover-quality-browser-pages',
+console.log(JSON.stringify({ workflowValid: true, mode: 'hard-cutover-quality-browser-pages-pwa-update',
   manifestVersion: manifest.catalogVersion, databaseFilename: manifest.database.file,
   browserSupport, file: `.github/workflows/${workflowFiles[0]}`, jobs }));
