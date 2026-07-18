@@ -18,7 +18,7 @@ jobs:
   quality:
     name: Validate architecture and runtime · Node ${{ matrix.node-version }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -77,12 +77,20 @@ jobs:
           set -o pipefail
           npm run test:runtime 2>&1 | tee runtime-test-output.log
 
-      - name: Upload runtime diagnostics on failure
+      - name: Run targeted PWA deploy update tests
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:pwa-update 2>&1 | tee pwa-update-test-output.log
+
+      - name: Upload targeted diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
         with:
-          name: runtime-test-output-node-${{ matrix.node-version }}
-          path: runtime-test-output.log
+          name: targeted-test-output-node-${{ matrix.node-version }}
+          path: |
+            runtime-test-output.log
+            pwa-update-test-output.log
           if-no-files-found: ignore
           retention-days: 5
 
@@ -158,10 +166,10 @@ jobs:
           path: dist
 
   browser-e2e:
-    name: Prove real SQLite-WASM and OPFS journeys
+    name: Prove installed updates, SQLite-WASM and OPFS journeys
     needs: quality
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 65
     permissions:
       contents: read
     steps:
@@ -189,6 +197,12 @@ jobs:
       - name: Install Playwright browser engines
         run: npm run test:e2e:install
 
+      - name: Prove update from an already installed deployment
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:e2e:pwa-update 2>&1 | tee pwa-update-e2e-output.log
+
       - name: Run targeted real unit runtime journeys
         run: npm run test:e2e:runtime
 
@@ -201,7 +215,9 @@ jobs:
         with:
           name: playwright-catalog-evidence
           path: |
+            pwa-update-e2e-output.log
             playwright-report
+            playwright-report-pwa-update
             test-results
           if-no-files-found: ignore
           retention-days: 5
@@ -242,10 +258,11 @@ jobs:
             '## KH Checker offline catalog deployed',
             '',
             `- URL: ${process.env.PAGE_URL}`,
-            `- Commit: ${process.env.GITHUB_SHA}`,
+            `- Commit / app build: ${process.env.GITHUB_SHA}`,
             `- Catalog: ${manifest.catalogVersion} · ${manifest.database.products} products · ${manifest.database.bytes} bytes`,
             `- Database file: ${manifest.database.file}`,
             `- SQLite SHA-256: ${manifest.database.sha256}`,
+            '- Installed apps check app-update.json and sw.js without cache on launch.',
             '- Product source: deployed SQLite → A/B OPFS slots → SQLite-WASM worker',
             '- Online OFF/Search-a-licious product access: disabled',
             '',
