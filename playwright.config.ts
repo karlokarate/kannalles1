@@ -5,6 +5,9 @@ const matrixTest = '**/browser-matrix.spec.ts';
 
 export default defineConfig({
   testDir: './e2e',
+  // This test owns a separate switchable old/new deployment server and must
+  // only run through e2e/playwright.pwa-update.config.ts.
+  testIgnore: '**/pwa-update.spec.ts',
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
