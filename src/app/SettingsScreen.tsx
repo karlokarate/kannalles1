@@ -2,10 +2,13 @@ import type { ChangeEvent } from 'react';
 import type { OfflineAppSettings } from '../lib/settings';
 import type { UserDataCounts } from '../lib/userDataStore';
 import { DiabetesSettings } from './DiabetesSettings';
+import { PwaUpdateSettings } from './PwaUpdateSettings';
+import type { PwaUpdateViewModel } from './usePwaUpdate';
 
 export interface SettingsScreenProps {
   settings: OfflineAppSettings;
   counts: UserDataCounts;
+  pwaUpdate: PwaUpdateViewModel;
   onChange: (settings: OfflineAppSettings) => void;
   onClearHistory: () => void;
   onClearSession: () => void;
@@ -19,6 +22,7 @@ export interface SettingsScreenProps {
 export function SettingsScreen({
   settings,
   counts,
+  pwaUpdate,
   onChange,
   onClearHistory,
   onClearSession,
@@ -39,6 +43,7 @@ export function SettingsScreen({
         <p>Keine Produkt-API, keine Zugangsdaten und kein versteckter Online-Fallback.</p>
       </header>
       <div className="settings-grid">
+        <PwaUpdateSettings pwa={pwaUpdate} />
         <fieldset className="settings-card settings-card--wide theme-settings">
           <legend>Design</legend>
           <div className="theme-picker" role="radiogroup" aria-label="Darstellung auswählen">

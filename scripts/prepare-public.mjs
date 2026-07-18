@@ -3,11 +3,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import autoprefixer from 'autoprefixer';
 import postcss from 'postcss';
-import { validateAppVersion } from './public-config.mjs';
+import { resolveBuildId, validateAppVersion } from './public-config.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const packageJson = JSON.parse(await fs.readFile(path.join(rootDir, 'package.json'), 'utf8'));
 const version = validateAppVersion(packageJson.version);
+const buildId = resolveBuildId(process.env, version);
 const sourceDir = path.join(rootDir, 'public-template');
 const targetDir = path.join(rootDir, '.generated-public');
 const catalogSourceDir = path.join(rootDir, 'Catalog');
@@ -25,8 +26,12 @@ const catalogManifest = JSON.parse(
   await fs.readFile(path.join(catalogSourceDir, 'catalog-manifest.v1.json'), 'utf8')
 );
 const catalogDatabaseFile = catalogManifest?.database?.file;
+const catalogVersion = catalogManifest?.catalogVersion;
 if (typeof catalogDatabaseFile !== 'string' || !/^[A-Za-z0-9._-]+\.sqlite$/u.test(catalogDatabaseFile)) {
   throw new Error('Production-v1 manifest contains an invalid database.file.');
+}
+if (typeof catalogVersion !== 'string' || !catalogVersion.trim()) {
+  throw new Error('Production-v1 manifest contains an invalid catalogVersion.');
 }
 const textExtensions = new Set(['.html', '.js', '.css', '.txt', '.json', '.md', '.webmanifest', '.yaml', '.yml']);
 let versionTokenCount = 0;
@@ -110,6 +115,19 @@ await Promise.all([
   )
 ]);
 
+const updateManifest = {
+  contract: 'kh-checker-app-update',
+  schemaVersion: 1,
+  appVersion: version,
+  buildId,
+  catalogVersion: catalogVersion.trim()
+};
+await fs.writeFile(
+  path.join(targetDir, 'app-update.json'),
+  `${JSON.stringify(updateManifest, null, 2)}\n`,
+  'utf8'
+);
+
 async function replaceTokens(directory) {
   for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
     const absolute = path.join(directory, entry.name);
@@ -132,4 +150,4 @@ await replaceTokens(targetDir);
 if (versionTokenCount < 1) {
   throw new Error(`Unexpected public version token inventory: ${versionTokenCount}.`);
 }
-console.log(`Public assets prepared for FishIT KH Checker v${version}; catalog=production-v1.`);
+console.log(`Public assets prepared for FishIT KH Checker v${version}; build=${buildId}; catalog=production-v1.`);

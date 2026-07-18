@@ -20,6 +20,7 @@ const deployedManifest = 'catalog/manifest.json';
 const codecAsset = `catalog/${sourceManifest.codecFile}`;
 const imageDictionaryAsset = `catalog/${sourceManifest.image.dictionaryFile}`;
 const retiredRenamedDatabase = 'catalog/kh-checker-dach.sqlite';
+const updateManifestFile = 'app-update.json';
 
 function fail(message) {
   throw new Error(`GitHub-Pages-Prüfung fehlgeschlagen: ${message}`);
@@ -61,6 +62,7 @@ async function sha256(filePath) {
 const requiredFiles = [
   'index.html',
   'app.css',
+  updateManifestFile,
   'manifest.webmanifest',
   'sw.js',
   'README-ERST-LESEN.html',
@@ -96,6 +98,7 @@ for (const htmlFile of htmlFiles) {
 
 const indexHtml = await fs.readFile(path.join(pagesDir, 'index.html'), 'utf8');
 const webManifest = JSON.parse(await fs.readFile(path.join(pagesDir, 'manifest.webmanifest'), 'utf8'));
+const updateManifest = JSON.parse(await fs.readFile(path.join(pagesDir, updateManifestFile), 'utf8'));
 if (webManifest.id !== './') fail(`manifest.id muss "./" sein, ist aber ${JSON.stringify(webManifest.id)}`);
 if (webManifest.start_url !== './') fail(`manifest.start_url muss "./" sein, ist aber ${JSON.stringify(webManifest.start_url)}`);
 if (webManifest.scope !== './') fail(`manifest.scope muss "./" sein, ist aber ${JSON.stringify(webManifest.scope)}`);
@@ -106,6 +109,15 @@ for (const icon of webManifest.icons) {
   const localPath = normalizeLocalReference(String(icon?.src ?? ''));
   if (!localPath) fail(`ungültiger lokaler Icon-Pfad: ${JSON.stringify(icon?.src)}`);
   await requireFile(localPath);
+}
+
+if (updateManifest.contract !== 'kh-checker-app-update' || updateManifest.schemaVersion !== 1) {
+  fail('app-update.json besitzt nicht den erwarteten Updatevertrag.');
+}
+if (updateManifest.appVersion !== appVersion) fail('app-update.json stimmt nicht zur Anwendungsversion.');
+if (updateManifest.catalogVersion !== sourceManifest.catalogVersion) fail('app-update.json stimmt nicht zur Katalogversion.');
+if (typeof updateManifest.buildId !== 'string' || !/^[0-9A-Za-z._:-]{1,128}$/u.test(updateManifest.buildId)) {
+  fail('app-update.json besitzt keine sichere Build-ID.');
 }
 
 if (!/rel=["']manifest["']/i.test(indexHtml)) fail('index.html bindet kein Web-App-Manifest ein.');
@@ -146,7 +158,7 @@ const serviceWorker = await fs.readFile(path.join(pagesDir, 'sw.js'), 'utf8');
 for (const precached of ['index.html', 'app.css', 'README-ERST-LESEN.html', 'package-info.css', 'icons/apple-touch-icon.png', 'vendor/sqlite/index.mjs', 'vendor/sqlite/sqlite3.wasm']) {
   if (!serviceWorker.includes(precached)) fail(`Service Worker precacht ${precached} nicht.`);
 }
-for (const excluded of [deployedDatabase, deployedManifest]) {
+for (const excluded of [deployedDatabase, deployedManifest, updateManifestFile]) {
   if (serviceWorker.includes(excluded)) fail(`Service Worker darf ${excluded} nicht als App-Shell precachen.`);
 }
 
@@ -159,7 +171,9 @@ if (!jsFiles.some((file) => /(?:^|-)legacy(?:-|\.)/.test(path.basename(file)))) 
 const appJavaScript = (await Promise.all(jsFiles.map((file) => fs.readFile(path.join(pagesDir, file), 'utf8')))).join('\n');
 for (const required of [
   'catalog/manifest.json',
+  updateManifestFile,
   appVersion,
+  updateManifest.buildId,
 ]) {
   if (!appJavaScript.includes(required)) fail(`Offline-App-Build enthält nicht: ${required}`);
 }
@@ -180,6 +194,7 @@ for (const forbidden of [
 console.log(JSON.stringify({
   pagesValid: true,
   appVersion,
+  buildId: updateManifest.buildId,
   catalogVersion: sourceManifest.catalogVersion,
   databaseFilename,
   productCount: sourceManifest.database.products,

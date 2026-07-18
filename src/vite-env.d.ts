@@ -32,3 +32,5 @@ interface Window {
 
 /** Build-time application version derived from package.json. */
 declare const __APP_VERSION__: string;
+/** Immutable deployment/build identity, normally the GitHub commit SHA. */
+declare const __BUILD_ID__: string;

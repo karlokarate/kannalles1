@@ -6,12 +6,17 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 const appVersion = packageJson.version;
+const buildId = String(process.env.KH_BUILD_ID || process.env.GITHUB_SHA || `version-${appVersion}`).trim();
+if (!/^[0-9A-Za-z._:-]{1,128}$/u.test(buildId)) {
+  throw new Error(`Unsafe build identity: ${JSON.stringify(buildId)}`);
+}
 
 export default defineConfig({
   base: './',
   publicDir: '.generated-public',
   define: {
-    __APP_VERSION__: JSON.stringify(appVersion)
+    __APP_VERSION__: JSON.stringify(appVersion),
+    __BUILD_ID__: JSON.stringify(buildId)
   },
   plugins: [
     react(),
@@ -38,9 +43,11 @@ export default defineConfig({
     }),
     VitePWA({
       // Never reload an active calculation/search draft behind the user's
-      // back. `src/main.tsx` exposes the explicit update callback to the UI.
+      // back. The app checks the deployed build and exposes an explicit button.
       registerType: 'prompt',
-      injectRegister: 'auto',
+      // Registration is owned exclusively by src/pwa.ts so startup, foreground,
+      // online and periodic checks cannot create duplicate registrations.
+      injectRegister: null,
       includeAssets: [
         'icons/icon-192.png',
         'icons/icon-512.png',
@@ -73,9 +80,9 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,mjs,wasm,css,html,ico,png,svg,webmanifest,json}'],
-        // The catalog has its own manifest, checksum, installation and rollback
-        // lifecycle. Workbox must never treat it as immutable app-shell data.
-        globIgnores: ['catalog/**'],
+        // Catalog data and the deployment update manifest have their own
+        // network/checksum lifecycle and must never be served from app-shell cache.
+        globIgnores: ['catalog/**', 'app-update.json'],
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/\/[^/?]+\.[^/?]+$/],
         cleanupOutdatedCaches: true,

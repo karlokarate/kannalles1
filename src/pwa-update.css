@@ -1,0 +1,143 @@
+.pwa-update-banner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 13px;
+  width: min(1120px, calc(100% - 28px));
+  margin: 14px auto 0;
+  padding: 16px;
+  border: 1px solid #9bcdb8;
+  border-radius: var(--radius-md);
+  background: var(--success-soft);
+  box-shadow: 0 8px 26px rgba(22, 118, 83, 0.11);
+}
+
+.pwa-update-banner__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--success);
+  font-size: 1.25rem;
+  font-weight: 900;
+}
+
+.pwa-update-banner__body {
+  min-width: 0;
+}
+
+.pwa-update-banner__body > p {
+  margin: 6px 0 0;
+  color: #275d4c;
+}
+
+.pwa-update-banner .button-row {
+  margin-top: 11px;
+}
+
+.pwa-offline-ready {
+  box-shadow: 0 6px 22px rgba(30, 54, 76, 0.07);
+}
+
+.app-update-settings > p {
+  margin: 0;
+}
+
+.app-update-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.app-update-state--up-to-date {
+  border-color: #9bcdb8;
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.app-update-state--update-available,
+.app-update-state--applying {
+  border-color: #e7c071;
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.app-update-state--error {
+  border-color: #efb7b7;
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.app-update-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin: 14px 0;
+}
+
+.app-update-details > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.app-update-details dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.app-update-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 800;
+}
+
+.app-update-details code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+}
+
+.app-shell[data-visual-theme="comic"] .pwa-update-banner {
+  border: 2px solid #176b58;
+  background: #dffff5;
+  box-shadow: 4px 5px 0 rgba(0, 143, 122, 0.18);
+}
+
+.app-shell[data-visual-theme="comic"] .app-update-state,
+.app-shell[data-visual-theme="comic"] .app-update-details > div {
+  border-width: 2px;
+}
+
+@media (max-width: 620px) {
+  .pwa-update-banner {
+    grid-template-columns: 1fr;
+  }
+
+  .pwa-update-banner__icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .app-update-details {
+    grid-template-columns: 1fr;
+  }
+
+  .app-update-settings .section-title-row {
+    align-items: start;
+    flex-direction: column;
+  }
+}

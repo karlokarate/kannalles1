@@ -5,3 +5,19 @@ export function validateAppVersion(value) {
   }
   return version;
 }
+
+export function validateBuildId(value) {
+  const buildId = String(value || '').trim();
+  if (!/^[0-9A-Za-z._:-]{1,128}$/.test(buildId)) {
+    throw new Error(`Build identity is not safe: ${JSON.stringify(buildId)}`);
+  }
+  return buildId;
+}
+
+export function resolveBuildId(environment, appVersion) {
+  return validateBuildId(
+    environment.KH_BUILD_ID
+      || environment.GITHUB_SHA
+      || `version-${validateAppVersion(appVersion)}`
+  );
+}
