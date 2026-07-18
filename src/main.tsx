@@ -4,6 +4,7 @@ import App from './App';
 import ErrorBoundary from './ErrorBoundary';
 import { startPwaUpdateRuntime } from './pwa';
 import './styles.css';
+import './pwa-update.css';
 
 const isAndroidLocalFileViewer =
   ['127.0.0.1', 'localhost'].includes(window.location.hostname)
