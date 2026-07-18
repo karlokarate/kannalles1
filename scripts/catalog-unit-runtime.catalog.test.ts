@@ -13,6 +13,7 @@ import {
 
 const CATALOG_PATH = fileURLToPath(new URL('../Catalog/kh-checker-dach-v1.sqlite', import.meta.url));
 const SAMPLE_PER_CLASS = 24;
+const HAS_SERVING_BIT = 1 << 2;
 
 function rows(database: DatabaseSync, where: string): CatalogSqlRow[] {
   return database.prepare(`
@@ -97,11 +98,12 @@ describe('catalog unit runtime against the production SQLite catalog', () => {
     }
   });
 
-  it('uses only resolver-validated smallest-unit and manufacturer-serving evidence', () => {
+  it('uses only resolver-validated smallest-unit and metadata-enabled manufacturer-serving evidence', () => {
     const database = new DatabaseSync(CATALOG_PATH, { readOnly: true });
     try {
       const provenProducts = rows(database, 'p.u IS NOT NULL').map(projectCatalogProductRow);
-      const servingProducts = rows(database, 'p.u IS NULL AND p.s IS NOT NULL').map(projectCatalogProductRow);
+      const servingProducts = rows(database, `(p.m & ${HAS_SERVING_BIT}) != 0 AND p.s IS NOT NULL`)
+        .map(projectCatalogProductRow);
       expect(provenProducts).toHaveLength(SAMPLE_PER_CLASS);
       expect(servingProducts).toHaveLength(SAMPLE_PER_CLASS);
 
@@ -144,7 +146,7 @@ describe('catalog unit runtime against the production SQLite catalog', () => {
 
       for (const product of servingProducts) {
         const serving = product.unitEvidence.manufacturerServing;
-        if (!serving) throw new Error(`${product.code}: projected serving expected`);
+        if (!serving) throw new Error(`${product.code}: metadata-enabled serving expected`);
         const state = resolveCatalogUnitRuntime(product, {
           amount: 1,
           unit: 'portion',
@@ -169,6 +171,19 @@ describe('catalog unit runtime against the production SQLite catalog', () => {
             option.source === 'manufacturer_serving' && option.baseValue === serving.baseValue
           )).toBe(false);
         }
+      }
+
+      const orphanRows = rows(database, `p.s IS NOT NULL AND (p.m & ${HAS_SERVING_BIT}) = 0`);
+      for (const row of orphanRows) {
+        const product = projectCatalogProductRow(row);
+        expect(product.unitEvidence.manufacturerServing, `${product.code} disabled raw serving must stay hidden`).toBeNull();
+        const state = resolveCatalogUnitRuntime(product, {
+          amount: 1,
+          unit: 'portion',
+          unitExplicit: true
+        }, 'smart');
+        expect(state.resolution.options.some((option) => option.source === 'manufacturer_serving'),
+          `${product.code} disabled raw serving must never become an option`).toBe(false);
       }
     } finally {
       database.close();
