@@ -22,9 +22,12 @@ import type {
   RequestedUnit,
   ResolvedUnitOption
 } from '../lib/resolution/catalogResolution';
+import { normalizeCatalogUnitRequest } from '../lib/resolution/catalogUnitRequest';
 import { resolveSmartUnitState } from '../lib/smartUnitPrompt';
 import type { SmartUnitPrompt } from '../lib/smartUnitPrompt';
 import { findMatchingCatalogCalibrations } from '../lib/userDataStore';
+
+export { normalizeCatalogUnitRequest } from '../lib/resolution/catalogUnitRequest';
 
 export type CatalogUnitRuntimeMode = 'standard' | 'smart';
 
@@ -50,16 +53,6 @@ const UNIT_LABELS: Readonly<Record<RequestedUnit, string>> = {
   portion: 'Portion',
   package: 'Packung'
 };
-
-/**
- * Canonicalizes only transport-facing request syntax. It never changes an
- * explicit counted unit or invents a serving size.
- */
-export function normalizeCatalogUnitRequest(request: CatalogUnitRequest): CatalogUnitRequest {
-  return request.unit === 'kg'
-    ? { amount: request.amount * 1_000, unit: 'g', unitExplicit: true }
-    : request;
-}
 
 /**
  * Single identity projection for every catalog-unit calibration call site.
@@ -149,17 +142,18 @@ export function resolveCatalogUnitRuntime(
   mode: CatalogUnitRuntimeMode = 'standard',
   promptValueOverride?: string
 ): CatalogUnitRuntimeState {
+  const normalizedRequest = normalizeCatalogUnitRequest(request);
   if (isClinicCatalogProduct(product)) {
-    const direct = directClinicRuntimeState(product, request);
+    const direct = directClinicRuntimeState(product, normalizedRequest);
     if (direct) return direct;
   }
 
   const calibrations = catalogProductCalibrations(product, mode)
     .map(toMatchingUnitCalibration);
-  const baseResolution = resolveCatalogUnits(product, request, calibrations);
+  const baseResolution = resolveCatalogUnits(product, normalizedRequest, calibrations);
 
   return mode === 'smart'
-    ? resolveSmartUnitState(product, request, baseResolution, promptValueOverride)
+    ? resolveSmartUnitState(product, normalizedRequest, baseResolution, promptValueOverride)
     : { resolution: baseResolution, prompt: null };
 }
 
