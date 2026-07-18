@@ -8,6 +8,8 @@ import {
   type PwaUpdateEnvironment
 } from './pwaUpdate';
 
+type FetchFunction = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
 class FakeWorker extends EventTarget {
   state: ServiceWorkerState = 'installing';
 }
@@ -41,7 +43,7 @@ function textResponse(value = 'service-worker', status = 200): Response {
 
 function environment(overrides: Partial<PwaUpdateEnvironment> = {}) {
   let now = 1_700_000_000_000;
-  const fetch = vi.fn(async (input: RequestInfo | URL) =>
+  const fetchMock = vi.fn<FetchFunction>(async (input) =>
     String(input).includes('app-update.json')
       ? jsonResponse(manifest())
       : textResponse()
@@ -51,14 +53,14 @@ function environment(overrides: Partial<PwaUpdateEnvironment> = {}) {
     currentBuildId: 'build-current',
     manifestUrl: 'https://example.test/app/app-update.json',
     supported: true,
-    fetch,
+    fetch: fetchMock,
     isOnline: () => true,
     now: () => now,
     ...overrides
   };
   return {
     value,
-    fetch,
+    fetch: fetchMock,
     advance(milliseconds: number) {
       now += milliseconds;
     }
@@ -127,26 +129,27 @@ describe('PWA deployment update controller', () => {
   });
 
   it('deduplicates concurrent checks and throttles foreground checks', async () => {
-    let release: (() => void) | null = null;
-    const pending = new Promise<void>((resolve) => { release = resolve; });
-    const env = environment({
-      fetch: vi.fn(async (input: RequestInfo | URL) => {
-        if (String(input).includes('app-update.json')) await pending;
-        return String(input).includes('app-update.json') ? jsonResponse(manifest()) : textResponse();
-      })
+    let release: () => void = () => undefined;
+    const pending = new Promise<void>((resolve) => {
+      release = () => resolve();
     });
+    const fetchMock = vi.fn<FetchFunction>(async (input) => {
+      if (String(input).includes('app-update.json')) await pending;
+      return String(input).includes('app-update.json') ? jsonResponse(manifest()) : textResponse();
+    });
+    const env = environment({ fetch: fetchMock });
     const controller = createPwaUpdateController(env.value);
     attach(controller);
 
     const first = controller.checkForUpdates(true);
     const second = controller.checkForUpdates(true);
     expect(first).toBe(second);
-    release?.();
+    release();
     await first;
-    expect(env.value.fetch).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
 
     await controller.checkForUpdates(false);
-    expect(env.value.fetch).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('keeps the local app usable while offline and retries manually', async () => {
@@ -165,13 +168,12 @@ describe('PWA deployment update controller', () => {
   });
 
   it('shows a persistent user-controlled prompt when a waiting worker exists', async () => {
-    const env = environment({
-      fetch: vi.fn(async (input: RequestInfo | URL) =>
-        String(input).includes('app-update.json')
-          ? jsonResponse(manifest('build-new'))
-          : textResponse()
-      )
-    });
+    const fetchMock = vi.fn<FetchFunction>(async (input) =>
+      String(input).includes('app-update.json')
+        ? jsonResponse(manifest('build-new'))
+        : textResponse()
+    );
+    const env = environment({ fetch: fetchMock });
     const controller = createPwaUpdateController(env.value);
     const registration = new FakeRegistration();
     registration.update.mockImplementation(async () => {
@@ -200,13 +202,12 @@ describe('PWA deployment update controller', () => {
   });
 
   it('observes an installing worker until the update becomes waiting', async () => {
-    const env = environment({
-      fetch: vi.fn(async (input: RequestInfo | URL) =>
-        String(input).includes('app-update.json')
-          ? jsonResponse(manifest('build-new'))
-          : textResponse()
-      )
-    });
+    const fetchMock = vi.fn<FetchFunction>(async (input) =>
+      String(input).includes('app-update.json')
+        ? jsonResponse(manifest('build-new'))
+        : textResponse()
+    );
+    const env = environment({ fetch: fetchMock });
     const controller = createPwaUpdateController(env.value);
     const registration = new FakeRegistration();
     const worker = new FakeWorker();
@@ -229,13 +230,12 @@ describe('PWA deployment update controller', () => {
   });
 
   it('reports a remote build that cannot yet be prepared and allows retry', async () => {
-    const env = environment({
-      fetch: vi.fn(async (input: RequestInfo | URL) =>
-        String(input).includes('app-update.json')
-          ? jsonResponse(manifest('build-new'))
-          : textResponse()
-      )
-    });
+    const fetchMock = vi.fn<FetchFunction>(async (input) =>
+      String(input).includes('app-update.json')
+        ? jsonResponse(manifest('build-new'))
+        : textResponse()
+    );
+    const env = environment({ fetch: fetchMock });
     const controller = createPwaUpdateController(env.value);
     attach(controller);
 
