@@ -42,6 +42,7 @@ test('bewahrt bei direkten Klinikwerten eine explizite Grammanfrage und rechnet 
 
   const product = page.getByTestId('catalog-product');
   await expect(product).toContainText('Pfannkuchen mit Quark');
+  await expect(product).toContainText('Der Klinikwert ist ausschließlich je Stück hinterlegt.');
   await expect(product).toHaveAttribute('data-unit-resolution-status', 'not_calculable');
   const unitSelect = page.getByTestId('catalog-unit-select');
   await expect(unitSelect.locator('option:checked')).toHaveAttribute('data-unit-kind', 'g');
