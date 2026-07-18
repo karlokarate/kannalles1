@@ -4,6 +4,11 @@ const OLD_BUILD = 'pwa-old';
 const NEW_BUILD = 'pwa-new';
 
 test('eine bereits installierte App prüft beim Öffnen den Deploy und aktualisiert nur nach Zustimmung', async ({ context, page }) => {
+  // A retry may reuse the switchable test server after the first attempt has
+  // selected the new deployment. Reset it before the browser is opened.
+  const reset = await page.request.post('/__pwa_test__/activate/old');
+  expect(reset.ok()).toBe(true);
+
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   const oldShell = page.locator('.app-shell');
   await expect(oldShell).toHaveAttribute('data-app-build', OLD_BUILD);
@@ -26,8 +31,9 @@ test('eine bereits installierte App prüft beim Öffnen den Deploy und aktualisi
   expect(activated.ok()).toBe(true);
   expect(await activated.json()).toEqual({ activeBuild: 'new' });
 
-  // Opening a new PWA window with the same profile must run the startup check.
-  await page.close();
+  // Keep the already used old app open. This prevents a no-client activation
+  // from silently replacing it before the newly opened window can display the
+  // explicit user-controlled update prompt.
   const reopened = await context.newPage();
   await reopened.goto('/', { waitUntil: 'domcontentloaded' });
   const shell = reopened.locator('.app-shell');
@@ -65,4 +71,6 @@ test('eine bereits installierte App prüft beim Öffnen den Deploy und aktualisi
     return false;
   });
   expect(updateManifestCached).toBe(false);
+
+  await page.close();
 });
