@@ -81,7 +81,7 @@ describe('Lumen hard-cutover state', () => {
     ]);
   });
 
-  it('does not split connector words inside an exact clinic product name', () => {
+  it('protects exact clinic product spans containing connector words', () => {
     expect(parseProductList('100 g Pfannkuchen mit Quark')).toEqual([
       '100 g Pfannkuchen mit Quark'
     ]);
@@ -92,8 +92,7 @@ describe('Lumen hard-cutover state', () => {
       catalogQuery: 'Pfannkuchen mit Quark'
     });
     expect(parseProductList('Pfannkuchen mit Quark und eine Portion Reis')).toEqual([
-      'Pfannkuchen',
-      'Quark',
+      'Pfannkuchen mit Quark',
       'eine Portion Reis'
     ]);
   });
