@@ -7,6 +7,7 @@ import {
 import type { ClinicCatalogProduct } from '../lib/clinicCatalog';
 import { isGenericCatalogProduct } from '../lib/genericFoods';
 import {
+  selectCatalogCalibration,
   toMatchingUnitCalibration
 } from '../lib/resolution/catalogCalibration';
 import type {
@@ -17,15 +18,17 @@ import type {
 import { resolveCatalogUnits } from '../lib/resolution/catalogResolution';
 import type {
   CatalogUnitRequest,
-  CatalogUnitResolution
+  CatalogUnitResolution,
+  RequestedUnit,
+  ResolvedUnitOption
 } from '../lib/resolution/catalogResolution';
 import { resolveSmartUnitState } from '../lib/smartUnitPrompt';
 import type { SmartUnitPrompt } from '../lib/smartUnitPrompt';
 import { findMatchingCatalogCalibrations } from '../lib/userDataStore';
 
-type CatalogUnitRuntimeMode = 'standard' | 'smart';
+export type CatalogUnitRuntimeMode = 'standard' | 'smart';
 
-interface CatalogUnitRuntimeState {
+export interface CatalogUnitRuntimeState {
   resolution: CatalogUnitResolution;
   prompt: SmartUnitPrompt | null;
 }
@@ -36,6 +39,17 @@ const CALIBRATION_UNITS: readonly CatalogCalibrationUnit[] = [
   'slice',
   'portion'
 ];
+
+const UNIT_LABELS: Readonly<Record<RequestedUnit, string>> = {
+  g: 'Gramm',
+  kg: 'Kilogramm',
+  ml: 'Milliliter',
+  piece: 'Stück',
+  bar: 'Riegel',
+  slice: 'Scheibe',
+  portion: 'Portion',
+  package: 'Packung'
+};
 
 /**
  * Canonicalizes only transport-facing request syntax. It never changes an
@@ -91,6 +105,40 @@ function catalogProductCalibrations(
   );
 }
 
+function directClinicRuntimeState(
+  product: ClinicCatalogProduct,
+  request: CatalogUnitRequest
+): CatalogUnitRuntimeState | null {
+  const direct = directClinicResolution(product);
+  if (!direct) return null;
+  if (!request.unitExplicit || request.unit === 'piece') {
+    return { resolution: direct, prompt: null };
+  }
+
+  const directPiece = { ...direct.options[0], recommended: false };
+  const requested: ResolvedUnitOption = {
+    id: `${request.unit}:clinic-direct:unavailable`,
+    unit: request.unit,
+    label: UNIT_LABELS[request.unit],
+    basis: product.nutrition.basis,
+    baseValue: null,
+    source: 'unresolved',
+    recommended: true,
+    smallestEdibleUnit: false,
+    priority: 0,
+    note: `Der Klinikwert ist ausschließlich je Stück hinterlegt. Für ${UNIT_LABELS[request.unit]} wird kein Gewicht oder Volumen abgeleitet.`
+  };
+  return {
+    resolution: {
+      status: 'not_calculable',
+      selectedOptionId: requested.id,
+      options: [requested, directPiece],
+      reason: 'requested-unit-unavailable'
+    },
+    prompt: null
+  };
+}
+
 /**
  * The only application-layer authority that combines catalog evidence,
  * persisted measurements, clinic direct values and the optional smart prompt.
@@ -102,8 +150,8 @@ export function resolveCatalogUnitRuntime(
   promptValueOverride?: string
 ): CatalogUnitRuntimeState {
   if (isClinicCatalogProduct(product)) {
-    const direct = directClinicResolution(product);
-    if (direct) return { resolution: direct, prompt: null };
+    const direct = directClinicRuntimeState(product, request);
+    if (direct) return direct;
   }
 
   const calibrations = catalogProductCalibrations(product, mode)
@@ -119,7 +167,10 @@ export function defaultClinicCatalogUnitRequest(
   product: ClinicCatalogProduct,
   mode: CatalogUnitRuntimeMode = 'standard'
 ): CatalogUnitRequest {
-  const saved = catalogProductCalibrations(product, mode)[0];
+  if (product.clinic.directCarbohydratesPerUnit !== null) {
+    return clinicDefaultRequest(product);
+  }
+  const saved = selectCatalogCalibration(catalogProductCalibrations(product, mode));
   return saved
     ? { amount: 1, unit: saved.unit, unitExplicit: false }
     : clinicDefaultRequest(product);
