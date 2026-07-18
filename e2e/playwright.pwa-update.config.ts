@@ -22,7 +22,8 @@ export default defineConfig({
     video: 'retain-on-failure'
   },
   webServer: {
-    command: 'node e2e/start-pwa-update-preview.mjs',
+    // Playwright resolves this command from the config directory (`e2e`).
+    command: 'node start-pwa-update-preview.mjs',
     url: 'http://127.0.0.1:4174/__pwa_test__/state',
     reuseExistingServer: false,
     timeout: 120_000
