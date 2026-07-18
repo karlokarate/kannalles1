@@ -49,9 +49,10 @@ jobs:
           npm run check:workflow
           npm run check:browser-support
 
-      - name: Typecheck and run deterministic tests
+      - name: Typecheck, lint and run deterministic tests
         run: |
           npm run typecheck
+          npm run lint
           npm test
 
       - name: Enforce architecture and dead-code gates
