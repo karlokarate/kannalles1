@@ -5,7 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { resolveCatalogUnitRuntime } from '../src/app/catalogUnitRuntime';
 import { projectCatalogProductRow, type CatalogSqlRow } from '../src/lib/catalog/catalogProjection';
-import { calculateCatalogCarbohydrates, type RequestedUnit } from '../src/lib/resolution/catalogResolution';
+import {
+  calculateCatalogCarbohydrates,
+  catalogProductEligibility,
+  type RequestedUnit
+} from '../src/lib/resolution/catalogResolution';
 
 const CATALOG_PATH = fileURLToPath(new URL('../Catalog/kh-checker-dach-v1.sqlite', import.meta.url));
 const SAMPLE_PER_CLASS = 24;
@@ -42,6 +46,10 @@ function assertResolutionInvariants(
     expect(resolution.options[0]?.id, `${product.code} selected option must be ordered first`).toBe(resolution.selectedOptionId);
     expect(resolution.options.filter((option) => option.recommended), `${product.code} must have one recommendation`).toHaveLength(1);
   }
+}
+
+function calibratable(unit: RequestedUnit): boolean {
+  return unit === 'piece' || unit === 'bar' || unit === 'slice' || unit === 'portion';
 }
 
 describe('catalog unit runtime against the production SQLite catalog', () => {
@@ -89,7 +97,7 @@ describe('catalog unit runtime against the production SQLite catalog', () => {
     }
   });
 
-  it('does not prompt when structured smallest-unit or manufacturer-serving evidence is already available', () => {
+  it('uses only resolver-validated smallest-unit and manufacturer-serving evidence', () => {
     const database = new DatabaseSync(CATALOG_PATH, { readOnly: true });
     try {
       const provenProducts = rows(database, 'p.u IS NOT NULL').map(projectCatalogProductRow);
@@ -99,29 +107,68 @@ describe('catalog unit runtime against the production SQLite catalog', () => {
 
       for (const product of provenProducts) {
         const evidence = product.unitEvidence.provenSmallestUnit;
-        if (!evidence) throw new Error(`${product.code}: proven evidence expected`);
-        const request = { amount: 3, unit: evidence.unitKind as RequestedUnit, unitExplicit: true };
-        const state = resolveCatalogUnitRuntime(product, request, 'smart');
+        if (!evidence) throw new Error(`${product.code}: projected evidence expected`);
+        const requestedUnit = evidence.unitKind as RequestedUnit;
+        const state = resolveCatalogUnitRuntime(product, {
+          amount: 3,
+          unit: requestedUnit,
+          unitExplicit: true
+        }, 'smart');
         assertResolutionInvariants(product, state);
-        expect(state.prompt, `${product.code} already has ${evidence.unitKind} evidence`).toBeNull();
-        expect(state.resolution.options[0]).toMatchObject({
-          unit: evidence.unitKind,
-          baseValue: evidence.baseValue,
-          source: evidence.source
-        });
+        const accepted = state.resolution.options.find((option) =>
+          option.unit === evidence.unitKind
+          && option.baseValue === evidence.baseValue
+          && option.source === evidence.source
+        );
+
+        if (accepted) {
+          expect(state.prompt, `${product.code} has valid ${evidence.unitKind} evidence`).toBeNull();
+          expect(state.resolution.options[0]).toMatchObject({
+            unit: evidence.unitKind,
+            baseValue: evidence.baseValue,
+            source: evidence.source
+          });
+        } else {
+          expect(catalogProductEligibility(product).warnings, `${product.code} rejected evidence needs diagnostics`)
+            .toContain('invalid-unit-evidence-ignored');
+          expect(state.resolution.options.some((option) =>
+            option.source === evidence.source && option.baseValue === evidence.baseValue
+          ), `${product.code} rejected evidence must not remain selectable`).toBe(false);
+          if (calibratable(requestedUnit) && product.nutrition.basis === 'mass') {
+            expect(state.prompt, `${product.code} rejected evidence needs user calibration`).not.toBeNull();
+          } else {
+            expect(state.prompt, `${product.code} must not create an unsafe mass prompt`).toBeNull();
+          }
+        }
       }
 
       for (const product of servingProducts) {
         const serving = product.unitEvidence.manufacturerServing;
-        if (!serving) throw new Error(`${product.code}: serving evidence expected`);
-        const state = resolveCatalogUnitRuntime(product, { amount: 1, unit: 'portion', unitExplicit: true }, 'smart');
-        assertResolutionInvariants(product, state);
-        expect(state.prompt, `${product.code} already has manufacturer serving`).toBeNull();
-        expect(state.resolution.options[0]).toMatchObject({
+        if (!serving) throw new Error(`${product.code}: projected serving expected`);
+        const state = resolveCatalogUnitRuntime(product, {
+          amount: 1,
           unit: 'portion',
-          baseValue: serving.baseValue,
-          source: 'manufacturer_serving'
-        });
+          unitExplicit: true
+        }, 'smart');
+        assertResolutionInvariants(product, state);
+        const accepted = state.resolution.options.find((option) =>
+          option.unit === 'portion'
+          && option.baseValue === serving.baseValue
+          && option.source === 'manufacturer_serving'
+        );
+        if (accepted) {
+          expect(state.prompt, `${product.code} has valid manufacturer serving`).toBeNull();
+          expect(state.resolution.options[0]).toMatchObject({
+            unit: 'portion',
+            baseValue: serving.baseValue,
+            source: 'manufacturer_serving'
+          });
+        } else {
+          expect(catalogProductEligibility(product).warnings).toContain('invalid-serving-ignored');
+          expect(state.resolution.options.some((option) =>
+            option.source === 'manufacturer_serving' && option.baseValue === serving.baseValue
+          )).toBe(false);
+        }
       }
     } finally {
       database.close();
