@@ -1,3 +1,4 @@
+import { searchClinicCatalog } from '../lib/clinicCatalog';
 import type { RequestedUnit } from '../lib/resolution/catalogResolution';
 
 export interface ParsedCatalogQuery {
@@ -39,6 +40,10 @@ export function normalizeCatalogQuery(value: string): string {
   return value.normalize('NFKC').replace(/\s+/g, ' ').trim();
 }
 
+function canonicalProductName(value: string): string {
+  return normalizeCatalogQuery(value).toLocaleLowerCase('de-DE');
+}
+
 function protectDecimalCommas(value: string): string {
   return value.replace(/(\d),(?=\d)/g, `$1${DECIMAL_COMMA_SENTINEL}`);
 }
@@ -47,9 +52,22 @@ function restoreDecimalCommas(value: string): string {
   return value.replaceAll(DECIMAL_COMMA_SENTINEL, ',');
 }
 
+function isExactClinicProductInput(value: string): boolean {
+  const parsed = parseCatalogQuery(value);
+  if (!parsed || parsed.barcode) return false;
+  const query = canonicalProductName(parsed.catalogQuery);
+  return searchClinicCatalog(parsed.catalogQuery, 20)
+    .some((candidate) => canonicalProductName(candidate.displayName) === query);
+}
+
 export function parseProductList(rawInput: string): string[] {
   const normalized = normalizeCatalogQuery(rawInput);
   if (!normalized) return [];
+
+  // Connector words may be part of a verified institutional product name.
+  // An exact full-name hit is safer than splitting it into unrelated foods.
+  if (isExactClinicProductInput(normalized)) return [normalized];
+
   return protectDecimalCommas(normalized)
     .split(/\s*(?:[,;]|\b(?:mit|und|plus|sowie)\b)\s*/i)
     .map((part) => normalizeCatalogQuery(restoreDecimalCommas(part)))
