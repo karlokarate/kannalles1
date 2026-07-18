@@ -167,6 +167,33 @@ describe('PWA deployment update controller', () => {
     expect(controller.getSnapshot().phase).toBe('up-to-date');
   });
 
+  it('keeps an already downloaded update actionable offline without reopening a dismissed banner', async () => {
+    const env = environment({ isOnline: () => false });
+    const controller = createPwaUpdateController(env.value);
+    const registration = new FakeRegistration();
+    registration.waiting = new FakeWorker() as unknown as ServiceWorker;
+    const { applyUpdate } = attach(controller, registration);
+
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: 'update-available',
+      updatePromptVisible: true,
+      canApply: true
+    });
+    controller.dismissUpdate();
+    await controller.checkForUpdates(false);
+
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: 'update-available',
+      updatePromptVisible: false,
+      canApply: true
+    });
+    expect(controller.getSnapshot().message).toContain('offline aktiviert');
+    expect(env.fetch).not.toHaveBeenCalled();
+
+    await controller.applyUpdate();
+    expect(applyUpdate).toHaveBeenCalledTimes(1);
+  });
+
   it('shows a persistent user-controlled prompt when a waiting worker exists', async () => {
     const fetchMock = vi.fn<FetchFunction>(async (input) =>
       String(input).includes('app-update.json')
