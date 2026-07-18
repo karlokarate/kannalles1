@@ -49,10 +49,26 @@ jobs:
           npm run check:workflow
           npm run check:browser-support
 
-      - name: Typecheck and run deterministic tests
+      - name: Typecheck application
+        run: npm run typecheck
+
+      - name: Lint browser and test sources
+        shell: bash
         run: |
-          npm run typecheck
-          npm test
+          set -o pipefail
+          npm run lint 2>&1 | tee lint-output.log
+
+      - name: Upload lint diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
+        with:
+          name: lint-output
+          path: lint-output.log
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Run deterministic and contract tests
+        run: npm test
 
       - name: Enforce architecture and dead-code gates
         run: |

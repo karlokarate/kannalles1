@@ -1,8 +1,12 @@
 import { useEffect, useRef } from 'react';
 import type { CatalogSearchHit } from '../lib/catalog/catalogDomain';
 import { catalogProductEligibility } from '../lib/resolution/catalogResolution';
-import { clinicDefaultRequest, isClinicCatalogProduct } from '../lib/clinicCatalog';
+import { isClinicCatalogProduct } from '../lib/clinicCatalog';
 import { isGenericCatalogProduct } from '../lib/genericFoods';
+import {
+  defaultClinicCatalogUnitRequest,
+  normalizeCatalogUnitRequest
+} from './catalogUnitRuntime';
 import {
   loadMatchingFavoriteHits,
   prioritizeFavoriteHits,
@@ -48,11 +52,13 @@ export function useFavoriteSearchController() {
       if (isGenericCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) {
         base.setRequest({ amount: 200, unit: 'g', unitExplicit: true });
       } else if (isClinicCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) {
-        base.setRequest(clinicDefaultRequest(preferred));
+        base.setRequest(defaultClinicCatalogUnitRequest(preferred));
       } else {
-        base.setRequest(parsed.unit === 'kg'
-          ? { amount: parsed.amount * 1_000, unit: 'g', unitExplicit: true }
-          : { amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit });
+        base.setRequest(normalizeCatalogUnitRequest({
+          amount: parsed.amount,
+          unit: parsed.unit,
+          unitExplicit: parsed.unitExplicit
+        }));
       }
 
       base.dispatch({
@@ -69,12 +75,14 @@ export function useFavoriteSearchController() {
 
     return () => controller.abort();
   }, [
+    base.dispatch,
     base.favorites,
     base.search.candidates,
     base.search.phase,
     base.search.query,
     base.search.selectedProduct?.productId,
     base.searchPage,
+    base.setRequest,
     base.settings.clinicMode
   ]);
 

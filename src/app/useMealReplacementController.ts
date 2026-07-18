@@ -61,7 +61,7 @@ export function useMealReplacementController() {
     if (!replacingMealItem || !base.product) return;
     const next = replacementRequest(replacingMealItem, base.product);
     base.setRequest((current) => sameRequest(current, next) ? current : next);
-  }, [base.product?.productId, replacingMealItemId]);
+  }, [base.product, base.setRequest, replacingMealItem]);
 
   useEffect(() => {
     if (!pendingCommit) return;
