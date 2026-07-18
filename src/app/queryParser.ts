@@ -27,6 +27,8 @@ const SPOKEN_AMOUNTS: Readonly<Record<string, number>> = {
   sieben: 7, acht: 8, neun: 9, zehn: 10, elf: 11, zwölf: 12, zwoelf: 12
 };
 
+const DECIMAL_COMMA_SENTINEL = '\uE000';
+
 function localizedNumber(value: string): number | null {
   const normalized = value.replace(/\s/g, '').replace(',', '.');
   const parsed = Number(normalized);
@@ -37,12 +39,20 @@ export function normalizeCatalogQuery(value: string): string {
   return value.normalize('NFKC').replace(/\s+/g, ' ').trim();
 }
 
+function protectDecimalCommas(value: string): string {
+  return value.replace(/(\d),(?=\d)/g, `$1${DECIMAL_COMMA_SENTINEL}`);
+}
+
+function restoreDecimalCommas(value: string): string {
+  return value.replaceAll(DECIMAL_COMMA_SENTINEL, ',');
+}
+
 export function parseProductList(rawInput: string): string[] {
   const normalized = normalizeCatalogQuery(rawInput);
   if (!normalized) return [];
-  return normalized
+  return protectDecimalCommas(normalized)
     .split(/\s*(?:[,;]|\b(?:mit|und|plus|sowie)\b)\s*/i)
-    .map((part) => normalizeCatalogQuery(part))
+    .map((part) => normalizeCatalogQuery(restoreDecimalCommas(part)))
     .filter(Boolean);
 }
 
