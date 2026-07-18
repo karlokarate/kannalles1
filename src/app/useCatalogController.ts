@@ -2,24 +2,31 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import type { CatalogDiagnostics, CatalogProduct, CatalogSearchHit, CatalogStatus } from '../lib/catalog/catalogDomain';
 import { catalogDiagnostics, toCatalogFailure } from '../lib/catalog/catalogErrors';
 import { cancelOfflineCatalogRequests, getOfflineCatalogProduct, initializeOfflineCatalog, searchOfflineCatalog } from '../lib/catalog/catalogClient';
-import { calculateCatalogCarbohydrates, catalogProductEligibility, resolveCatalogUnits } from '../lib/resolution/catalogResolution';
+import { calculateCatalogCarbohydrates, catalogProductEligibility } from '../lib/resolution/catalogResolution';
 import type { CatalogUnitRequest, ResolvedUnitOption } from '../lib/resolution/catalogResolution';
-import { createCatalogCalibration, deriveCatalogCalibration, toMatchingUnitCalibration } from '../lib/resolution/catalogCalibration';
-import type { CatalogCalibrationIdentity, CatalogCalibrationUnit } from '../lib/resolution/catalogCalibration';
+import { createCatalogCalibration, deriveCatalogCalibration } from '../lib/resolution/catalogCalibration';
+import type { CatalogCalibrationUnit } from '../lib/resolution/catalogCalibration';
 import { catalogSearchReducer, createCatalogSearchState } from '../lib/searchState';
 import { loadOfflineSettings, saveOfflineSettings } from '../lib/settings';
 import type { OfflineAppSettings } from '../lib/settings';
-import { clearAllUserData, clearHistoryEntries, clearSearchSession, createLocalId, deleteMealCalculation, findMatchingCatalogCalibrations, getUserDataCounts, importHistoryData, isFavoriteProduct, listCatalogProductPhotos, listFavoriteProducts, listHistoryEntries, listMealCalculations, loadSearchSession, saveCatalogCalibration, saveCatalogProductPhoto, saveHistoryEntry, saveMealCalculation, saveSearchSession, toggleFavoriteProduct } from '../lib/userDataStore';
+import { clearAllUserData, clearHistoryEntries, clearSearchSession, createLocalId, deleteMealCalculation, getUserDataCounts, importHistoryData, isFavoriteProduct, listCatalogProductPhotos, listFavoriteProducts, listHistoryEntries, listMealCalculations, loadSearchSession, saveCatalogCalibration, saveCatalogProductPhoto, saveHistoryEntry, saveMealCalculation, saveSearchSession, toggleFavoriteProduct } from '../lib/userDataStore';
 import type { AppSection, CalculationHistoryEntry, CatalogProductPhoto, FavoriteProduct, SavedMealCalculation, UserDataCounts } from '../lib/userDataStore';
 import { deleteManualProduct, listManualProducts, saveManualProduct as persistManualProduct } from '../lib/userDataStore';
 import type { ManualProduct } from '../lib/userDataStore';
 import { asGenericSearchHit, genericCookedProductForQuery, genericProductByCode, isGenericCatalogProduct } from '../lib/genericFoods';
-import { clinicCatalogProducts, clinicDefaultRequest, clinicProductByCode, directClinicResolution, isClinicCatalogProduct, searchClinicCatalog } from '../lib/clinicCatalog';
+import { clinicCatalogProducts, clinicProductByCode, isClinicCatalogProduct, searchClinicCatalog } from '../lib/clinicCatalog';
 import { resizeManualProductImage } from '../lib/manualProductImage';
 import { isAppleMobileSpeechClient, speechRecognitionErrorMessage, startSpeechRecognitionSafely, unavailableSpeechMessage } from '../lib/speech';
 import { createTransferFile, parseTransferFile, serializeTransferFile } from '../lib/dataTransfer';
 import { createMealCalculationItem, totalMealCarbohydrates, updateMealCalculationItem } from '../lib/mealCalculation';
 import type { MealCalculationItem } from '../lib/mealCalculation';
+import {
+  catalogCalibrationForUnit,
+  catalogCalibrationIdentity,
+  defaultClinicCatalogUnitRequest,
+  normalizeCatalogUnitRequest,
+  resolveCatalogUnitRuntime
+} from './catalogUnitRuntime';
 import { inferredCalibrationUnit, selectDefaultCatalogCandidate } from './catalogViewModel';
 import { parseCatalogQuery, parseProductList } from './queryParser';
 
@@ -40,24 +47,6 @@ export interface ManualState { id: string | null; label: string; carbohydratesPe
 const INITIAL_MANUAL: ManualState = { id: null, label: '', carbohydratesPer100: '', amount: '100', basis: 'mass', imageDataUrl: null };
 
 function readNumber(value: string): number | null { const n = Number(value.replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : null; }
-function pickerRequest(request: CatalogUnitRequest): CatalogUnitRequest {
-  return request.unit === 'kg' ? { amount: request.amount * 1_000, unit: 'g', unitExplicit: true } : request;
-}
-function identity(product: CatalogProduct): CatalogCalibrationIdentity { return { catalogProductId: product.productId, barcode: /^\d{8,14}$/.test(product.code) ? product.code : null, canonicalName: product.displayName, brandCanonical: product.brand, genericFoodKey: null }; }
-const CALIBRATION_UNITS: readonly CatalogCalibrationUnit[] = ['piece', 'bar', 'slice', 'portion'];
-function productCalibrations(product: CatalogProduct) { return CALIBRATION_UNITS.flatMap((unit) => findMatchingCatalogCalibrations(identity(product), unit, false)); }
-function resolveProductUnits(product: CatalogProduct, request: CatalogUnitRequest) {
-  if (isClinicCatalogProduct(product)) {
-    const direct = directClinicResolution(product);
-    if (direct) return direct;
-  }
-  const matches = isGenericCatalogProduct(product) || (isClinicCatalogProduct(product) && product.clinic.directCarbohydratesPerUnit !== null) ? [] : productCalibrations(product).map(toMatchingUnitCalibration);
-  return resolveCatalogUnits(product, request, matches);
-}
-function defaultClinicRequest(product: Parameters<typeof clinicDefaultRequest>[0]): CatalogUnitRequest {
-  const saved = productCalibrations(product)[0];
-  return saved ? { amount: 1, unit: saved.unit, unitExplicit: false } : clinicDefaultRequest(product);
-}
 function diagnostic(error: unknown, operation: 'initialize' | 'search' | 'product_lookup', message: string): CatalogDiagnostics { return catalogDiagnostics(error) ?? toCatalogFailure(error, 'CATALOG_QUERY_FAILED', message, { operation }).diagnostics; }
 function firstInstall(status: CatalogStatus): boolean { if (status.state !== 'ready' || !status.catalogVersion || typeof window === 'undefined') return false; try { const previous = localStorage.getItem(VERSION_MARKER); localStorage.setItem(VERSION_MARKER, status.catalogVersion); return previous !== status.catalogVersion; } catch { return false; } }
 function savedMealFromItems(id: string, items: readonly MealCalculationItem[], createdAt = new Date().toISOString()): SavedMealCalculation {
@@ -123,7 +112,7 @@ export function useCatalogController() {
     const session = settings.restoreLastSession ? loadSearchSession() : null;
     if (!session) return;
     setQuery(session.query); setSection(session.activeSection); setManualMode(session.manualMode);
-    setRequest(pickerRequest({ amount: session.amount, unit: session.unit ?? 'g', unitExplicit: session.unit !== null }));
+    setRequest(normalizeCatalogUnitRequest({ amount: session.amount, unit: session.unit ?? 'g', unitExplicit: session.unit !== null }));
     if (session.selectedProductCode) {
       const local = genericProductByCode(session.selectedProductCode) ?? clinicProductByCode(session.selectedProductCode);
       if (local) dispatch({ type: 'resolve', query: session.query, product: local });
@@ -138,7 +127,7 @@ export function useCatalogController() {
   const resolution = useMemo(() => {
     void revision;
     if (!product) return null;
-    return resolveProductUnits(product, request);
+    return resolveCatalogUnitRuntime(product, request).resolution;
   }, [product, request, revision]);
   useEffect(() => { setSelectedOptionId((current) => resolution && current && resolution.options.some((o) => o.id === current) ? current : resolution?.selectedOptionId ?? null); }, [resolution]);
   useEffect(() => { void product?.code; setProductPhotoMessage(null); }, [product?.code]);
@@ -169,15 +158,15 @@ export function useCatalogController() {
       const flags = hits.map((hit) => catalogProductEligibility(hit).eligible);
       const preferred = selectDefaultCatalogCandidate(hits, parsed.catalogQuery, flags);
       if (preferred) {
-        if (isClinicCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) setRequest(defaultClinicRequest(preferred));
-        else setRequest(pickerRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit }));
+        if (isClinicCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) setRequest(defaultClinicCatalogUnitRequest(preferred));
+        else setRequest(normalizeCatalogUnitRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit }));
         dispatch({ type: 'resolve', query: parsed.catalogQuery, product: preferred, candidates: hits });
       } else dispatch({ type: 'show-choice', query: parsed.catalogQuery, candidates: hits });
       return;
     }
     if (status.state !== 'ready') { dispatch({ type: 'validation', message: 'Der lokale Katalog ist noch nicht bereit. Erneutes Laden ist sofort möglich.' }); return; }
     abortRef.current?.abort(); const controller = new AbortController(); abortRef.current = controller;
-    setRequest(pickerRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit })); setSelectedOptionId(null); dispatch({ type: 'start', query: parsed.catalogQuery });
+    setRequest(normalizeCatalogUnitRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit })); setSelectedOptionId(null); dispatch({ type: 'start', query: parsed.catalogQuery });
     try {
       if (parsed.barcode) {
         const value = await getOfflineCatalogProduct(parsed.barcode, controller.signal);
@@ -201,7 +190,7 @@ export function useCatalogController() {
       const preferred = selectDefaultCatalogCandidate(hits, parsed.catalogQuery, flags);
       if (preferred) {
         if (isGenericCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) setRequest({ amount: 200, unit: 'g', unitExplicit: true });
-        else if (isClinicCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) setRequest(defaultClinicRequest(preferred));
+        else if (isClinicCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) setRequest(defaultClinicCatalogUnitRequest(preferred));
         dispatch({ type: 'resolve', query: parsed.catalogQuery, product: preferred, candidates: hits });
       }
       else dispatch({ type: 'show-choice', query: parsed.catalogQuery, candidates: hits });
@@ -210,13 +199,13 @@ export function useCatalogController() {
     } finally { if (abortRef.current === controller) abortRef.current = null; }
   }, [settings.clinicMode, settings.searchResultLimit, status.state]);
 
-  const selectCandidate = (hit: CatalogSearchHit) => { if (!catalogProductEligibility(hit).eligible) dispatch({ type: 'validation', message: isClinicCatalogProduct(hit) ? 'Für diesen Klinikdatensatz ist ausdrücklich kein berechenbarer KH-Wert hinterlegt.' : 'Dieser Katalogeintrag ist nicht sicher berechenbar.' }); else { if (isClinicCatalogProduct(hit)) setRequest(defaultClinicRequest(hit)); dispatch({ type: 'resolve', query: search.query, product: hit }); } };
+  const selectCandidate = (hit: CatalogSearchHit) => { if (!catalogProductEligibility(hit).eligible) dispatch({ type: 'validation', message: isClinicCatalogProduct(hit) ? 'Für diesen Klinikdatensatz ist ausdrücklich kein berechenbarer KH-Wert hinterlegt.' : 'Dieser Katalogeintrag ist nicht sicher berechenbar.' }); else { if (isClinicCatalogProduct(hit)) setRequest(defaultClinicCatalogUnitRequest(hit)); dispatch({ type: 'resolve', query: search.query, product: hit }); } };
   const changeSearchPage = (page: number) => { if (page < 0 || (page > searchPage && !searchHasNext)) return; void executeSearch(query, page); };
   const selectUnit = (id: string) => { const option = resolution?.options.find((o) => o.id === id); if (!option) return; setRequest((r) => ({ ...r, unit: option.unit, unitExplicit: true })); setSelectedOptionId(id); setCalibrationMessage(null); };
   useEffect(() => {
     if (!product || isGenericCatalogProduct(product) || (isClinicCatalogProduct(product) && product.clinic.directCarbohydratesPerUnit !== null)) return;
     const unit = inferredCalibrationUnit(product);
-    const saved = findMatchingCatalogCalibrations(identity(product), unit, false)[0];
+    const saved = catalogCalibrationForUnit(product, unit);
     setCalibrationUnit(unit);
     setCalibrationCount(saved ? String(saved.measurement.measuredCount) : '10');
     setCalibrationWeight(saved ? String(saved.measurement.measuredTotalWeightG) : '');
@@ -228,11 +217,11 @@ export function useCatalogController() {
     const measuredCount = Math.trunc(readNumber(calibrationCount) ?? 0);
     const weight = readNumber(calibrationWeight);
     if (!weight || measuredCount < 1) return;
-    const existing = findMatchingCatalogCalibrations(identity(product), calibrationUnit, false)[0];
+    const existing = catalogCalibrationForUnit(product, calibrationUnit);
     if (existing && existing.measurement.measuredCount === measuredCount && existing.measurement.measuredTotalWeightG === weight) return;
     setCalibrationMessage('Wird automatisch gespeichert …');
     const timer = window.setTimeout(() => {
-      const record = createCatalogCalibration({ calibrationId: createLocalId('cal'), scope: 'catalog-product', identity: identity(product), unit: calibrationUnit, measuredCount, measuredTotalWeightG: weight, smallestEdibleUnit: calibrationUnit !== 'portion', now: new Date().toISOString() });
+      const record = createCatalogCalibration({ calibrationId: createLocalId('cal'), scope: 'catalog-product', identity: catalogCalibrationIdentity(product), unit: calibrationUnit, measuredCount, measuredTotalWeightG: weight, smallestEdibleUnit: calibrationUnit !== 'portion', now: new Date().toISOString() });
       if (!record || !saveCatalogCalibration(record)) { setCalibrationMessage('Die Messung konnte nicht gespeichert werden.'); return; }
       setRequest({ amount: 1, unit: calibrationUnit, unitExplicit: false });
       setSelectedOptionId(`${calibrationUnit}:user_calibration:${String(calibrationPreview.unitWeightG)}`);
@@ -245,7 +234,7 @@ export function useCatalogController() {
   const changeCalibrationUnit = (unit: CatalogCalibrationUnit) => {
     setCalibrationUnit(unit);
     if (!product) return;
-    const saved = findMatchingCatalogCalibrations(identity(product), unit, false)[0];
+    const saved = catalogCalibrationForUnit(product, unit);
     setCalibrationCount(saved ? String(saved.measurement.measuredCount) : '10');
     setCalibrationWeight(saved ? String(saved.measurement.measuredTotalWeightG) : '');
     setCalibrationMessage(saved ? 'Persönliche Einheit geladen.' : null);
@@ -280,10 +269,10 @@ export function useCatalogController() {
         let item: MealCalculationItem | null = null;
         for (const candidate of candidates) {
           if (!catalogProductEligibility(candidate).eligible) continue;
-          let nextRequest = pickerRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit });
+          let nextRequest = normalizeCatalogUnitRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit });
           if (isGenericCatalogProduct(candidate) && !parsed.amountExplicit && !parsed.unitExplicit) nextRequest = { amount: 200, unit: 'g', unitExplicit: true };
-          else if (isClinicCatalogProduct(candidate) && !parsed.amountExplicit && !parsed.unitExplicit) nextRequest = defaultClinicRequest(candidate);
-          const nextResolution = resolveProductUnits(candidate, nextRequest);
+          else if (isClinicCatalogProduct(candidate) && !parsed.amountExplicit && !parsed.unitExplicit) nextRequest = defaultClinicCatalogUnitRequest(candidate);
+          const nextResolution = resolveCatalogUnitRuntime(candidate, nextRequest).resolution;
           item = createMealCalculationItem(createLocalId('meal'), candidate, nextRequest, nextResolution, nextResolution.selectedOptionId);
           if (item) break;
         }
@@ -454,7 +443,7 @@ export function useCatalogController() {
       const productValue = genericProductByCode(line.productCode) ?? clinicProductByCode(line.productCode) ?? await getOfflineCatalogProduct(line.productCode).catch(() => null);
       if (!productValue) return null;
       const savedRequest: CatalogUnitRequest = { amount: line.amount, unit: line.unit, unitExplicit: true };
-      const nextResolution = resolveProductUnits(productValue, savedRequest);
+      const nextResolution = resolveCatalogUnitRuntime(productValue, savedRequest).resolution;
       const selected = nextResolution.options.find((option) => option.id === line.selectedOptionId)
         ?? nextResolution.options.filter((option) => option.unit === line.unit && option.baseValue !== null).sort((a, b) => Math.abs((a.baseValue ?? 0) - line.unitBaseValue) - Math.abs((b.baseValue ?? 0) - line.unitBaseValue))[0]
         ?? null;
