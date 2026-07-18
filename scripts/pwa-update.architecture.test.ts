@@ -42,6 +42,21 @@ describe('PWA deployment update architecture', () => {
     expect(runtime).toContain('updatePromptVisible: true');
   });
 
+  it('activates the exact waiting worker and reloads only after controller change', () => {
+    expect(pwa).toContain('registration.waiting');
+    expect(pwa).toContain("waiting.postMessage({ type: 'SKIP_WAITING' })");
+    expect(pwa).toContain("navigator.serviceWorker.addEventListener('controllerchange'");
+    expect(pwa).toContain('window.location.reload()');
+    expect(pwa.indexOf("waiting.postMessage({ type: 'SKIP_WAITING' })"))
+      .toBeGreaterThan(pwa.indexOf("navigator.serviceWorker.addEventListener('controllerchange'"));
+  });
+
+  it('keeps a locally prepared update actionable while offline', () => {
+    expect(runtime).toContain('if (bridge.registration.waiting)');
+    expect(runtime).toContain('kann auch offline aktiviert werden');
+    expect(runtime).toContain('preserveWaitingUpdate');
+  });
+
   it('keeps deployment metadata outside the app-shell precache', () => {
     expect(vite).toContain("globIgnores: ['catalog/**', 'app-update.json']");
     expect(preparePublic).toContain("contract: 'kh-checker-app-update'");
