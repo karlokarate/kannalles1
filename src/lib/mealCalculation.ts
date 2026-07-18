@@ -6,6 +6,7 @@ import {
   type CatalogUnitRequest,
   type CatalogUnitResolution
 } from './resolution/catalogResolution';
+import { normalizeCatalogUnitRequest } from './resolution/catalogUnitRequest';
 
 export interface MealCalculationItem {
   id: string;
@@ -24,10 +25,11 @@ export function createMealCalculationItem(
   selectedOptionId: string | null,
   smartUnitPrompt: SmartUnitPrompt | null = null
 ): MealCalculationItem | null {
+  const normalizedRequest = normalizeCatalogUnitRequest(request);
   const effectiveResolution = { ...resolution, selectedOptionId };
-  const calculation = calculateCatalogCarbohydrates(product, request, effectiveResolution);
+  const calculation = calculateCatalogCarbohydrates(product, normalizedRequest, effectiveResolution);
   if ((calculation.status !== 'calculated' || calculation.carbohydratesG === null) && smartUnitPrompt === null) return null;
-  return { id, product, request: { ...request }, resolution: effectiveResolution, calculation, smartUnitPrompt };
+  return { id, product, request: { ...normalizedRequest }, resolution: effectiveResolution, calculation, smartUnitPrompt };
 }
 
 export function updateMealCalculationItem(

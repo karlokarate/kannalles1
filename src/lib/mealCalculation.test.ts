@@ -36,6 +36,23 @@ describe('meal calculation', () => {
     expect(totalMealCarbohydrates([bread, changed])).toBe(70);
   });
 
+  it('normalizes legacy kilogram meal requests before calculation and storage', () => {
+    const item = createMealCalculationItem(
+      'legacy-kg',
+      product,
+      { amount: 0.5, unit: 'kg', unitExplicit: true },
+      resolution,
+      'gram'
+    );
+    expect(item?.request).toEqual({ amount: 500, unit: 'g', unitExplicit: true });
+    expect(item?.calculation).toMatchObject({
+      amount: 500,
+      unit: 'g',
+      totalMassG: 500,
+      carbohydratesG: 200
+    });
+  });
+
   it('does not create an item from a missing unit value', () => {
     const unresolved = { ...resolution, selectedOptionId: null, status: 'needs_unit_calibration' as const };
     expect(createMealCalculationItem('missing', product, { amount: 1, unit: 'slice', unitExplicit: true }, unresolved, null)).toBeNull();

@@ -62,6 +62,41 @@ describe('Lumen hard-cutover state', () => {
     expect(parseCatalogQuery('400 ml Sprite')).toMatchObject({ amount: 400, unit: 'ml', catalogQuery: 'Sprite' });
   });
 
+  it('preserves German decimal commas while still accepting list commas', () => {
+    expect(parseProductList('0,5 kg Nutella')).toEqual(['0,5 kg Nutella']);
+    expect(parseCatalogQuery('0,5 kg Nutella')).toMatchObject({
+      amount: 0.5,
+      amountExplicit: true,
+      unit: 'kg',
+      unitExplicit: true,
+      catalogQuery: 'Nutella'
+    });
+    expect(parseProductList('0,5 kg Nutella, 200 ml Milch')).toEqual([
+      '0,5 kg Nutella',
+      '200 ml Milch'
+    ]);
+    expect(parseProductList('1,25 Portionen Nudeln; 0,33 l Cola')).toEqual([
+      '1,25 Portionen Nudeln',
+      '0,33 l Cola'
+    ]);
+  });
+
+  it('protects exact clinic product spans containing connector words', () => {
+    expect(parseProductList('100 g Pfannkuchen mit Quark')).toEqual([
+      '100 g Pfannkuchen mit Quark'
+    ]);
+    expect(parseCatalogQuery('100 g Pfannkuchen mit Quark')).toMatchObject({
+      amount: 100,
+      unit: 'g',
+      unitExplicit: true,
+      catalogQuery: 'Pfannkuchen mit Quark'
+    });
+    expect(parseProductList('Pfannkuchen mit Quark und eine Portion Reis')).toEqual([
+      'Pfannkuchen mit Quark',
+      'eine Portion Reis'
+    ]);
+  });
+
   it('uses the frozen structured catalog evidence directly at the resolver boundary', () => {
     expect(hit.unitEvidence.provenSmallestUnit).toEqual({
       baseValue: 21.5,
@@ -117,14 +152,14 @@ describe('Lumen hard-cutover state', () => {
   });
 
   it('validates reusable multi-product calculations at the persistence boundary', () => {
-    const meal: SavedMealCalculation = {
+    const snapshot: SavedMealCalculation = {
       schemaVersion: 1,
       id: 'meal-1',
       createdAt: '2026-07-14T06:00:00.000Z',
       items: [{ id: 'line-1', productCode: hit.code, productName: hit.displayName, amount: 2, unit: 'bar', selectedOptionId: 'bar:evidence', unitBaseValue: 21.5, carbohydratesG: 21.285 }],
       totalCarbohydratesG: 21.285
     };
-    expect(decodeMealCalculation(encodeMealCalculation(meal))).toEqual(meal);
+    expect(decodeMealCalculation(encodeMealCalculation(snapshot))).toEqual(snapshot);
     expect(decodeMealCalculation('{"schemaVersion":1,"items":[]}')).toBeNull();
   });
 });

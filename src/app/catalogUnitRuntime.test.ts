@@ -1,7 +1,31 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CatalogProduct } from '../lib/catalog/catalogDomain';
+import type { ClinicCatalogProduct } from '../lib/clinicCatalog';
+import { genericCookedProductForQuery } from '../lib/genericFoods';
 import {
+  catalogCalibrationLookupKeys,
+  createCatalogCalibration
+} from '../lib/resolution/catalogCalibration';
+import type {
+  CatalogCalibrationIdentity,
+  CatalogCalibrationUnit,
+  CatalogUnitCalibration
+} from '../lib/resolution/catalogCalibration';
+import { calculateCatalogCarbohydrates } from '../lib/resolution/catalogResolution';
+import type { CatalogUnitRequest } from '../lib/resolution/catalogResolution';
+
+const storeMocks = vi.hoisted(() => ({
+  findMatchingCatalogCalibrations: vi.fn()
+}));
+
+vi.mock('../lib/userDataStore', () => ({
+  findMatchingCatalogCalibrations: storeMocks.findMatchingCatalogCalibrations
+}));
+
+import {
+  catalogCalibrationForUnit,
   catalogCalibrationIdentity,
+  defaultClinicCatalogUnitRequest,
   normalizeCatalogUnitRequest,
   resolveCatalogUnitRuntime
 } from './catalogUnitRuntime';
@@ -26,21 +50,181 @@ function product(overrides: Partial<CatalogProduct> = {}): CatalogProduct {
   };
 }
 
-describe('catalog unit runtime', () => {
-  it('normalizes kilograms without changing explicit counted units', () => {
-    expect(normalizeCatalogUnitRequest({ amount: 1.5, unit: 'kg', unitExplicit: true }))
-      .toEqual({ amount: 1_500, unit: 'g', unitExplicit: true });
-    const piece = { amount: 0.5, unit: 'piece' as const, unitExplicit: true };
-    expect(normalizeCatalogUnitRequest(piece)).toBe(piece);
+function clinicProduct(input: {
+  directCarbohydratesPerUnit?: number | null;
+  referenceAmount?: number;
+  referenceUnit?: 'g' | 'ml' | 'piece';
+} = {}): ClinicCatalogProduct {
+  const direct = input.directCarbohydratesPerUnit === undefined ? 19 : input.directCarbohydratesPerUnit;
+  const referenceUnit = input.referenceUnit ?? (direct === null ? 'g' : 'piece');
+  const referenceAmount = input.referenceAmount ?? (referenceUnit === 'piece' ? 1 : 100);
+  const basis = referenceUnit === 'ml' ? 'volume' : 'mass';
+  return {
+    ...product({
+      productId: -2_000_001,
+      code: 'clinic:test-product',
+      displayName: 'Klinik-Testprodukt',
+      brand: 'Klinikum Leverkusen',
+      nutrition: { carbohydratesPer100: direct ?? 66, basis, source: 'prepared' },
+      unitEvidence: direct === null
+        ? {
+            manufacturerServing: null,
+            productQuantity: null,
+            provenSmallestUnit: null,
+            defaultUnitKind: basis
+          }
+        : {
+            manufacturerServing: null,
+            productQuantity: null,
+            provenSmallestUnit: {
+              unitKind: 'piece',
+              baseValue: 100,
+              basis: 'mass',
+              source: 'explicit_serving_count',
+              smallestEdibleUnit: true
+            },
+            defaultUnitKind: 'piece'
+          }
+    }),
+    clinic: {
+      source: 'klinikum-leverkusen',
+      categoryId: 'test',
+      referenceAmount,
+      referenceUnit,
+      directCarbohydratesPerUnit: direct,
+      valueStatus: 'numeric',
+      reviewRequired: false
+    }
+  };
+}
+
+function request(unit: CatalogUnitRequest['unit'], unitExplicit: boolean, amount = 1): CatalogUnitRequest {
+  return { amount, unit, unitExplicit };
+}
+
+function calibration(input: {
+  product: CatalogProduct;
+  unit: CatalogCalibrationUnit;
+  scope?: CatalogUnitCalibration['scope'];
+  measuredCount?: number;
+  measuredTotalWeightG?: number;
+  updatedAt?: string;
+  smartIdentity?: boolean;
+}): CatalogUnitCalibration {
+  const timestamp = input.updatedAt ?? '2026-07-18T10:00:00.000Z';
+  const created = createCatalogCalibration({
+    calibrationId: `${input.scope ?? 'catalog-product'}-${input.unit}-${timestamp}`,
+    scope: input.scope ?? 'catalog-product',
+    identity: catalogCalibrationIdentity(input.product, input.smartIdentity ? 'smart' : 'standard'),
+    unit: input.unit,
+    measuredCount: input.measuredCount ?? 1,
+    measuredTotalWeightG: input.measuredTotalWeightG ?? 25,
+    smallestEdibleUnit: input.unit !== 'portion',
+    now: timestamp
+  });
+  if (!created) throw new Error('valid test calibration expected');
+  return created;
+}
+
+function useCalibrations(records: readonly CatalogUnitCalibration[]): void {
+  storeMocks.findMatchingCatalogCalibrations.mockImplementation((
+    identity: CatalogCalibrationIdentity,
+    unit: CatalogCalibrationUnit,
+    allowGenericScope = false
+  ): CatalogUnitCalibration[] => {
+    const keys = catalogCalibrationLookupKeys(identity, unit, allowGenericScope);
+    const keyOrder = new Map(keys.map((key, index) => [key, index]));
+    return records
+      .filter((record) => record.active && keyOrder.has(record.scopeKey))
+      .sort((left, right) => {
+        const scope = (keyOrder.get(left.scopeKey) ?? 99) - (keyOrder.get(right.scopeKey) ?? 99);
+        if (scope !== 0) return scope;
+        const sample = right.measurement.measuredCount - left.measurement.measuredCount;
+        return sample !== 0 ? sample : right.updatedAt.localeCompare(left.updatedAt);
+      });
+  });
+}
+
+beforeEach(() => {
+  storeMocks.findMatchingCatalogCalibrations.mockReset();
+  useCalibrations([]);
+});
+
+describe('normalizeCatalogUnitRequest', () => {
+  it('converts kilograms to canonical grams without rounding', () => {
+    expect(normalizeCatalogUnitRequest(request('kg', false, 0.333))).toEqual({
+      amount: 333,
+      unit: 'g',
+      unitExplicit: true
+    });
   });
 
-  it('adds generic calibration identity only in smart mode', () => {
+  it('returns every non-kilogram request unchanged', () => {
+    const counted = Object.freeze(request('piece', true, 0.5));
+    expect(normalizeCatalogUnitRequest(counted)).toBe(counted);
+  });
+});
+
+describe('catalogCalibrationIdentity', () => {
+  it('projects only valid numeric catalog codes as barcodes', () => {
+    expect(catalogCalibrationIdentity(product()).barcode).toBe('4008400322728');
+    expect(catalogCalibrationIdentity(product({ code: '12345678' })).barcode).toBe('12345678');
+    expect(catalogCalibrationIdentity(product({ code: '12345678901234' })).barcode).toBe('12345678901234');
+    expect(catalogCalibrationIdentity(product({ code: '1234567' })).barcode).toBeNull();
+    expect(catalogCalibrationIdentity(product({ code: 'ABC-12345678' })).barcode).toBeNull();
+  });
+
+  it('adds a generic key only for explicit smart scope', () => {
     const generic = product({ productId: -1, code: 'generic:pasta-cooked' });
     expect(catalogCalibrationIdentity(generic).genericFoodKey).toBeNull();
     expect(catalogCalibrationIdentity(generic, 'smart').genericFoodKey).toBe('pasta-cooked');
   });
+});
 
-  it('keeps manufacturer evidence authoritative in both controller modes', () => {
+describe('catalogCalibrationForUnit', () => {
+  it('returns the strongest matching concrete calibration for the requested unit', () => {
+    const concrete = product();
+    const exact = calibration({
+      product: concrete,
+      unit: 'bar',
+      scope: 'exact-product',
+      measuredCount: 20,
+      measuredTotalWeightG: 400
+    });
+    const catalog = calibration({
+      product: concrete,
+      unit: 'bar',
+      scope: 'catalog-product',
+      measuredTotalWeightG: 21
+    });
+    useCalibrations([exact, catalog]);
+    expect(catalogCalibrationForUnit(concrete, 'bar')).toMatchObject({
+      calibrationId: catalog.calibrationId,
+      scope: 'catalog-product'
+    });
+  });
+
+  it('blocks generic lookup in standard mode and permits it only in smart mode', () => {
+    const generic = product({ productId: -401032, code: 'generic:pasta-cooked', displayName: 'Nudeln, gekocht' });
+    const saved = calibration({
+      product: generic,
+      unit: 'portion',
+      scope: 'generic-food',
+      measuredTotalWeightG: 240,
+      smartIdentity: true
+    });
+    useCalibrations([saved]);
+    expect(catalogCalibrationForUnit(generic, 'portion')).toBeNull();
+    expect(storeMocks.findMatchingCatalogCalibrations).not.toHaveBeenCalled();
+    expect(catalogCalibrationForUnit(generic, 'portion', 'smart')).toMatchObject({
+      calibrationId: saved.calibrationId,
+      scope: 'generic-food'
+    });
+  });
+});
+
+describe('resolveCatalogUnitRuntime', () => {
+  it('keeps manufacturer evidence authoritative in standard and smart modes', () => {
     const serving = product({
       unitEvidence: {
         manufacturerServing: { baseValue: 15, basis: 'mass' },
@@ -49,16 +233,156 @@ describe('catalog unit runtime', () => {
         defaultUnitKind: 'portion'
       }
     });
-    const request = { amount: 1, unit: 'g' as const, unitExplicit: false };
-    const standard = resolveCatalogUnitRuntime(serving, request);
-    const smart = resolveCatalogUnitRuntime(serving, request, 'smart');
-
-    expect(standard.resolution.options.find((option) => option.recommended)).toMatchObject({
+    const standard = resolveCatalogUnitRuntime(serving, request('g', false));
+    const smart = resolveCatalogUnitRuntime(serving, request('g', false), 'smart');
+    expect(standard.resolution.options[0]).toMatchObject({
       unit: 'portion',
       baseValue: 15,
-      source: 'manufacturer_serving'
+      source: 'manufacturer_serving',
+      recommended: true
     });
     expect(smart.resolution.selectedOptionId).toBe(standard.resolution.selectedOptionId);
     expect(smart.prompt).toBeNull();
+  });
+
+  it('uses saved calibration before catalog evidence and recalculates current nutrition', () => {
+    const calibrated = product({
+      nutrition: { carbohydratesPer100: 48.5, basis: 'mass', source: 'as_sold' },
+      unitEvidence: {
+        manufacturerServing: { baseValue: 30, basis: 'mass' },
+        productQuantity: { baseValue: 120, basis: 'mass' },
+        provenSmallestUnit: null,
+        defaultUnitKind: 'portion'
+      }
+    });
+    useCalibrations([calibration({
+      product: calibrated,
+      unit: 'bar',
+      measuredCount: 10,
+      measuredTotalWeightG: 200
+    })]);
+    const state = resolveCatalogUnitRuntime(calibrated, request('g', false));
+    expect(state.resolution.options[0]).toMatchObject({
+      unit: 'bar',
+      baseValue: 20,
+      source: 'user_calibration'
+    });
+    expect(calculateCatalogCarbohydrates(calibrated, request('bar', false, 2), state.resolution).carbohydratesG)
+      .toBeCloseTo(19.4, 12);
+  });
+
+  it('never reuses another calibrated unit for an explicit request', () => {
+    const calibrated = product();
+    useCalibrations([calibration({ product: calibrated, unit: 'bar', measuredTotalWeightG: 20 })]);
+    const state = resolveCatalogUnitRuntime(calibrated, request('slice', true));
+    expect(state.resolution).toMatchObject({ status: 'needs_unit_calibration', reason: 'countable-weight-missing' });
+    expect(state.resolution.options[0]).toMatchObject({ unit: 'slice', baseValue: null, source: 'unresolved' });
+  });
+
+  it('creates and applies a smart prompt only for the exact explicit unresolved unit', () => {
+    const unresolved = product();
+    const standard = resolveCatalogUnitRuntime(unresolved, request('piece', true));
+    const smart = resolveCatalogUnitRuntime(unresolved, request('piece', true), 'smart');
+    const overridden = resolveCatalogUnitRuntime(unresolved, request('piece', true), 'smart', '25');
+    expect(standard.prompt).toBeNull();
+    expect(standard.resolution.status).toBe('needs_unit_calibration');
+    expect(smart.prompt).toMatchObject({ unit: 'piece', defaultValue: null, baseValueG: null });
+    expect(overridden.prompt).toMatchObject({ unit: 'piece', value: '25', baseValueG: 25 });
+    expect(overridden.resolution.options[0]).toMatchObject({ unit: 'piece', baseValue: 25, source: 'unresolved' });
+  });
+
+  it('uses built-in cooked-food portions only in smart mode', () => {
+    const noodles = genericCookedProductForQuery('Nudeln');
+    if (!noodles) throw new Error('generic noodles expected');
+    const standard = resolveCatalogUnitRuntime(noodles, request('portion', true));
+    const smart = resolveCatalogUnitRuntime(noodles, request('portion', true), 'smart');
+    expect(standard.resolution.status).toBe('needs_unit_calibration');
+    expect(standard.prompt).toBeNull();
+    expect(smart.prompt).toMatchObject({ unit: 'portion', defaultValue: 200, baseValueG: 200 });
+  });
+
+  it('keeps mass calibrations out of volume products', () => {
+    const drink = product({
+      code: 'drink',
+      nutrition: { carbohydratesPer100: 12, basis: 'volume', source: 'as_sold' },
+      unitEvidence: {
+        manufacturerServing: { baseValue: 250, basis: 'volume' },
+        productQuantity: { baseValue: 750, basis: 'volume' },
+        provenSmallestUnit: null,
+        defaultUnitKind: 'volume'
+      }
+    });
+    useCalibrations([calibration({ product: drink, unit: 'piece', measuredTotalWeightG: 20 })]);
+    const state = resolveCatalogUnitRuntime(drink, request('ml', true, 250));
+    expect(state.resolution.options.some((option) => option.source === 'user_calibration')).toBe(false);
+    expect(calculateCatalogCarbohydrates(drink, request('ml', true, 250), state.resolution))
+      .toMatchObject({ carbohydratesG: 30, totalMassG: null, totalVolumeMl: 250 });
+  });
+
+  it('normalizes kilograms before direct mass resolution', () => {
+    const state = resolveCatalogUnitRuntime(product(), request('kg', true, 0.5));
+    expect(state.resolution.options[0]).toMatchObject({ unit: 'g', source: 'direct_mass', baseValue: 1 });
+  });
+
+  it('calculates direct clinic piece values for implicit and explicit piece requests', () => {
+    const direct = clinicProduct();
+    for (const explicit of [false, true]) {
+      const pieceRequest = request('piece', explicit, 2);
+      const state = resolveCatalogUnitRuntime(direct, pieceRequest);
+      expect(state.resolution.options).toHaveLength(1);
+      expect(calculateCatalogCarbohydrates(direct, pieceRequest, state.resolution).carbohydratesG).toBe(38);
+    }
+  });
+
+  it('preserves explicit non-piece clinic requests and never multiplies them as pieces', () => {
+    const direct = clinicProduct();
+    const gramRequest = request('g', true, 100);
+    const state = resolveCatalogUnitRuntime(direct, gramRequest, 'smart');
+    expect(state.prompt).toBeNull();
+    expect(state.resolution).toMatchObject({ status: 'not_calculable', reason: 'requested-unit-unavailable' });
+    expect(state.resolution.options[0]).toMatchObject({ unit: 'g', baseValue: null, source: 'unresolved' });
+    expect(state.resolution.options[1]).toMatchObject({ unit: 'piece', baseValue: 100, recommended: false });
+    expect(calculateCatalogCarbohydrates(direct, gramRequest, state.resolution).carbohydratesG).toBeNull();
+    expect(storeMocks.findMatchingCatalogCalibrations).not.toHaveBeenCalled();
+  });
+});
+
+describe('defaultClinicCatalogUnitRequest', () => {
+  it('uses the institutional reference when no calibration exists', () => {
+    expect(defaultClinicCatalogUnitRequest(clinicProduct({
+      directCarbohydratesPerUnit: null,
+      referenceAmount: 100,
+      referenceUnit: 'g'
+    }))).toEqual({ amount: 100, unit: 'g', unitExplicit: false });
+  });
+
+  it('ignores stale calibrations for authoritative direct piece values', () => {
+    const direct = clinicProduct();
+    useCalibrations([calibration({ product: direct, unit: 'portion', measuredTotalWeightG: 50 })]);
+    expect(defaultClinicCatalogUnitRequest(direct)).toEqual({ amount: 1, unit: 'piece', unitExplicit: false });
+    expect(storeMocks.findMatchingCatalogCalibrations).not.toHaveBeenCalled();
+  });
+
+  it('selects the strongest saved calibration across units instead of array order', () => {
+    const clinic = clinicProduct({
+      directCarbohydratesPerUnit: null,
+      referenceAmount: 100,
+      referenceUnit: 'g'
+    });
+    const exactPiece = calibration({
+      product: clinic,
+      unit: 'piece',
+      scope: 'exact-product',
+      measuredCount: 20,
+      measuredTotalWeightG: 1_000
+    });
+    const catalogPortion = calibration({
+      product: clinic,
+      unit: 'portion',
+      scope: 'catalog-product',
+      measuredTotalWeightG: 80
+    });
+    useCalibrations([exactPiece, catalogPortion]);
+    expect(defaultClinicCatalogUnitRequest(clinic)).toEqual({ amount: 1, unit: 'portion', unitExplicit: false });
   });
 });

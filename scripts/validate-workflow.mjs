@@ -41,8 +41,9 @@ const specs = new Map([...sources].filter(([name]) => name.endsWith('.spec.ts'))
 const matrix = specs.get('browser-matrix.spec.ts');
 const quality = specs.get('app-quality.spec.ts');
 const catalog = specs.get('catalog-real.spec.ts');
+const runtime = specs.get('catalog-unit-runtime.spec.ts');
 const harness = sources.get('catalog-harness.ts');
-if (!matrix || !quality || !catalog || !harness) fail('Verpflichtende Sentinel-E2E-Dateien fehlen.');
+if (!matrix || !quality || !catalog || !runtime || !harness) fail('Verpflichtende Sentinel-E2E-Dateien fehlen.');
 
 const projectNames = ['chromium-desktop', 'chromium-android', 'firefox-desktop', 'webkit-iphone'];
 const supportedProjectNames = ['chromium-desktop', 'chromium-android', 'firefox-desktop'];
@@ -119,6 +120,14 @@ function validateTests() {
   }
   requireText(catalog, `page.route('**/catalog/manifest.json'`, 'Manifest-Korruptionsroute');
   requireText(catalog, 'page.route(`**/catalog/$' + '{CATALOG_DATABASE_FILENAME}`', 'SQLite-Korruptionsroute');
+  for (const fragment of [
+    '0,5 kg Nutella',
+    '100 g Pfannkuchen mit Quark',
+    'data-unit-resolution-status',
+    'user-calibration',
+    'data-default-value',
+    'eine Portion Reis'
+  ]) requireText(runtime, fragment, 'Unit-Runtime-E2E-Coverage');
 }
 
 function validateBrowserSupport() {
@@ -166,6 +175,8 @@ function validateBrowserSupport() {
 
   const architecture = String(packageJson.scripts?.['check:architecture'] ?? '');
   const knip = String(packageJson.scripts?.['check:knip'] ?? '');
+  const runtimeTests = String(packageJson.scripts?.['test:runtime'] ?? '');
+  const runtimeE2e = String(packageJson.scripts?.['test:e2e:runtime'] ?? '');
   if (packageJson.devDependencies?.['dependency-cruiser'] !== '18.1.0' ||
       !architecture.includes('depcruise') || !architecture.includes('dependency-cruiser.config.cjs')) {
     fail('dependency-cruiser ist nicht exakt gepinnt oder konfiguriert.');
@@ -174,6 +185,17 @@ function validateBrowserSupport() {
       !knip.includes('knip') || !knip.includes('knip.json') || !knip.includes('--strict')) {
     fail('Knip ist nicht exakt gepinnt oder strict.');
   }
+  for (const fragment of [
+    'src/app/catalogUnitRuntime.test.ts',
+    'src/lib/mealCalculation.test.ts',
+    'scripts/catalog-unit-runtime.architecture.test.ts',
+    'scripts/catalog-unit-runtime.catalog.test.ts'
+  ]) requireText(runtimeTests, fragment, 'Gezielte Unit-Runtime-Tests');
+  for (const fragment of [
+    'e2e/catalog-unit-runtime.spec.ts',
+    'e2e/smart-unit-prompts.spec.ts',
+    '--project=chromium-desktop'
+  ]) requireText(runtimeE2e, fragment, 'Gezielte Unit-Runtime-E2E-Tests');
 
   const evidence = validateEvidence();
   if (evidence.state === 'failed') fail(`Browser-Support ist als failed dokumentiert: ${support.currentEvidence.failureSummary}`);
@@ -223,10 +245,17 @@ if (workflow.concurrency?.group !== 'pages-$' + '{{ github.ref }}' || workflow.c
 if (workflow.env && Object.keys(workflow.env).length > 0) fail('Der Offline-Build darf keine Runtime-Umschaltvariablen besitzen.');
 const commands = (job) => (job?.steps ?? []).map((step) => String(step?.run ?? '')).join('\n');
 
-const qualityCommands = commands(workflow.jobs.quality);
+const qualityJob = workflow.jobs.quality;
+const nodeVersions = qualityJob?.strategy?.matrix?.['node-version'] ?? [];
+if (JSON.stringify(nodeVersions) !== JSON.stringify(['22.18.0', '24.18.0'])) fail(`Node-Runtime-Matrix weicht ab: ${JSON.stringify(nodeVersions)}`);
+if (qualityJob?.strategy?.['fail-fast'] !== false) fail('Node-Runtime-Matrix muss alle Varianten auch nach einem Fehler ausführen.');
+requireText(workflowText, 'node-version: $' + '{{ matrix.node-version }}', 'Node-Runtime-Matrix');
+const qualityCommands = commands(qualityJob);
 for (const command of ['npm ci --no-audit --no-fund', 'npm ci --prefix Catalog/runtime --no-audit --no-fund',
   'npm run check:catalog', 'npm run check:workflow', 'npm run check:browser-support', 'npm run typecheck',
-  'npm test', 'npm run check:architecture', 'npm run check:knip']) requireText(qualityCommands, command, 'Quality-Command');
+  'npm run lint', 'npm run test:runtime', 'npm test', 'npm run check:architecture', 'npm run check:knip']) {
+  requireText(qualityCommands, command, 'Quality-Command');
+}
 
 const build = workflow.jobs.build;
 if (build?.needs !== 'quality') fail('Build muss von quality abhängen.');
@@ -244,7 +273,9 @@ const browser = workflow.jobs['browser-e2e'];
 if (browser?.needs !== 'quality') fail('Browser-E2E muss von quality abhängen.');
 const browserCommands = commands(browser);
 for (const command of ['npm ci --no-audit --no-fund', 'npm ci --prefix Catalog/runtime --no-audit --no-fund',
-  'npm run test:e2e:install', 'npm run test:e2e']) requireText(browserCommands, command, 'Browser-E2E-Command');
+  'npm run test:e2e:install', 'npm run test:e2e:runtime', 'npm run test:e2e']) {
+  requireText(browserCommands, command, 'Browser-E2E-Command');
+}
 
 const deploy = workflow.jobs.deploy;
 if (deploy?.if !== `github.event_name != 'pull_request'`) fail('Deploy muss für PRs deaktiviert sein.');

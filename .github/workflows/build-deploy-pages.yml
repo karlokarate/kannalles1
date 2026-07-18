@@ -16,9 +16,13 @@ concurrency:
 
 jobs:
   quality:
-    name: Validate hard-cutover architecture
+    name: Validate architecture and runtime · Node ${{ matrix.node-version }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["22.18.0", "24.18.0"]
     permissions:
       contents: read
     steps:
@@ -28,10 +32,10 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Set up Node.js 24 LTS
+      - name: Set up Node.js runtime
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          node-version: "24.18.0"
+          node-version: ${{ matrix.node-version }}
           cache: npm
           cache-dependency-path: |
             package-lock.json
@@ -62,12 +66,27 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
         with:
-          name: lint-output
+          name: lint-output-node-${{ matrix.node-version }}
           path: lint-output.log
           if-no-files-found: ignore
           retention-days: 3
 
-      - name: Run deterministic and contract tests
+      - name: Run targeted catalog unit runtime tests
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:runtime 2>&1 | tee runtime-test-output.log
+
+      - name: Upload runtime diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
+        with:
+          name: runtime-test-output-node-${{ matrix.node-version }}
+          path: runtime-test-output.log
+          if-no-files-found: ignore
+          retention-days: 5
+
+      - name: Run complete deterministic and contract test suite
         run: npm test
 
       - name: Enforce architecture and dead-code gates
@@ -142,7 +161,7 @@ jobs:
     name: Prove real SQLite-WASM and OPFS journeys
     needs: quality
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
@@ -170,7 +189,10 @@ jobs:
       - name: Install Playwright browser engines
         run: npm run test:e2e:install
 
-      - name: Run real browser catalog proof
+      - name: Run targeted real unit runtime journeys
+        run: npm run test:e2e:runtime
+
+      - name: Run complete real browser catalog proof
         run: npm run test:e2e
 
       - name: Upload Playwright evidence on failure

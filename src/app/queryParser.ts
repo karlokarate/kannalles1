@@ -1,3 +1,4 @@
+import { clinicCatalogProducts } from '../lib/clinicCatalog';
 import type { RequestedUnit } from '../lib/resolution/catalogResolution';
 
 export interface ParsedCatalogQuery {
@@ -27,6 +28,15 @@ const SPOKEN_AMOUNTS: Readonly<Record<string, number>> = {
   sieben: 7, acht: 8, neun: 9, zehn: 10, elf: 11, zwölf: 12, zwoelf: 12
 };
 
+const DECIMAL_COMMA_SENTINEL = '\uE000';
+const PRODUCT_SENTINEL_START = '\uE100';
+const PRODUCT_SENTINEL_END = '\uE101';
+const CONNECTOR_WORD = /\b(?:mit|und|plus|sowie)\b/i;
+const CLINIC_CONNECTOR_PRODUCT_NAMES = clinicCatalogProducts()
+  .map((product) => product.displayName)
+  .filter((name) => CONNECTOR_WORD.test(name))
+  .sort((left, right) => right.length - left.length || left.localeCompare(right, 'de-DE'));
+
 function localizedNumber(value: string): number | null {
   const normalized = value.replace(/\s/g, '').replace(',', '.');
   const parsed = Number(normalized);
@@ -37,11 +47,59 @@ export function normalizeCatalogQuery(value: string): string {
   return value.normalize('NFKC').replace(/\s+/g, ' ').trim();
 }
 
+function protectDecimalCommas(value: string): string {
+  return value.replace(/(\d),(?=\d)/g, `$1${DECIMAL_COMMA_SENTINEL}`);
+}
+
+function restoreDecimalCommas(value: string): string {
+  return value.replaceAll(DECIMAL_COMMA_SENTINEL, ',');
+}
+
+function nameBoundary(value: string, index: number): boolean {
+  if (index < 0 || index >= value.length) return true;
+  return !/[\p{L}\p{N}]/u.test(value[index]);
+}
+
+function protectClinicProductSpans(value: string): { protectedValue: string; replacements: string[] } {
+  let protectedValue = value;
+  const replacements: string[] = [];
+
+  for (const productName of CLINIC_CONNECTOR_PRODUCT_NAMES) {
+    const needle = productName.toLocaleLowerCase('de-DE');
+    let searchFrom = 0;
+    while (searchFrom < protectedValue.length) {
+      const lower = protectedValue.toLocaleLowerCase('de-DE');
+      const index = lower.indexOf(needle, searchFrom);
+      if (index < 0) break;
+      const end = index + productName.length;
+      if (!nameBoundary(protectedValue, index - 1) || !nameBoundary(protectedValue, end)) {
+        searchFrom = index + 1;
+        continue;
+      }
+      const replacementIndex = replacements.length;
+      replacements.push(protectedValue.slice(index, end));
+      const token = `${PRODUCT_SENTINEL_START}${replacementIndex}${PRODUCT_SENTINEL_END}`;
+      protectedValue = `${protectedValue.slice(0, index)}${token}${protectedValue.slice(end)}`;
+      searchFrom = index + token.length;
+    }
+  }
+
+  return { protectedValue, replacements };
+}
+
+function restoreProductSpans(value: string, replacements: readonly string[]): string {
+  return value.replace(/\uE100(\d+)\uE101/g, (_match, index: string) => replacements[Number(index)] ?? '');
+}
+
 export function parseProductList(rawInput: string): string[] {
   const normalized = normalizeCatalogQuery(rawInput);
   if (!normalized) return [];
-  return normalized
+
+  const decimalSafe = protectDecimalCommas(normalized);
+  const { protectedValue, replacements } = protectClinicProductSpans(decimalSafe);
+  return protectedValue
     .split(/\s*(?:[,;]|\b(?:mit|und|plus|sowie)\b)\s*/i)
+    .map((part) => restoreProductSpans(restoreDecimalCommas(part), replacements))
     .map((part) => normalizeCatalogQuery(part))
     .filter(Boolean);
 }
