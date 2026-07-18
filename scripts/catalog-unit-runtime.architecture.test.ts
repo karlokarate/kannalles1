@@ -8,7 +8,8 @@ function source(path: string): string {
 const runtime = source('src/app/catalogUnitRuntime.ts');
 const standardController = source('src/app/useCatalogController.ts');
 const smartController = source('src/app/useSmartCatalogController.ts');
-const controllers = [standardController, smartController];
+const favoriteController = source('src/app/useFavoriteSearchController.ts');
+const unitControllers = [standardController, smartController];
 
 describe('catalog unit runtime architecture', () => {
   it('keeps one application authority for evidence, calibration and clinic resolution', () => {
@@ -17,7 +18,7 @@ describe('catalog unit runtime architecture', () => {
     expect(runtime).toContain('directClinicResolution');
     expect(runtime).toContain('resolveSmartUnitState');
 
-    for (const controller of controllers) {
+    for (const controller of unitControllers) {
       expect(controller).toContain("from './catalogUnitRuntime'");
       expect(controller).not.toMatch(/\bresolveCatalogUnits\b/);
       expect(controller).not.toMatch(/\btoMatchingUnitCalibration\b/);
@@ -27,7 +28,7 @@ describe('catalog unit runtime architecture', () => {
   });
 
   it('removes the duplicated controller-local unit helpers', () => {
-    for (const controller of controllers) {
+    for (const controller of unitControllers) {
       expect(controller).not.toMatch(/function\s+pickerRequest\s*\(/);
       expect(controller).not.toMatch(/function\s+identity\s*\(/);
       expect(controller).not.toMatch(/function\s+productCalibrations\s*\(/);
@@ -40,5 +41,13 @@ describe('catalog unit runtime architecture', () => {
     expect(smartController).toContain("resolveCatalogUnitRuntime(base.product, base.request, 'smart')");
     expect(smartController).toContain("catalogCalibrationIdentity(product, 'smart')");
     expect(smartController).toContain("defaultClinicCatalogUnitRequest(candidate, 'smart')");
+  });
+
+  it('routes favorite request defaults through the same runtime helpers', () => {
+    expect(favoriteController).toContain("from './catalogUnitRuntime'");
+    expect(favoriteController).toContain('normalizeCatalogUnitRequest');
+    expect(favoriteController).toContain('defaultClinicCatalogUnitRequest');
+    expect(favoriteController).not.toContain('clinicDefaultRequest');
+    expect(favoriteController).not.toMatch(/parsed\.amount\s*\*\s*1_000/);
   });
 });
