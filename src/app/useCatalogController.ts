@@ -207,7 +207,7 @@ export function useCatalogController() {
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'AbortError')) dispatch({ type: 'failed', query: parsed.catalogQuery, diagnostics: diagnostic(error, parsed.barcode ? 'product_lookup' : 'search', 'Die lokale Katalogabfrage konnte nicht abgeschlossen werden.') });
     } finally { if (abortRef.current === controller) abortRef.current = null; }
-  }, [settings.clinicMode, settings.searchResultLimit, status.state]);
+  }, [settings.clinicMode, settings.searchResultLimit, setSelectedOptionId, status.state]);
 
   const resolveSearchCandidate = useCallback((
     hit: CatalogSearchHit,
@@ -259,7 +259,7 @@ export function useCatalogController() {
       refreshLocalData();
     }, 600);
     return () => window.clearTimeout(timer);
-  }, [calibrationCount, calibrationPreview, calibrationUnit, calibrationWeight, product, refreshLocalData]);
+  }, [calibrationCount, calibrationPreview, calibrationUnit, calibrationWeight, product, refreshLocalData, setSelectedOptionId]);
 
   const changeCalibrationUnit = (unit: CatalogCalibrationUnit) => {
     setCalibrationUnit(unit);

@@ -152,7 +152,7 @@ function fraction(numerator: number, denominator: number, whole = 0): number | n
 }
 
 function numericMatch(value: string): ParsedLeadingGermanQuantity | null {
-  const mixed = value.match(/^(\d+)\s+(\d+)\s*[\/⁄]\s*(\d+)(?=$|\s|[\p{L}])/u);
+  const mixed = value.match(/^(\d+)\s+(\d+)\s*[/⁄]\s*(\d+)(?=$|\s|[\p{L}])/u);
   if (mixed) {
     const amount = fraction(Number(mixed[2]), Number(mixed[3]), Number(mixed[1]));
     if (amount !== null) {
@@ -160,7 +160,7 @@ function numericMatch(value: string): ParsedLeadingGermanQuantity | null {
     }
   }
 
-  const simpleFraction = value.match(/^(\d+)\s*[\/⁄]\s*(\d+)(?=$|\s|[\p{L}])/u);
+  const simpleFraction = value.match(/^(\d+)\s*[/⁄]\s*(\d+)(?=$|\s|[\p{L}])/u);
   if (simpleFraction) {
     const amount = fraction(Number(simpleFraction[1]), Number(simpleFraction[2]));
     if (amount !== null) {

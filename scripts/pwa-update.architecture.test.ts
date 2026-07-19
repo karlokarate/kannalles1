@@ -97,7 +97,7 @@ describe('PWA deployment update architecture', () => {
     expect(preparePublic).toContain("contract: 'kh-checker-app-update'");
     expect(preparePublic).toContain("path.join(targetDir, 'app-update.json')");
     expect(verifyPages).toContain("const updateManifestFile = 'app-update.json'");
-    expect(verifyPages).toContain('Service Worker darf ${excluded} nicht als App-Shell precachen.');
+    expect(verifyPages).toContain('Service Worker darf $' + '{excluded} nicht als App-Shell precachen.');
   });
 
   it('proves both cache-cleared current shells and genuinely stale homescreen shells', () => {
