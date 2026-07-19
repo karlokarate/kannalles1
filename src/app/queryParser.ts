@@ -1,19 +1,12 @@
 import { clinicCatalogProducts } from '../lib/clinicCatalog';
+import type { CatalogInputIntent } from '../lib/input/catalogInput';
 import {
   expandGermanVulgarFractions,
   parseLeadingGermanQuantity
 } from '../lib/input/germanQuantity';
 import type { RequestedUnit } from '../lib/resolution/catalogResolution';
 
-export interface ParsedCatalogQuery {
-  raw: string;
-  catalogQuery: string;
-  barcode: string | null;
-  amount: number;
-  amountExplicit: boolean;
-  unit: RequestedUnit;
-  unitExplicit: boolean;
-}
+export type ParsedCatalogQuery = CatalogInputIntent;
 
 const UNIT_WORDS: Array<{ pattern: RegExp; unit: RequestedUnit }> = [
   { pattern: /^(?:stück(?:e)?|stueck(?:e)?|stk\.?|pieces?)\b/i, unit: 'piece' },
