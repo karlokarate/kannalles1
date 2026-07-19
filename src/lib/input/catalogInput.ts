@@ -15,3 +15,16 @@ export interface CatalogInputIntent {
   unit: RequestedUnit;
   unitExplicit: boolean;
 }
+
+/** Explicitly creates the no-quantity intent used by catalog browsing. */
+export function implicitCatalogInput(catalogQuery: string): CatalogInputIntent {
+  return {
+    raw: catalogQuery,
+    catalogQuery,
+    barcode: null,
+    amount: 1,
+    amountExplicit: false,
+    unit: 'g',
+    unitExplicit: false
+  };
+}
