@@ -2,11 +2,16 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
 const OLD_BUILD = 'pwa-old';
 const NEW_BUILD = 'pwa-new';
+const OLD_BUILD_ACTIVATION_PATH = '/__pwa_test__/activate/old';
+const NEW_BUILD_ACTIVATION_PATH = '/__pwa_test__/activate/new';
 
 test.describe.configure({ mode: 'serial' });
 
 async function activateServerBuild(page: Page, build: 'old' | 'new'): Promise<void> {
-  const response = await page.request.post(`/__pwa_test__/activate/${build}`);
+  const activationPath = build === 'old'
+    ? OLD_BUILD_ACTIVATION_PATH
+    : NEW_BUILD_ACTIVATION_PATH;
+  const response = await page.request.post(activationPath);
   expect(response.ok()).toBe(true);
   expect(await response.json()).toEqual({ activeBuild: build });
 }
