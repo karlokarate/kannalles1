@@ -1,0 +1,125 @@
+name: One-off input request SSOT migration
+
+on:
+  push:
+    branches: [agent/input-request-ssot]
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: ${{ !contains(github.event.head_commit.message, '[input-ssot-sync]') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: agent/input-request-ssot
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Rewrite controller call sites
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          function replaceOnce(text, before, after, label) {
+            const first = text.indexOf(before);
+            if (first < 0) throw new Error(`${label}: source fragment missing`);
+            if (text.indexOf(before, first + before.length) >= 0) throw new Error(`${label}: source fragment is not unique`);
+            return `${text.slice(0, first)}${after}${text.slice(first + before.length)}`;
+          }
+
+          const catalogPath = 'src/app/useCatalogController.ts';
+          let catalog = fs.readFileSync(catalogPath, 'utf8');
+          catalog = replaceOnce(catalog,
+            `  catalogCalibrationIdentity,\n  defaultClinicCatalogUnitRequest,\n  normalizeCatalogUnitRequest,\n`,
+            `  catalogCalibrationIdentity,\n  normalizeCatalogUnitRequest,\n`,
+            'catalog unit imports');
+          catalog = replaceOnce(catalog,
+            `} from './catalogUnitRuntime';\nimport { inferredCalibrationUnit, selectDefaultCatalogCandidate } from './catalogViewModel';\n`,
+            `} from './catalogUnitRuntime';\nimport { catalogRequestForInput } from './catalogInputRequest';\nimport { inferredCalibrationUnit, selectDefaultCatalogCandidate } from './catalogViewModel';\n`,
+            'catalog request import');
+          catalog = catalog.replace(
+            `dispatch({ type: 'resolve', query: session.query, product: local });`,
+            `dispatch({ type: 'resolve', query: session.query, product: local, input: null });`
+          ).replace(
+            `dispatch({ type: 'resolve', query: session.query, product: value });`,
+            `dispatch({ type: 'resolve', query: session.query, product: value, input: null });`
+          );
+          catalog = replaceOnce(catalog,
+            `    if (!parsed) { dispatch({ type: 'validation', message: 'Bitte Produktname oder Barcode eingeben.' }); return; }\n    setEditingMealItemId(null);\n`,
+            `    if (!parsed) { dispatch({ type: 'validation', message: 'Bitte Produktname oder Barcode eingeben.' }); return; }\n    setRequest(catalogRequestForInput(parsed));\n    setSelectedOptionId(null);\n    dispatch({ type: 'start', query: parsed.catalogQuery, input: parsed });\n    setEditingMealItemId(null);\n`,
+            'search input initialization');
+          catalog = replaceOnce(catalog,
+            `      if (preferred) {\n        if (isClinicCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) setRequest(defaultClinicCatalogUnitRequest(preferred));\n        else setRequest(normalizeCatalogUnitRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit }));\n        dispatch({ type: 'resolve', query: parsed.catalogQuery, product: preferred, candidates: hits });\n      } else dispatch({ type: 'show-choice', query: parsed.catalogQuery, candidates: hits });\n`,
+            `      if (preferred) {\n        setRequest(catalogRequestForInput(parsed, preferred));\n        dispatch({ type: 'resolve', query: parsed.catalogQuery, product: preferred, candidates: hits, input: parsed });\n      } else dispatch({ type: 'show-choice', query: parsed.catalogQuery, candidates: hits });\n`,
+            'clinic preferred request');
+          catalog = replaceOnce(catalog,
+            `    abortRef.current?.abort(); const controller = new AbortController(); abortRef.current = controller;\n    setRequest(normalizeCatalogUnitRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit })); setSelectedOptionId(null); dispatch({ type: 'start', query: parsed.catalogQuery });\n`,
+            `    abortRef.current?.abort(); const controller = new AbortController(); abortRef.current = controller;\n`,
+            'duplicate search initialization');
+          catalog = catalog.replace(
+            `dispatch({ type: 'resolve', query: parsed.catalogQuery, product: value });`,
+            `dispatch({ type: 'resolve', query: parsed.catalogQuery, product: value, input: parsed });`
+          );
+          catalog = replaceOnce(catalog,
+            `      if (preferred) {\n        if (isGenericCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) setRequest({ amount: 200, unit: 'g', unitExplicit: true });\n        else if (isClinicCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) setRequest(defaultClinicCatalogUnitRequest(preferred));\n        dispatch({ type: 'resolve', query: parsed.catalogQuery, product: preferred, candidates: hits });\n      }\n`,
+            `      if (preferred) {\n        setRequest(catalogRequestForInput(parsed, preferred));\n        dispatch({ type: 'resolve', query: parsed.catalogQuery, product: preferred, candidates: hits, input: parsed });\n      }\n`,
+            'catalog preferred request');
+          catalog = replaceOnce(catalog,
+            `  const selectCandidate = (hit: CatalogSearchHit) => { if (!catalogProductEligibility(hit).eligible) dispatch({ type: 'validation', message: isClinicCatalogProduct(hit) ? 'Für diesen Klinikdatensatz ist ausdrücklich kein berechenbarer KH-Wert hinterlegt.' : 'Dieser Katalogeintrag ist nicht sicher berechenbar.' }); else { if (isClinicCatalogProduct(hit)) setRequest(defaultClinicCatalogUnitRequest(hit)); dispatch({ type: 'resolve', query: search.query, product: hit }); } };\n`,
+            `  const selectCandidate = (hit: CatalogSearchHit) => {\n    if (!catalogProductEligibility(hit).eligible) {\n      dispatch({ type: 'validation', message: isClinicCatalogProduct(hit) ? 'Für diesen Klinikdatensatz ist ausdrücklich kein berechenbarer KH-Wert hinterlegt.' : 'Dieser Katalogeintrag ist nicht sicher berechenbar.' });\n      return;\n    }\n    if (search.input) setRequest(catalogRequestForInput(search.input, hit));\n    dispatch({ type: 'resolve', query: search.query, product: hit, input: search.input });\n  };\n`,
+            'candidate selection request');
+          catalog = replaceOnce(catalog,
+            `          let nextRequest = normalizeCatalogUnitRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit });\n          if (isGenericCatalogProduct(candidate) && !parsed.amountExplicit && !parsed.unitExplicit) nextRequest = { amount: 200, unit: 'g', unitExplicit: true };\n          else if (isClinicCatalogProduct(candidate) && !parsed.amountExplicit && !parsed.unitExplicit) nextRequest = defaultClinicCatalogUnitRequest(candidate);\n`,
+            `          const nextRequest = catalogRequestForInput(parsed, candidate);\n`,
+            'multi-product request');
+          catalog = replaceOnce(catalog,
+            `    dispatch({ type: 'resolve', query: item.product.displayName, product: item.product, candidates: [] });\n`,
+            `    dispatch({ type: 'resolve', query: item.product.displayName, product: item.product, candidates: [], input: null });\n`,
+            'meal item resolve');
+          fs.writeFileSync(catalogPath, catalog);
+
+          const smartPath = 'src/app/useSmartCatalogController.ts';
+          let smart = fs.readFileSync(smartPath, 'utf8');
+          smart = smart.replace(
+            `import { asGenericSearchHit, genericCookedProductForQuery, isGenericCatalogProduct } from '../lib/genericFoods';`,
+            `import { asGenericSearchHit, genericCookedProductForQuery } from '../lib/genericFoods';`
+          ).replace(
+            `import { isClinicCatalogProduct, searchClinicCatalog } from '../lib/clinicCatalog';`,
+            `import { searchClinicCatalog } from '../lib/clinicCatalog';`
+          );
+          smart = replaceOnce(smart,
+            `  catalogCalibrationIdentity,\n  defaultClinicCatalogUnitRequest,\n  normalizeCatalogUnitRequest,\n  resolveCatalogUnitRuntime\n} from './catalogUnitRuntime';\n`,
+            `  catalogCalibrationIdentity,\n  resolveCatalogUnitRuntime\n} from './catalogUnitRuntime';\nimport { catalogRequestForInput } from './catalogInputRequest';\n`,
+            'smart request imports');
+          smart = replaceOnce(smart,
+            `      let request = normalizeCatalogUnitRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit });\n      if (isGenericCatalogProduct(candidate) && !parsed.amountExplicit && !parsed.unitExplicit) request = { amount: 200, unit: 'g', unitExplicit: true };\n      else if (isClinicCatalogProduct(candidate) && !parsed.amountExplicit && !parsed.unitExplicit) request = defaultClinicCatalogUnitRequest(candidate, 'smart');\n`,
+            `      const request = catalogRequestForInput(parsed, candidate, 'smart');\n`,
+            'smart multi-product request');
+          smart = replaceOnce(smart,
+            `    base.dispatch({ type: 'resolve', query: item.product.displayName, product: item.product, candidates: [] });\n`,
+            `    base.dispatch({ type: 'resolve', query: item.product.displayName, product: item.product, candidates: [], input: null });\n`,
+            'smart meal item resolve');
+          fs.writeFileSync(smartPath, smart);
+
+          const manualPath = 'src/app/ManualProductEditor.tsx';
+          let manual = fs.readFileSync(manualPath, 'utf8');
+          manual = replaceOnce(manual,
+            `    c.dispatch({ type: 'resolve', query: item.label, product, candidates: [{ ...product, resultIndex: 0 }] });\n`,
+            `    c.dispatch({ type: 'resolve', query: item.label, product, candidates: [{ ...product, resultIndex: 0 }], input: null });\n`,
+            'manual product resolve');
+          fs.writeFileSync(manualPath, manual);
+          NODE
+
+      - name: Remove one-off workflow and commit migration
+        run: |
+          rm .github/workflows/one-off-input-request-ssot.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/useCatalogController.ts src/app/useSmartCatalogController.ts src/app/ManualProductEditor.tsx .github/workflows/one-off-input-request-ssot.yml
+          git commit -m "Route recognized input through the request SSOT [input-ssot-sync]"
+          git push origin HEAD:agent/input-request-ssot
