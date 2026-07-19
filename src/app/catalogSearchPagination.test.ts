@@ -5,7 +5,7 @@ import {
   finishCatalogSearchPage,
   paginateLocalCatalogResults,
   planCatalogSearchPage
-} from './catalogSearchPagination';
+} from '../lib/catalog/catalogPagination';
 
 function values(count: number, prefix: string): string[] {
   return Array.from({ length: count }, (_value, index) => `${prefix}-${index + 1}`);
