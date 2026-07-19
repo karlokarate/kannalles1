@@ -1,15 +1,15 @@
 name: One-off PWA v2.4.2 metadata sync
 
 on:
-  push:
-    branches: [agent/pwa-update-lifecycle-v2-4-2]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   sync:
-    if: ${{ !contains(github.event.head_commit.message, '[pwa-2.4.2-sync]') }}
+    if: ${{ github.head_ref == 'agent/pwa-update-lifecycle-v2-4-2' && !contains(github.event.pull_request.title, '[pwa-2.4.2-sync]') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
