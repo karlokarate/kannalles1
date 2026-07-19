@@ -47,7 +47,7 @@ describe('fractional catalog queries', () => {
       '15 g Nutella',
       '200 ml Milch'
     ]);
-    expect(parts.map(parseCatalogQuery)).toEqual([
+    expect(parts.map((part) => parseCatalogQuery(part))).toEqual([
       expect.objectContaining({ amount: 0.5, catalogQuery: 'Brötchen' }),
       expect.objectContaining({ amount: 15, unit: 'g', catalogQuery: 'Nutella' }),
       expect.objectContaining({ amount: 200, unit: 'ml', catalogQuery: 'Milch' })
