@@ -18,14 +18,25 @@ async function activateServerBuild(page: Page, build: 'old' | 'new'): Promise<vo
 
 async function recordUpdateStates(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    const states: string[] = [];
+    const storageKey = 'kh:pwa-update-state-history';
+    const stored = (() => {
+      try {
+        const parsed = JSON.parse(sessionStorage.getItem(storageKey) ?? '[]');
+        return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : [];
+      } catch {
+        return [];
+      }
+    })();
+    const states = stored;
     Object.defineProperty(window, '__khPwaUpdateStates', {
       configurable: true,
       value: states
     });
     const record = () => {
       const value = document.querySelector('.app-shell')?.getAttribute('data-pwa-update-state');
-      if (value && states.at(-1) !== value) states.push(value);
+      if (!value || states.at(-1) === value) return;
+      states.push(value);
+      sessionStorage.setItem(storageKey, JSON.stringify(states));
     };
     new MutationObserver(record).observe(document, {
       attributes: true,
