@@ -17,6 +17,7 @@ class FakeWorker extends EventTarget {
 class FakeRegistration extends EventTarget {
   waiting: ServiceWorker | null = null;
   installing: ServiceWorker | null = null;
+  active: ServiceWorker | null = null;
   update = vi.fn(async () => undefined);
 }
 
@@ -24,7 +25,7 @@ function manifest(buildId = 'build-current') {
   return {
     contract: APP_UPDATE_MANIFEST_CONTRACT,
     schemaVersion: APP_UPDATE_MANIFEST_VERSION,
-    appVersion: '2.4.1',
+    appVersion: '2.4.2',
     buildId,
     catalogVersion: 'production-v1'
   };
@@ -49,7 +50,7 @@ function environment(overrides: Partial<PwaUpdateEnvironment> = {}) {
       : textResponse()
   );
   const value: PwaUpdateEnvironment = {
-    currentAppVersion: '2.4.1',
+    currentAppVersion: '2.4.2',
     currentBuildId: 'build-current',
     manifestUrl: 'https://example.test/app/app-update.json',
     supported: true,
@@ -70,15 +71,18 @@ function environment(overrides: Partial<PwaUpdateEnvironment> = {}) {
 function attach(
   controller: ReturnType<typeof createPwaUpdateController>,
   registration = new FakeRegistration(),
-  applyUpdate = vi.fn(async () => undefined)
+  activateWaitingWorker = vi.fn(async (_reloadPage: boolean) => {
+    registration.active = registration.waiting;
+    registration.waiting = null;
+  })
 ) {
   const bridge: PwaUpdateBridge = {
     swUrl: 'https://example.test/app/sw.js',
     registration: registration as unknown as ServiceWorkerRegistration,
-    applyUpdate
+    activateWaitingWorker
   };
   controller.attachServiceWorker(bridge);
-  return { registration, applyUpdate };
+  return { registration, activateWaitingWorker };
 }
 
 describe('parseAppUpdateManifest', () => {
@@ -100,7 +104,7 @@ describe('parseAppUpdateManifest', () => {
 });
 
 describe('PWA deployment update controller', () => {
-  it('checks the deployed manifest and service worker without cache on startup', async () => {
+  it('checks manifest and service worker without cache on startup', async () => {
     const env = environment();
     const controller = createPwaUpdateController(env.value);
     const { registration } = attach(controller);
@@ -123,9 +127,74 @@ describe('PWA deployment update controller', () => {
       phase: 'up-to-date',
       remoteBuildId: 'build-current',
       checkedAt: 1_700_000_000_000,
+      updatePromptVisible: false,
       canCheck: true,
       canApply: false
     });
+  });
+
+  it('never treats a waiting worker as an update before the deployed build is verified', () => {
+    const env = environment();
+    const controller = createPwaUpdateController(env.value);
+    const registration = new FakeRegistration();
+    registration.waiting = new FakeWorker() as unknown as ServiceWorker;
+
+    attach(controller, registration);
+
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: 'checking',
+      remoteBuildId: null,
+      updatePromptVisible: false,
+      canApply: false
+    });
+  });
+
+  it('silently synchronizes an old registration when the network-loaded page is already the deployed build', async () => {
+    const env = environment();
+    const controller = createPwaUpdateController(env.value);
+    const registration = new FakeRegistration();
+    registration.waiting = new FakeWorker() as unknown as ServiceWorker;
+    const { activateWaitingWorker } = attach(controller, registration);
+
+    await controller.checkForUpdates(true);
+
+    expect(activateWaitingWorker).toHaveBeenCalledWith(false);
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: 'up-to-date',
+      currentBuildId: 'build-current',
+      remoteBuildId: 'build-current',
+      updatePromptVisible: false,
+      canApply: false
+    });
+  });
+
+  it('offers a user update only when the deployed build differs from the executing cached shell', async () => {
+    const fetchMock = vi.fn<FetchFunction>(async (input) =>
+      String(input).includes('app-update.json')
+        ? jsonResponse(manifest('build-new'))
+        : textResponse()
+    );
+    const env = environment({ fetch: fetchMock });
+    const controller = createPwaUpdateController(env.value);
+    const registration = new FakeRegistration();
+    registration.waiting = new FakeWorker() as unknown as ServiceWorker;
+    const { activateWaitingWorker } = attach(controller, registration);
+
+    expect(controller.getSnapshot().updatePromptVisible).toBe(false);
+    await controller.checkForUpdates(true);
+
+    expect(activateWaitingWorker).not.toHaveBeenCalled();
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: 'update-available',
+      currentBuildId: 'build-current',
+      remoteBuildId: 'build-new',
+      updatePromptVisible: true,
+      canApply: true
+    });
+
+    await controller.applyUpdate();
+    expect(activateWaitingWorker).toHaveBeenCalledWith(true);
+    expect(controller.getSnapshot().phase).toBe('applying');
   });
 
   it('deduplicates concurrent checks and throttles foreground checks', async () => {
@@ -167,19 +236,22 @@ describe('PWA deployment update controller', () => {
     expect(controller.getSnapshot().phase).toBe('up-to-date');
   });
 
-  it('keeps an already downloaded update actionable offline without reopening a dismissed banner', async () => {
-    const env = environment({ isOnline: () => false });
+  it('keeps a previously verified downloaded update actionable offline without reopening a dismissed banner', async () => {
+    let online = true;
+    const fetchMock = vi.fn<FetchFunction>(async (input) =>
+      String(input).includes('app-update.json')
+        ? jsonResponse(manifest('build-new'))
+        : textResponse()
+    );
+    const env = environment({ fetch: fetchMock, isOnline: () => online });
     const controller = createPwaUpdateController(env.value);
     const registration = new FakeRegistration();
     registration.waiting = new FakeWorker() as unknown as ServiceWorker;
-    const { applyUpdate } = attach(controller, registration);
+    const { activateWaitingWorker } = attach(controller, registration);
 
-    expect(controller.getSnapshot()).toMatchObject({
-      phase: 'update-available',
-      updatePromptVisible: true,
-      canApply: true
-    });
+    await controller.checkForUpdates(true);
     controller.dismissUpdate();
+    online = false;
     await controller.checkForUpdates(false);
 
     expect(controller.getSnapshot()).toMatchObject({
@@ -188,47 +260,30 @@ describe('PWA deployment update controller', () => {
       canApply: true
     });
     expect(controller.getSnapshot().message).toContain('offline aktiviert');
-    expect(env.fetch).not.toHaveBeenCalled();
 
     await controller.applyUpdate();
-    expect(applyUpdate).toHaveBeenCalledTimes(1);
+    expect(activateWaitingWorker).toHaveBeenCalledWith(true);
   });
 
-  it('shows a persistent user-controlled prompt when a waiting worker exists', async () => {
-    const fetchMock = vi.fn<FetchFunction>(async (input) =>
-      String(input).includes('app-update.json')
-        ? jsonResponse(manifest('build-new'))
-        : textResponse()
-    );
-    const env = environment({ fetch: fetchMock });
+  it('does not claim an unverified offline waiting worker is a newer build', async () => {
+    const env = environment({ isOnline: () => false });
     const controller = createPwaUpdateController(env.value);
     const registration = new FakeRegistration();
-    registration.update.mockImplementation(async () => {
-      registration.waiting = new FakeWorker() as unknown as ServiceWorker;
-    });
-    const { applyUpdate } = attach(controller, registration);
+    registration.waiting = new FakeWorker() as unknown as ServiceWorker;
+    attach(controller, registration);
 
     await controller.checkForUpdates(true);
-    expect(controller.getSnapshot()).toMatchObject({
-      phase: 'update-available',
-      remoteBuildId: 'build-new',
-      updatePromptVisible: true,
-      canApply: true
-    });
 
-    controller.dismissUpdate();
     expect(controller.getSnapshot()).toMatchObject({
-      phase: 'update-available',
+      phase: 'offline',
+      remoteBuildId: null,
       updatePromptVisible: false,
-      canApply: true
+      canApply: false
     });
-
-    await controller.applyUpdate();
-    expect(applyUpdate).toHaveBeenCalledTimes(1);
-    expect(controller.getSnapshot().phase).toBe('applying');
+    expect(env.fetch).not.toHaveBeenCalled();
   });
 
-  it('observes an installing worker until the update becomes waiting', async () => {
+  it('reconciles an installing worker according to the already verified build identity', async () => {
     const fetchMock = vi.fn<FetchFunction>(async (input) =>
       String(input).includes('app-update.json')
         ? jsonResponse(manifest('build-new'))
@@ -247,12 +302,14 @@ describe('PWA deployment update controller', () => {
     await controller.checkForUpdates(true);
     expect(controller.getSnapshot().phase).toBe('checking');
 
+    registration.installing = null;
     registration.waiting = worker as unknown as ServiceWorker;
     worker.state = 'installed';
     worker.dispatchEvent(new Event('statechange'));
     expect(controller.getSnapshot()).toMatchObject({
       phase: 'update-available',
-      updatePromptVisible: true
+      updatePromptVisible: true,
+      canApply: true
     });
   });
 
@@ -270,18 +327,26 @@ describe('PWA deployment update controller', () => {
     expect(controller.getSnapshot()).toMatchObject({
       phase: 'error',
       remoteBuildId: 'build-new',
+      updatePromptVisible: false,
       canCheck: true
     });
   });
 
   it('keeps update activation recoverable when applying fails', async () => {
-    const env = environment();
+    const fetchMock = vi.fn<FetchFunction>(async (input) =>
+      String(input).includes('app-update.json')
+        ? jsonResponse(manifest('build-new'))
+        : textResponse()
+    );
+    const env = environment({ fetch: fetchMock });
     const controller = createPwaUpdateController(env.value);
     const registration = new FakeRegistration();
     registration.waiting = new FakeWorker() as unknown as ServiceWorker;
     attach(controller, registration, vi.fn(async () => { throw new Error('activation failed'); }));
 
+    await controller.checkForUpdates(true);
     await controller.applyUpdate();
+
     expect(controller.getSnapshot()).toMatchObject({
       phase: 'update-available',
       updatePromptVisible: true,
@@ -290,17 +355,24 @@ describe('PWA deployment update controller', () => {
     expect(controller.getSnapshot().message).toContain('activation failed');
   });
 
-  it('exposes offline-ready and registration diagnostics without losing update state', () => {
-    const env = environment();
+  it('exposes offline-ready and registration diagnostics without losing verified update state', async () => {
+    const fetchMock = vi.fn<FetchFunction>(async (input) =>
+      String(input).includes('app-update.json')
+        ? jsonResponse(manifest('build-new'))
+        : textResponse()
+    );
+    const env = environment({ fetch: fetchMock });
     const controller = createPwaUpdateController(env.value);
-    attach(controller);
+    const registration = new FakeRegistration();
+    registration.waiting = new FakeWorker() as unknown as ServiceWorker;
+    attach(controller, registration);
 
     controller.markOfflineReady();
     expect(controller.getSnapshot().offlineReadyNoticeVisible).toBe(true);
     controller.dismissOfflineReady();
     expect(controller.getSnapshot().offlineReadyNoticeVisible).toBe(false);
 
-    controller.markUpdateAvailable();
+    await controller.checkForUpdates(true);
     controller.markOfflineReady();
     expect(controller.getSnapshot()).toMatchObject({
       phase: 'update-available',
