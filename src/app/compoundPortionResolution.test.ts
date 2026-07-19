@@ -27,7 +27,7 @@ function product(
     unitEvidence: {
       manufacturerServing: servingGrams === null
         ? null
-        : { baseValue: servingGrams, basis: 'mass', sourceLabel: 'Testportion' },
+        : { baseValue: servingGrams, basis: 'mass' },
       productQuantity: null,
       provenSmallestUnit: null,
       defaultUnitKind: 'mass'
