@@ -47,8 +47,9 @@ jobs:
       - name: Install locked SQLite-WASM runtime
         run: npm ci --prefix Catalog/runtime --no-audit --no-fund
 
-      - name: Validate production catalog, workflow and browser-support contract
+      - name: Validate version, production catalog, workflow and browser-support contracts
         run: |
+          npm run check:version
           npm run check:catalog
           npm run check:workflow
           npm run check:browser-support
@@ -83,6 +84,12 @@ jobs:
           set -o pipefail
           npm run test:pwa-update 2>&1 | tee pwa-update-test-output.log
 
+      - name: Run targeted semantic input tests
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:semantic-input 2>&1 | tee semantic-input-test-output.log
+
       - name: Upload targeted diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
@@ -91,6 +98,7 @@ jobs:
           path: |
             runtime-test-output.log
             pwa-update-test-output.log
+            semantic-input-test-output.log
           if-no-files-found: ignore
           retention-days: 5
 
@@ -205,6 +213,9 @@ jobs:
 
       - name: Run targeted real unit runtime journeys
         run: npm run test:e2e:runtime
+
+      - name: Run targeted natural-language quantity journeys
+        run: npm run test:e2e:semantic-input
 
       - name: Run complete real browser catalog proof
         run: npm run test:e2e
