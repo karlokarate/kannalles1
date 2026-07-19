@@ -2,26 +2,20 @@ import type { MealCalculationItem } from './mealCalculation';
 import { totalMealCarbohydrates } from './mealCalculation';
 import type { SavedMealCalculation } from './userDataStore';
 
-export interface SavedMealTimestamps {
-  createdAt: string;
-  performedAt: string;
-}
-
 /**
- * Serializes the exact current meal result without rounding. `createdAt`
- * identifies the local history record; `performedAt` identifies when the
- * represented calculation was actually carried out or recalculated.
+ * Serializes the exact current meal result without rounding. `performedAt`
+ * becomes the persisted `createdAt` timestamp because schema v1 already stores
+ * a complete ISO date-time there. Every recalculation supplies a fresh value.
  */
 export function savedMealFromItems(
   id: string,
   items: readonly MealCalculationItem[],
-  timestamps: SavedMealTimestamps
+  performedAt: string
 ): SavedMealCalculation {
   return {
-    schemaVersion: 2,
+    schemaVersion: 1,
     id,
-    createdAt: timestamps.createdAt,
-    performedAt: timestamps.performedAt,
+    createdAt: performedAt,
     items: items.map((item) => ({
       id: item.id,
       productCode: item.product.code,
