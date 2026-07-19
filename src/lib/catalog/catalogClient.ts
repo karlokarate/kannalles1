@@ -1,6 +1,7 @@
 import { manualCatalogProductByCode, searchManualCatalog } from '../manualCatalog';
 import type { CatalogProduct, CatalogSearchHit, CatalogStatus } from './catalogDomain';
 import { CatalogFailure } from './catalogErrors';
+import { CATALOG_SEARCH_LOOKAHEAD_SIZE } from './catalogPagination';
 import type { CatalogWorkerRequest, CatalogWorkerResponse } from './catalogProtocol';
 
 type RequestWithoutId = CatalogWorkerRequest extends infer Request
@@ -154,7 +155,12 @@ export async function searchOfflineCatalog(
 ): Promise<readonly CatalogSearchHit[]> {
   await initializeOfflineCatalog();
   if (signal?.aborted) throw abortFailure();
-  const normalizedLimit = Math.max(1, Math.min(20, Math.trunc(limit)));
+  // Twenty results are renderable. The optional twenty-first result is a
+  // look-ahead sentinel used solely to decide whether the next page exists.
+  const normalizedLimit = Math.max(
+    1,
+    Math.min(CATALOG_SEARCH_LOOKAHEAD_SIZE, Math.trunc(limit))
+  );
   const normalizedOffset = Math.max(0, Math.trunc(offset));
   const manualHits = searchManualCatalog(query);
   const manualPage = manualHits.slice(normalizedOffset, normalizedOffset + normalizedLimit);
