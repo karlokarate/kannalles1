@@ -43,11 +43,13 @@ const quality = specs.get('app-quality.spec.ts');
 const catalog = specs.get('catalog-real.spec.ts');
 const runtime = specs.get('catalog-unit-runtime.spec.ts');
 const naturalLanguage = specs.get('natural-language-quantities.spec.ts');
+const searchPagination = specs.get('search-pagination.spec.ts');
+const compoundPortions = specs.get('compound-portion-semantics.spec.ts');
 const pwaUpdate = specs.get('pwa-update.spec.ts');
 const harness = sources.get('catalog-harness.ts');
 const pwaUpdateConfig = sources.get('playwright.pwa-update.config.ts');
 const pwaUpdateServer = sources.get('start-pwa-update-preview.mjs');
-if (!matrix || !quality || !catalog || !runtime || !naturalLanguage || !pwaUpdate || !harness || !pwaUpdateConfig || !pwaUpdateServer) {
+if (!matrix || !quality || !catalog || !runtime || !naturalLanguage || !searchPagination || !compoundPortions || !pwaUpdate || !harness || !pwaUpdateConfig || !pwaUpdateServer) {
   fail('Verpflichtende Sentinel-E2E-Dateien fehlen.');
 }
 
@@ -141,6 +143,18 @@ function validateTests() {
     '½ Brötchen',
     'null komma fünf Brötchen'
   ]) requireText(naturalLanguage, fragment, 'Natural-Language-Quantity-E2E-Coverage');
+  for (const fragment of [
+    'data-page-size',
+    "toHaveText('21')",
+    "toHaveText('41')",
+    'Weiter →'
+  ]) requireText(searchPagination, fragment, 'Search-Pagination-E2E-Coverage');
+  for (const fragment of [
+    'ein halbes Brötchen mit Nutella',
+    'pending-unit-size',
+    "data-unit-kind', 'portion'",
+    'Wie viel Gramm wiegt eine Portion?'
+  ]) requireText(compoundPortions, fragment, 'Compound-Portion-E2E-Coverage');
   for (const fragment of [
     "const OLD_BUILD = 'pwa-old'",
     "const NEW_BUILD = 'pwa-new'",
@@ -244,12 +258,18 @@ function validateBrowserSupport() {
     'src/lib/input/germanQuantity.test.ts',
     'src/app/queryParser.fractions.test.ts',
     'src/app/catalogInputRequest.test.ts',
+    'src/app/catalogSearchPagination.test.ts',
+    'src/app/queryParser.compoundPortions.test.ts',
+    'src/app/compoundPortionResolution.test.ts',
     'src/session.test.ts',
-    'scripts/catalog-input-request.architecture.test.ts'
+    'scripts/catalog-input-request.architecture.test.ts',
+    'scripts/search-pagination-portion.architecture.test.ts'
   ]) requireText(semanticInputTests, fragment, 'Gezielte semantische Eingabetests');
   for (const fragment of [
     'e2e/natural-language-quantities.spec.ts',
     'e2e/input-request-ssot.spec.ts',
+    'e2e/search-pagination.spec.ts',
+    'e2e/compound-portion-semantics.spec.ts',
     '--project=chromium-desktop'
   ]) requireText(semanticInputE2e, fragment, 'Gezielte semantische Browsertests');
 

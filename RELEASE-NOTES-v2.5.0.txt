@@ -1,0 +1,13 @@
+FishIT KH Checker v2.5.0
+============================
+
+NEU
+---
+- Suchergebnisse sind nicht mehr auf insgesamt 20 Produkte begrenzt. Jede Seite zeigt exakt bis zu 20 Treffer; weitere Ergebnisse sind über Zurück/Weiter erreichbar.
+- Mehrprodukteingaben ohne eigene Einheit verwenden automatisch eine Portion.
+- Beispiel: „ein halbes Brötchen mit Nutella“ wird als 0,5 Portion Brötchen plus 1 Portion Nutella verarbeitet.
+- Ist für ein Produkt keine belastbare Portion vorhanden, fragt die App die Grammzahl dieser Portion ab und speichert sie produktspezifisch.
+
+VERTRAG
+-------
+Explizit eingegebene Einheiten bleiben maßgeblich. Stück-, Portions- oder Servinggewichte werden niemals geraten.

@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CatalogProduct, CatalogSearchHit, CatalogStatus } from './catalogDomain';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CatalogStatus } from './catalogDomain';
 import type { CatalogWorkerRequest, CatalogWorkerResponse } from './catalogProtocol';
 
 const ready: CatalogStatus = {
@@ -7,25 +7,25 @@ const ready: CatalogStatus = {
   activeSlot: 'a',
   rollbackSlot: null,
   slotStates: { a: 'active', b: 'empty' },
-  catalogVersion: '2026-07-13',
-  productCount: 317579,
+  catalogVersion: 'production-v1',
+  productCount: 317_519,
   persistent: true,
-  progress: 1,
+  progress: null,
   diagnostics: null,
   retryAllowedImmediately: true
 };
 
-const product: CatalogProduct = {
+const product = {
   productId: 1,
-  code: '3017620422003',
-  displayName: 'Kinder Bueno',
-  brand: 'Ferrero',
-  nutrition: { carbohydratesPer100: 49, basis: 'mass', source: 'as_sold' },
+  code: '4008400322728',
+  displayName: 'SQLite first',
+  brand: 'Kinder',
+  nutrition: { carbohydratesPer100: 49.5, basis: 'mass' as const, source: 'as_sold' as const },
   unitEvidence: {
     manufacturerServing: null,
     productQuantity: null,
     provenSmallestUnit: null,
-    defaultUnitKind: 'mass'
+    defaultUnitKind: 'mass' as const
   },
   imageReference: null,
   hasQualityErrors: false,
@@ -35,9 +35,8 @@ const product: CatalogProduct = {
 class FakeWorker extends EventTarget {
   static instances: FakeWorker[] = [];
   readonly requests: CatalogWorkerRequest[] = [];
-  terminated = false;
 
-  constructor(_url: URL, _options: WorkerOptions) {
+  constructor() {
     super();
     FakeWorker.instances.push(this);
   }
@@ -47,36 +46,32 @@ class FakeWorker extends EventTarget {
     queueMicrotask(() => {
       let response: CatalogWorkerResponse;
       if (request.type === 'initialize' || request.type === 'retry' || request.type === 'status') {
-        response = { id: request.id, ok: true, type: 'status', result: ready };
+        response = { ok: true, id: request.id, type: 'status', result: ready };
       } else if (request.type === 'search') {
-        const hits: CatalogSearchHit[] = [
-          { ...product, displayName: 'SQLite first', resultIndex: 0 },
-          { ...product, displayName: 'SQLite second', resultIndex: 1 }
-        ];
-        response = { id: request.id, ok: true, type: 'search', result: hits };
+        response = {
+          ok: true,
+          id: request.id,
+          type: 'search',
+          result: [
+            { ...product, resultIndex: 0 },
+            { ...product, productId: 2, displayName: 'SQLite second', rankOrdinal: 2, resultIndex: 1 }
+          ]
+        };
       } else {
-        response = { id: request.id, ok: true, type: 'product', result: product };
+        response = { ok: true, id: request.id, type: 'product', result: product };
       }
       this.dispatchEvent(new MessageEvent('message', { data: response }));
     });
   }
 
-  terminate(): void {
-    this.terminated = true;
-  }
+  terminate(): void {}
 }
 
 beforeEach(() => {
+  vi.resetModules();
   FakeWorker.instances = [];
   vi.stubGlobal('Worker', FakeWorker);
   vi.stubGlobal('document', { baseURI: 'https://example.test/app/' });
-});
-
-afterEach(async () => {
-  const client = await import('./catalogClient');
-  client.disposeOfflineCatalog();
-  vi.unstubAllGlobals();
-  vi.resetModules();
 });
 
 describe('A/B catalog client protocol', () => {
@@ -102,13 +97,13 @@ describe('A/B catalog client protocol', () => {
     ]);
   });
 
-  it('forwards a pagination offset while capping each page at 20 results', async () => {
+  it('forwards the page offset and requests one non-rendered lookahead after twenty visible results', async () => {
     const client = await import('./catalogClient');
     await client.searchOfflineCatalog('reis', 99, undefined, 40);
     expect(FakeWorker.instances[0].requests.at(-1)).toMatchObject({
       type: 'search',
       query: 'reis',
-      limit: 20,
+      limit: 21,
       offset: 40
     });
   });

@@ -12,8 +12,27 @@ export interface ParsedCatalogQuery {
   amount: number;
   amountExplicit: boolean;
   unit: RequestedUnit;
+  /**
+   * A hard unit constraint from the input semantics. This is true for a unit
+   * spoken by the user and for the generic portion default of compound meals.
+   */
   unitExplicit: boolean;
 }
+
+export interface ParsedCatalogInputPart {
+  source: string;
+  parsed: ParsedCatalogQuery | null;
+}
+
+export interface ParseCatalogQueryOptions {
+  implicitUnit?: RequestedUnit;
+  requireImplicitUnit?: boolean;
+}
+
+const COMPOUND_PRODUCT_OPTIONS: Readonly<ParseCatalogQueryOptions> = Object.freeze({
+  implicitUnit: 'portion',
+  requireImplicitUnit: true
+});
 
 const UNIT_WORDS: Array<{ pattern: RegExp; unit: RequestedUnit }> = [
   { pattern: /^(?:stück(?:e)?|stueck(?:e)?|stk\.?|pieces?)\b/i, unit: 'piece' },
@@ -99,10 +118,15 @@ export function parseProductList(rawInput: string): string[] {
 // Kept as a compatibility alias for persisted tests and older call sites.
 export const parseSpokenProductList = parseProductList;
 
-export function parseCatalogQuery(rawInput: string): ParsedCatalogQuery | null {
+export function parseCatalogQuery(
+  rawInput: string,
+  options: ParseCatalogQueryOptions = {}
+): ParsedCatalogQuery | null {
   const raw = normalizeCatalogQuery(rawInput);
   if (!raw) return null;
 
+  const implicitUnit = options.implicitUnit ?? 'g';
+  const requireImplicitUnit = options.requireImplicitUnit === true;
   const barcodeDigits = raw.replace(/\D/g, '');
   if (/^\d{8,14}$/.test(raw) && barcodeDigits.length === raw.length) {
     return {
@@ -111,16 +135,16 @@ export function parseCatalogQuery(rawInput: string): ParsedCatalogQuery | null {
       barcode: barcodeDigits,
       amount: 1,
       amountExplicit: false,
-      unit: 'g',
-      unitExplicit: false
+      unit: implicitUnit,
+      unitExplicit: requireImplicitUnit
     };
   }
 
   let remainder = raw;
   let amount = 1;
   let amountExplicit = false;
-  let unit: RequestedUnit = 'g';
-  let unitExplicit = false;
+  let unit: RequestedUnit = implicitUnit;
+  let unitExplicit = requireImplicitUnit;
 
   const quantity = parseLeadingGermanQuantity(remainder);
   if (quantity) {
@@ -149,4 +173,18 @@ export function parseCatalogQuery(rawInput: string): ParsedCatalogQuery | null {
     unit,
     unitExplicit
   };
+}
+
+/**
+ * Parses a complete product input once. When several products are named, each
+ * segment without its own unit means one portion. Missing portion evidence is
+ * therefore resolved through the generic calibration prompt instead of grams.
+ */
+export function parseCatalogInputParts(rawInput: string): ParsedCatalogInputPart[] {
+  const sources = parseProductList(rawInput);
+  const options = sources.length > 1 ? COMPOUND_PRODUCT_OPTIONS : undefined;
+  return sources.map((source) => ({
+    source,
+    parsed: parseCatalogQuery(source, options)
+  }));
 }

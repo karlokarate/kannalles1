@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.5.0 – Durchgängige Suchseiten und generische Portionssemantik
+
+- breite Katalogsuchen zeigen fest 20 Treffer pro Seite und bleiben über Seite 2, 3 und weitere Seiten vollständig erreichbar,
+- ein einundzwanzigster Treffer wird ausschließlich als Look-ahead verwendet und nie zusätzlich auf der aktuellen Seite angezeigt,
+- die frühere Einstellung „Maximale Suchtreffer“ begrenzt die Ergebnismenge nicht mehr,
+- Mehrprodukteingaben ohne ausdrücklich genannte Einheit werden generisch als Portion interpretiert,
+- `ein halbes Brötchen mit Nutella` bedeutet `0,5 Portion Brötchen` plus `1 Portion Nutella`,
+- fehlt für eines der Produkte eine belastbare Portion, wird die Portionsgröße über den vorhandenen Smart-Unit-Dialog abgefragt,
+- ausdrücklich eingegebene Einheiten wie `15 g Nutella` bleiben unverändert maßgeblich.
+
 ## 2.4.2 – Persönliche Standard-Einheiten bei jeder Suche
 
 - mengenexplizite Eingaben ohne Einheit, zum Beispiel `13 Salzstangen`, verwenden automatisch die gespeicherte persönliche Standard-Einheit des ausgewählten Produkts,

@@ -55,7 +55,10 @@ jobs:
           npm run check:browser-support
 
       - name: Typecheck application
-        run: npm run typecheck
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee typecheck-output.log
 
       - name: Lint browser and test sources
         shell: bash
@@ -96,6 +99,7 @@ jobs:
         with:
           name: targeted-test-output-node-${{ matrix.node-version }}
           path: |
+            typecheck-output.log
             runtime-test-output.log
             pwa-update-test-output.log
             semantic-input-test-output.log
@@ -103,7 +107,19 @@ jobs:
           retention-days: 5
 
       - name: Run complete deterministic and contract test suite
-        run: npm test
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee complete-test-output.log
+
+      - name: Upload complete-suite diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
+        with:
+          name: complete-test-output-node-${{ matrix.node-version }}
+          path: complete-test-output.log
+          if-no-files-found: error
+          retention-days: 5
 
       - name: Enforce architecture and dead-code gates
         run: |
