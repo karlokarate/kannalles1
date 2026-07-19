@@ -6,6 +6,8 @@ function source(path: string): string {
 }
 
 const authority = source('src/app/catalogInputRequest.ts');
+const runtime = source('src/app/catalogUnitRuntime.ts');
+const selection = source('src/app/useCatalogUnitSelection.ts');
 const catalogController = source('src/app/useCatalogController.ts');
 const smartController = source('src/app/useSmartCatalogController.ts');
 const favoriteController = source('src/app/useFavoriteSearchController.ts');
@@ -23,6 +25,26 @@ describe('catalog input request architecture', () => {
     expect(smartController).toContain("from './catalogInputRequest'");
     expect(catalogController).toContain('requestForInitialCatalogProduct(parsed, preferred)');
     expect(smartController).toContain("requestForInitialCatalogProduct(parsed, candidate, 'smart')");
+  });
+
+  it('applies the persisted personal standard before mass or catalog defaults', () => {
+    expect(runtime).toContain('export function catalogPersonalDefaultUnitRequest');
+    expect(authority).toContain('catalogPersonalDefaultUnitRequest');
+    expect(authority.indexOf('catalogPersonalDefaultUnitRequest'))
+      .toBeLessThan(authority.indexOf('genericDefaultPortionGrams'));
+    expect(authority).toContain('parsedRequest.amount');
+    expect(authority).toContain('current.amount');
+  });
+
+  it('uses one selection authority in standard and smart controllers', () => {
+    expect(selection).toContain('export function resolveCatalogUnitSelection');
+    expect(selection).toContain('if (!request.unitExplicit');
+    expect(selection).toContain('resolution.selectedOptionId');
+    for (const controller of [catalogController, smartController]) {
+      expect(controller).toContain("from './useCatalogUnitSelection'");
+      expect(controller).toContain('useCatalogUnitSelection(');
+      expect(controller).not.toMatch(/setSelectedOptionId\(\(current\) => current && resolution/);
+    }
   });
 
   it('forbids favorite promotion from reparsing or mutating calculation input', () => {
