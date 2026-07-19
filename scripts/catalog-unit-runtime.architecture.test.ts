@@ -6,6 +6,7 @@ function source(path: string): string {
 }
 
 const runtime = source('src/app/catalogUnitRuntime.ts');
+const selection = source('src/app/useCatalogUnitSelection.ts');
 const requestNormalizer = source('src/lib/resolution/catalogUnitRequest.ts');
 const inputRequestAuthority = source('src/app/catalogInputRequest.ts');
 const mealCalculation = source('src/lib/mealCalculation.ts');
@@ -27,6 +28,25 @@ describe('catalog unit runtime architecture', () => {
       expect(controller).not.toMatch(/\btoMatchingUnitCalibration\b/);
       expect(controller).not.toMatch(/\bfindMatchingCatalogCalibrations\b/);
       expect(controller).not.toMatch(/\bdirectClinicResolution\b/);
+    }
+  });
+
+  it('owns the one persisted personal standard request in the runtime', () => {
+    expect(runtime).toContain('export function catalogPersonalDefaultUnitRequest');
+    expect(runtime).toContain('selectCatalogCalibration(catalogProductCalibrations(product, mode))');
+    expect(runtime).toContain("? { amount, unit: saved.unit, unitExplicit: false }");
+    expect(runtime).toContain('catalogPersonalDefaultUnitRequest(product, 1, mode)');
+    expect(inputRequestAuthority).toContain('catalogPersonalDefaultUnitRequest');
+  });
+
+  it('uses one implicit-versus-explicit selection policy in both controllers', () => {
+    expect(selection).toContain('export function resolveCatalogUnitSelection');
+    expect(selection).toContain('if (!request.unitExplicit');
+    expect(selection).toContain('currentOption?.unit === request.unit');
+    for (const controller of unitControllers) {
+      expect(controller).toContain("from './useCatalogUnitSelection'");
+      expect(controller).toContain('useCatalogUnitSelection(');
+      expect(controller).not.toMatch(/resolution\.options\.some\([^)]*option\.id === current/);
     }
   });
 
