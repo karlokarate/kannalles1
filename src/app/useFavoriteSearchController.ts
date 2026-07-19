@@ -39,15 +39,10 @@ export function useFavoriteSearchController() {
         && sameCatalogHitOrder(base.search.candidates, merged);
       if (alreadyApplied) return;
 
-      // Request amount and unit already belong to the catalog controller SSOT.
-      // Favorite promotion may reorder/select products but must never reparse the
-      // canonical query (which intentionally no longer contains "24", "0,5", …).
-      base.dispatch({
-        type: 'resolve',
-        query: base.search.query,
-        product: preferred,
-        candidates: merged
-      });
+      // The base controller is the only authority allowed to pair a selected
+      // product with the current parsed request. Favorite promotion supplies
+      // only product ordering and never reparses or mutates the amount itself.
+      base.promoteSearchCandidate(preferred, merged);
     }).catch((error) => {
       if (!(error instanceof DOMException && error.name === 'AbortError')) {
         // Favorite promotion is fail-soft; the normal deterministic search remains usable.
@@ -56,8 +51,8 @@ export function useFavoriteSearchController() {
 
     return () => controller.abort();
   }, [
-    base.dispatch,
     base.favorites,
+    base.promoteSearchCandidate,
     base.search.candidates,
     base.search.phase,
     base.search.query,
