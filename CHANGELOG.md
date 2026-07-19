@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.1 – Mengen-SSOT für Suche und Gesamtrechnung
+
+- die einmal erkannte Menge und Einheit werden als gemeinsamer Eingabe-Intent durch Suche, Favoriten-Promotion und Produktvarianten geführt,
+- `24 Salzstangen` bleibt dadurch Menge 24 und fällt nicht nach Favoritenauswahl auf 1 zurück,
+- Produkt- und Klinikdefaults werden nur noch in einer zentralen Request-Policy bestimmt,
+- Kalibrierungen ändern die erkannte Menge nicht mehr,
+- Mehrprodukteingaben verwenden dieselbe Request-Policy wie Einzelsuchen.
+
 ## 2.4.0 – Natürliche Bruchmengen und verlässliche App-Updates
 
 - deutsche Bruchmengen wie `ein halbes`, `anderthalb`, `dreiviertel`, `½` und `1 1/2` werden deterministisch erkannt,

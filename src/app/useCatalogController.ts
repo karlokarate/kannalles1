@@ -232,7 +232,7 @@ export function useCatalogController() {
     const timer = window.setTimeout(() => {
       const record = createCatalogCalibration({ calibrationId: createLocalId('cal'), scope: 'catalog-product', identity: catalogCalibrationIdentity(product), unit: calibrationUnit, measuredCount, measuredTotalWeightG: weight, smallestEdibleUnit: calibrationUnit !== 'portion', now: new Date().toISOString() });
       if (!record || !saveCatalogCalibration(record)) { setCalibrationMessage('Die Messung konnte nicht gespeichert werden.'); return; }
-      setRequest({ amount: 1, unit: calibrationUnit, unitExplicit: false });
+      setRequest((current) => ({ ...current, unit: calibrationUnit, unitExplicit: false }));
       setSelectedOptionId(`${calibrationUnit}:user_calibration:${String(calibrationPreview.unitWeightG)}`);
       setCalibrationMessage(`${calibrationPreview.unitWeightG.toLocaleString('de-DE')} g je ${calibrationUnit === 'bar' ? 'Riegel' : calibrationUnit === 'slice' ? 'Scheibe' : calibrationUnit === 'portion' ? 'Portion' : 'Stück'} gespeichert.`);
       refreshLocalData();

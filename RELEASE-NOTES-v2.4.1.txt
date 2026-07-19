@@ -1,0 +1,13 @@
+FishIT KH Checker v2.4.1
+============================
+
+BEHOBEN
+-------
+- Erkannte Mengen wie „24 Salzstangen“ bleiben nach Favoriten-Promotion und Produktvarianten erhalten.
+- Die Menge wird unverändert in die Gesamtrechnung übernommen.
+- Kalibrierungen setzen eine erkannte Menge nicht mehr auf 1 zurück.
+- Einzel-, Mehrprodukt-, Favoriten- und Variantenpfade verwenden dieselbe zentrale Input-Request-Policy.
+
+SICHERHEIT
+----------
+Explizite Nutzereinheiten bleiben erhalten. Fehlende Stückgewichte werden weiterhin nicht geraten.
