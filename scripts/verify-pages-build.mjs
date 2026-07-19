@@ -2,6 +2,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  resolveBuildId,
+  serviceWorkerMetadataFile
+} from './public-config.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pagesDir = process.argv[2] ? path.resolve(process.argv[2]) : path.join(rootDir, 'dist');
@@ -11,6 +15,8 @@ const sourceManifest = JSON.parse(
   await fs.readFile(path.join(rootDir, 'Catalog/catalog-manifest.v1.json'), 'utf8'),
 );
 const appVersion = String(packageJson.version);
+const expectedBuildId = resolveBuildId(process.env, appVersion);
+const serviceWorkerBuildFile = serviceWorkerMetadataFile(expectedBuildId);
 const databaseFilename = String(sourceManifest?.database?.file ?? '');
 if (!databaseFilename || path.basename(databaseFilename) !== databaseFilename) {
   throw new Error(`GitHub-Pages-Prüfung fehlgeschlagen: ungültiger Manifest-Datenbankdateiname ${JSON.stringify(databaseFilename)}`);
@@ -63,6 +69,7 @@ const requiredFiles = [
   'index.html',
   'app.css',
   updateManifestFile,
+  serviceWorkerBuildFile,
   'manifest.webmanifest',
   'sw.js',
   'README-ERST-LESEN.html',
@@ -116,8 +123,20 @@ if (updateManifest.contract !== 'kh-checker-app-update' || updateManifest.schema
 }
 if (updateManifest.appVersion !== appVersion) fail('app-update.json stimmt nicht zur Anwendungsversion.');
 if (updateManifest.catalogVersion !== sourceManifest.catalogVersion) fail('app-update.json stimmt nicht zur Katalogversion.');
-if (typeof updateManifest.buildId !== 'string' || !/^[0-9A-Za-z._:-]{1,128}$/u.test(updateManifest.buildId)) {
-  fail('app-update.json besitzt keine sichere Build-ID.');
+if (updateManifest.buildId !== expectedBuildId) {
+  fail(`app-update.json Build-ID ${JSON.stringify(updateManifest.buildId)} stimmt nicht zu ${JSON.stringify(expectedBuildId)}.`);
+}
+
+const workerMetadataSource = await fs.readFile(path.join(pagesDir, serviceWorkerBuildFile), 'utf8');
+for (const required of [
+  'kh-checker-service-worker-build',
+  'KH_GET_BUILD_METADATA',
+  expectedBuildId,
+  appVersion
+]) {
+  if (!workerMetadataSource.includes(required)) {
+    fail(`Service-Worker-Metadaten enthalten nicht: ${required}`);
+  }
 }
 
 if (!/rel=["']manifest["']/i.test(indexHtml)) fail('index.html bindet kein Web-App-Manifest ein.');
@@ -161,6 +180,10 @@ for (const precached of ['index.html', 'app.css', 'README-ERST-LESEN.html', 'pac
 for (const excluded of [deployedDatabase, deployedManifest, updateManifestFile]) {
   if (serviceWorker.includes(excluded)) fail(`Service Worker darf ${excluded} nicht als App-Shell precachen.`);
 }
+const metadataOccurrences = serviceWorker.split(serviceWorkerBuildFile).length - 1;
+if (metadataOccurrences !== 1) {
+  fail(`sw.js muss ${serviceWorkerBuildFile} genau einmal als importScripts-Abhängigkeit führen; gefunden: ${metadataOccurrences}.`);
+}
 
 const allFiles = await listFiles(pagesDir);
 const jsFiles = allFiles.filter((file) => /\.(?:js|mjs)$/u.test(file));
@@ -174,6 +197,7 @@ for (const required of [
   updateManifestFile,
   appVersion,
   updateManifest.buildId,
+  'KH_GET_BUILD_METADATA'
 ]) {
   if (!appJavaScript.includes(required)) fail(`Offline-App-Build enthält nicht: ${required}`);
 }
@@ -195,6 +219,7 @@ console.log(JSON.stringify({
   pagesValid: true,
   appVersion,
   buildId: updateManifest.buildId,
+  serviceWorkerBuildFile,
   catalogVersion: sourceManifest.catalogVersion,
   databaseFilename,
   productCount: sourceManifest.database.products,
