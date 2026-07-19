@@ -1,0 +1,9 @@
+FishIT KH Checker v2.4.2
+============================
+
+BEHOBEN
+-------
+- Ein frischer Netzwerkladen oder eine Cache-Reparatur wird nicht mehr fälschlich als verfügbares Update angezeigt.
+- Eine wirklich veraltete Homescreen-App erkennt einen neueren Deploy-Build und bietet ihn nach vollständiger Vorbereitung an.
+- „Jetzt aktualisieren“ aktiviert den neuen Worker, lädt den neuen App-Build und ersetzt den alten Workbox-App-Cache.
+- Verlauf, Favoriten, eigene Produkte, Fotos, Einstellungen und Kalibrierungen bleiben erhalten.
