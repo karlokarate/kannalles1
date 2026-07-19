@@ -123,6 +123,8 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
   let inFlight: Promise<void> | null = null;
   let silentActivation: Promise<void> | null = null;
   let lastAttemptAt: number | null = null;
+  let pendingWorkerBuildId: string | null = null;
+  let verifiedWaitingBuildId: string | null = null;
   const observedWorkers = new WeakSet<ServiceWorker>();
   let mutable: MutableUpdateState = {
     phase: environment.supported ? 'registering' : 'unsupported',
@@ -139,8 +141,11 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
   };
   let snapshot: PwaUpdateSnapshot = decorate(mutable);
 
-  function remoteDiffersFromCurrentBuild(state: MutableUpdateState): boolean {
-    return state.remoteBuildId !== null && state.remoteBuildId !== state.currentBuildId;
+  function verifiedUpdateAvailable(state: MutableUpdateState): boolean {
+    return verifiedWaitingBuildId !== null
+      && state.remoteBuildId !== null
+      && verifiedWaitingBuildId === state.remoteBuildId
+      && verifiedWaitingBuildId !== state.currentBuildId;
   }
 
   function decorate(state: MutableUpdateState): PwaUpdateSnapshot {
@@ -152,7 +157,7 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
         && state.phase !== 'applying',
       canApply: bridge !== null
         && state.phase === 'update-available'
-        && remoteDiffersFromCurrentBuild(state)
+        && verifiedUpdateAvailable(state)
     });
   }
 
@@ -189,18 +194,20 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
     // A waiting worker alone is not proof of a newer app. It can also be the
     // worker for the exact build already loaded from the network after Cache
     // Storage was cleared while an older registration remained active.
-    if (mutable.remoteBuildId === null) {
+    if (mutable.remoteBuildId === null
+      || verifiedWaitingBuildId === null
+      || verifiedWaitingBuildId !== mutable.remoteBuildId) {
       publish({
         phase: environment.isOnline() ? 'checking' : 'offline',
         message: environment.isOnline()
-          ? 'Der lokale Service Worker wird mit dem bereitgestellten Build abgeglichen …'
+          ? 'Der wartende Service Worker wird noch dem bereitgestellten Build zugeordnet …'
           : 'Ein vorbereiteter Service Worker wurde gefunden, kann offline aber noch keinem Build sicher zugeordnet werden.',
         updatePromptVisible: false
       });
       return true;
     }
 
-    if (remoteDiffersFromCurrentBuild(mutable)) {
+    if (verifiedUpdateAvailable(mutable)) {
       publish({ checkedAt });
       publishVerifiedUpdate(environment.isOnline()
         ? undefined
@@ -220,6 +227,7 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
     });
     silentActivation = bridge.activateWaitingWorker(false)
       .then(() => {
+        verifiedWaitingBuildId = null;
         publishCurrentBuild(checkedAt);
       })
       .catch((error) => {
@@ -242,12 +250,17 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
     observedWorkers.add(worker);
     worker.addEventListener('statechange', () => {
       if (worker.state === 'installed' && bridge?.registration.waiting) {
+        verifiedWaitingBuildId = pendingWorkerBuildId;
+        pendingWorkerBuildId = null;
         markWorkerWaiting();
-      } else if (worker.state === 'activated'
-        && mutable.remoteBuildId === mutable.currentBuildId
-        && !bridge?.registration.waiting) {
-        publishCurrentBuild();
+      } else if (worker.state === 'activated') {
+        pendingWorkerBuildId = null;
+        verifiedWaitingBuildId = null;
+        if (mutable.remoteBuildId === mutable.currentBuildId && !bridge?.registration.waiting) {
+          publishCurrentBuild();
+        }
       } else if (worker.state === 'redundant' && mutable.phase === 'checking') {
+        pendingWorkerBuildId = null;
         publish({
           phase: 'error',
           message: 'Die neue App-Version konnte nicht vorbereitet werden. Bitte erneut prüfen.',
@@ -269,8 +282,8 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
     });
     observeInstallingWorker(nextBridge.registration.installing);
 
-    // Do not announce an update before app-update.json has proven that the
-    // deployed build differs from the JavaScript bundle currently executing.
+    // Do not announce an update before app-update.json and a successful worker
+    // update check have proven which build the waiting worker contains.
     if (nextBridge.registration.waiting) {
       markWorkerWaiting();
       return;
@@ -351,14 +364,12 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
         throw new Error(`Service Worker antwortet mit HTTP ${serviceWorkerResponse.status}.`);
       }
 
+      pendingWorkerBuildId = remote.buildId;
       await bridge.registration.update();
       const checkedAt = environment.now();
 
-      if (bridge.registration.waiting) {
-        await reconcileWaitingWorker(checkedAt);
-        return;
-      }
-
+      // Prefer an actually installing worker over an older waiting worker. A
+      // user may have dismissed build B while build C is being installed now.
       const installing = bridge.registration.installing;
       if (installing) {
         observeInstallingWorker(installing);
@@ -373,6 +384,15 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
         return;
       }
 
+      if (bridge.registration.waiting) {
+        verifiedWaitingBuildId = remote.buildId;
+        pendingWorkerBuildId = null;
+        await reconcileWaitingWorker(checkedAt);
+        return;
+      }
+
+      pendingWorkerBuildId = null;
+      verifiedWaitingBuildId = null;
       if (remote.buildId === environment.currentBuildId) {
         publishCurrentBuild(checkedAt);
         return;
@@ -385,7 +405,8 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
         updatePromptVisible: false
       });
     } catch (error) {
-      if (bridge.registration.waiting) {
+      pendingWorkerBuildId = null;
+      if (bridge.registration.waiting && verifiedWaitingBuildId !== null) {
         await reconcileWaitingWorker();
         return;
       }
@@ -408,7 +429,7 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
   }
 
   async function applyUpdate(): Promise<void> {
-    if (!bridge || mutable.phase !== 'update-available' || !remoteDiffersFromCurrentBuild(mutable)) return;
+    if (!bridge || mutable.phase !== 'update-available' || !verifiedUpdateAvailable(mutable)) return;
     publish({
       phase: 'applying',
       message: 'Die neue App-Version wird aktiviert und der alte App-Cache ersetzt …',
