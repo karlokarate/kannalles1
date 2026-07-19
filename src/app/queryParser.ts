@@ -1,4 +1,8 @@
 import { clinicCatalogProducts } from '../lib/clinicCatalog';
+import {
+  expandGermanVulgarFractions,
+  parseLeadingGermanQuantity
+} from '../lib/input/germanQuantity';
 import type { RequestedUnit } from '../lib/resolution/catalogResolution';
 
 export interface ParsedCatalogQuery {
@@ -22,12 +26,6 @@ const UNIT_WORDS: Array<{ pattern: RegExp; unit: RequestedUnit }> = [
   { pattern: /^(?:milliliter|ml)\b/i, unit: 'ml' }
 ];
 
-const SPOKEN_AMOUNTS: Readonly<Record<string, number>> = {
-  ein: 1, eine: 1, einen: 1, einem: 1, einer: 1,
-  zwei: 2, drei: 3, vier: 4, fünf: 5, fuenf: 5, sechs: 6,
-  sieben: 7, acht: 8, neun: 9, zehn: 10, elf: 11, zwölf: 12, zwoelf: 12
-};
-
 const DECIMAL_COMMA_SENTINEL = '\uE000';
 const PRODUCT_SENTINEL_START = '\uE100';
 const PRODUCT_SENTINEL_END = '\uE101';
@@ -37,14 +35,8 @@ const CLINIC_CONNECTOR_PRODUCT_NAMES = clinicCatalogProducts()
   .filter((name) => CONNECTOR_WORD.test(name))
   .sort((left, right) => right.length - left.length || left.localeCompare(right, 'de-DE'));
 
-function localizedNumber(value: string): number | null {
-  const normalized = value.replace(/\s/g, '').replace(',', '.');
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
 export function normalizeCatalogQuery(value: string): string {
-  return value.normalize('NFKC').replace(/\s+/g, ' ').trim();
+  return expandGermanVulgarFractions(value).normalize('NFKC').replace(/\s+/g, ' ').trim();
 }
 
 function protectDecimalCommas(value: string): string {
@@ -130,22 +122,11 @@ export function parseCatalogQuery(rawInput: string): ParsedCatalogQuery | null {
   let unit: RequestedUnit = 'g';
   let unitExplicit = false;
 
-  const amountMatch = remainder.match(/^(\d+(?:[.,]\d+)?)\s*/);
-  if (amountMatch) {
-    const parsed = localizedNumber(amountMatch[1]);
-    if (parsed !== null) {
-      amount = parsed;
-      amountExplicit = true;
-      remainder = remainder.slice(amountMatch[0].length).trimStart();
-    }
-  } else {
-    const spokenMatch = remainder.match(/^([a-zäöüß]+)\s+/i);
-    const spokenAmount = spokenMatch ? SPOKEN_AMOUNTS[spokenMatch[1].toLocaleLowerCase('de-DE')] : undefined;
-    if (spokenMatch && spokenAmount !== undefined) {
-      amount = spokenAmount;
-      amountExplicit = true;
-      remainder = remainder.slice(spokenMatch[0].length).trimStart();
-    }
+  const quantity = parseLeadingGermanQuantity(remainder);
+  if (quantity) {
+    amount = quantity.amount;
+    amountExplicit = true;
+    remainder = remainder.slice(quantity.consumedCharacters).trimStart();
   }
 
   for (const candidate of UNIT_WORDS) {
