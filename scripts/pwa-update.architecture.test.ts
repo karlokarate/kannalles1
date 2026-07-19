@@ -41,8 +41,9 @@ describe('PWA deployment update architecture', () => {
     expect(pwa).toContain('controller.markWorkerWaiting()');
     expect(pwa).not.toContain('controller.markUpdateAvailable()');
     expect(runtime).toContain('A waiting worker alone is not proof of a newer app');
-    expect(runtime).toContain('remoteDiffersFromCurrentBuild');
-    expect(runtime).toContain('mutable.remoteBuildId === null');
+    expect(runtime).toContain('verifiedUpdateAvailable');
+    expect(runtime).toContain('verifiedWaitingBuildId');
+    expect(runtime).toContain('verifiedWaitingBuildId !== mutable.remoteBuildId');
     expect(runtime).toContain('updatePromptVisible: false');
   });
 
@@ -63,6 +64,13 @@ describe('PWA deployment update architecture', () => {
     expect(pwa).toContain('if (reloadPage) window.location.reload()');
   });
 
+  it('does not activate an older waiting worker while a newer build is installing', () => {
+    expect(runtime).toContain('Prefer an actually installing worker over an older waiting worker');
+    expect(runtime.indexOf('const installing = bridge.registration.installing'))
+      .toBeLessThan(runtime.indexOf('if (bridge.registration.waiting)'));
+    expect(runtime).toContain('pendingWorkerBuildId = remote.buildId');
+  });
+
   it('activates the exact waiting worker and replaces caches through Workbox activation', () => {
     expect(pwa).toContain('registration.waiting');
     expect(pwa).toContain("waiting.postMessage({ type: 'SKIP_WAITING' })");
@@ -75,7 +83,7 @@ describe('PWA deployment update architecture', () => {
   it('keeps only verified prepared updates actionable while offline', () => {
     expect(runtime).toContain('Eine verifizierte neue App-Version');
     expect(runtime).toContain('kann offline aktiviert werden');
-    expect(runtime).toContain('remoteBuildId: null');
+    expect(runtime).toContain('verifiedWaitingBuildId === state.remoteBuildId');
     expect(runtime).toContain('canApply: bridge !== null');
   });
 
