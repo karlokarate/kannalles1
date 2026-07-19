@@ -3,6 +3,7 @@ import type {
   CatalogProduct,
   CatalogSearchHit
 } from './catalog/catalogDomain';
+import type { CatalogInputIntent } from './input/catalogInput';
 
 export type CatalogSearchPhase =
   | 'idle'
@@ -16,6 +17,8 @@ export type CatalogSearchPhase =
 export interface CatalogSearchState {
   phase: CatalogSearchPhase;
   query: string;
+  /** Original parsed amount/unit semantics for the active user search. */
+  input: CatalogInputIntent | null;
   candidates: readonly CatalogSearchHit[];
   selectedProduct: CatalogProduct | null;
   diagnostics: CatalogDiagnostics | null;
@@ -24,9 +27,16 @@ export interface CatalogSearchState {
 }
 
 export type CatalogSearchAction =
-  | { type: 'start'; query: string }
+  | { type: 'start'; query: string; input: CatalogInputIntent }
   | { type: 'show-choice'; query: string; candidates: readonly CatalogSearchHit[] }
-  | { type: 'resolve'; query: string; product: CatalogProduct; candidates?: readonly CatalogSearchHit[] }
+  | {
+      type: 'resolve';
+      query: string;
+      product: CatalogProduct;
+      candidates?: readonly CatalogSearchHit[];
+      /** `null` explicitly marks a programmatic resolution without user input. */
+      input?: CatalogInputIntent | null;
+    }
   | { type: 'needs-calibration'; product: CatalogProduct }
   | { type: 'not-found'; query: string }
   | { type: 'failed'; query: string; diagnostics: CatalogDiagnostics }
@@ -38,6 +48,7 @@ export function createCatalogSearchState(): CatalogSearchState {
   return {
     phase: 'idle',
     query: '',
+    input: null,
     candidates: [],
     selectedProduct: null,
     diagnostics: null,
@@ -56,6 +67,7 @@ export function catalogSearchReducer(
         ...state,
         phase: 'searching',
         query: action.query,
+        input: action.input,
         candidates: [],
         selectedProduct: null,
         diagnostics: null,
@@ -78,6 +90,7 @@ export function catalogSearchReducer(
         ...state,
         phase: 'resolved',
         query: action.query,
+        input: action.input === undefined ? state.input : action.input,
         candidates: action.candidates ?? state.candidates,
         selectedProduct: action.product,
         diagnostics: null,
