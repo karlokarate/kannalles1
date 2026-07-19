@@ -74,6 +74,7 @@ export interface SavedMealLine {
 export interface SavedMealCalculation {
   schemaVersion: 1;
   id: string;
+  /** Full ISO-8601 date-time of the represented automatic calculation. */
   createdAt: string;
   items: SavedMealLine[];
   totalCarbohydratesG: number;
@@ -160,6 +161,12 @@ function isSection(value: unknown): value is AppSection {
     || value === 'settings';
 }
 
+function canonicalDateTime(value: unknown): string | null {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/u.test(value)) return null;
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? new Date(time).toISOString() : null;
+}
+
 function validHistoryEntry(value: unknown): value is CalculationHistoryEntry {
   if (!isRecord(value) || value.schemaVersion !== 2 || !isRecord(value.product)) return false;
   return typeof value.id === 'string'
@@ -226,7 +233,7 @@ function validSavedMealLine(value: unknown): value is SavedMealLine {
 function validSavedMeal(value: unknown): value is SavedMealCalculation {
   return isRecord(value) && value.schemaVersion === 1
     && typeof value.id === 'string'
-    && typeof value.createdAt === 'string'
+    && canonicalDateTime(value.createdAt) !== null
     && Array.isArray(value.items) && value.items.length > 0 && value.items.length <= 100
     && value.items.every(validSavedMealLine)
     && typeof value.totalCarbohydratesG === 'number' && Number.isFinite(value.totalCarbohydratesG) && value.totalCarbohydratesG >= 0;
@@ -359,10 +366,24 @@ export function clearHistoryEntries(): void {
   writeEnvelope(envelope);
 }
 
-export function saveMealCalculation(entry: SavedMealCalculation): void {
-  if (!validSavedMeal(entry)) return;
+/**
+ * Persists the represented automatic calculation with the exact execution
+ * time. The caller-provided timestamp is deliberately replaced so stale
+ * snapshots or reused calculations cannot keep an earlier clock value.
+ */
+export function saveMealCalculation(
+  entry: SavedMealCalculation,
+  performedAt = new Date().toISOString()
+): void {
+  const timestamp = canonicalDateTime(performedAt);
+  if (!timestamp) return;
+  const timestamped: SavedMealCalculation = { ...entry, createdAt: timestamp };
+  if (!validSavedMeal(timestamped)) return;
   const envelope = readEnvelope();
-  envelope.meals = [entry, ...envelope.meals.filter((item) => item.id !== entry.id)].slice(0, MAX_MEAL_ENTRIES);
+  envelope.meals = [
+    timestamped,
+    ...envelope.meals.filter((item) => item.id !== timestamped.id)
+  ].slice(0, MAX_MEAL_ENTRIES);
   writeEnvelope(envelope);
 }
 
