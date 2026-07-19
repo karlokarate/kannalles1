@@ -98,6 +98,26 @@ function catalogProductCalibrations(
   );
 }
 
+/**
+ * Returns the one persisted personal standard unit for the concrete product.
+ * Direct institutional piece values remain authoritative and ignore unrelated
+ * historical calibrations.
+ */
+export function catalogPersonalDefaultUnitRequest(
+  product: CatalogProduct,
+  amount: number,
+  mode: CatalogUnitRuntimeMode = 'standard'
+): CatalogUnitRequest | null {
+  if (isClinicCatalogProduct(product)
+    && product.clinic.directCarbohydratesPerUnit !== null) {
+    return null;
+  }
+  const saved = selectCatalogCalibration(catalogProductCalibrations(product, mode));
+  return saved
+    ? { amount, unit: saved.unit, unitExplicit: false }
+    : null;
+}
+
 function directClinicRuntimeState(
   product: ClinicCatalogProduct,
   request: CatalogUnitRequest
@@ -164,8 +184,6 @@ export function defaultClinicCatalogUnitRequest(
   if (product.clinic.directCarbohydratesPerUnit !== null) {
     return clinicDefaultRequest(product);
   }
-  const saved = selectCatalogCalibration(catalogProductCalibrations(product, mode));
-  return saved
-    ? { amount: 1, unit: saved.unit, unitExplicit: false }
-    : clinicDefaultRequest(product);
+  return catalogPersonalDefaultUnitRequest(product, 1, mode)
+    ?? clinicDefaultRequest(product);
 }
