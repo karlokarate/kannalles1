@@ -1,0 +1,68 @@
+name: One-off PWA v2.4.2 metadata sync
+
+on:
+  push:
+    branches: [agent/pwa-update-lifecycle-v2-4-2]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: ${{ !contains(github.event.head_commit.message, '[pwa-2.4.2-sync]') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: agent/pwa-update-lifecycle-v2-4-2
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Synchronize v2.4.2 release metadata
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const version = '2.4.2';
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          lock.version = version;
+          lock.packages[''].version = version;
+          fs.writeFileSync('package-lock.json', `${JSON.stringify(lock, null, 2)}\n`);
+
+          let readme = fs.readFileSync('README.md', 'utf8')
+            .replace(/^# FishIT KH Checker v[^\n]+/u, `# FishIT KH Checker v${version}`);
+          const updateBullet = '- die Updateanzeige erscheint nur für einen eindeutig identifizierten neueren Service-Worker-Build; Erstinstallation und Cache-Reparatur bleiben ohne falschen Updatehinweis';
+          if (!readme.includes(updateBullet)) {
+            readme = readme.replace(
+              '- erkannte Mengen bleiben als eine zentrale Request-Quelle bei Favoritenpriorisierung, Produktvarianten und persönlicher Kalibrierung erhalten',
+              `- erkannte Mengen bleiben als eine zentrale Request-Quelle bei Favoritenpriorisierung, Produktvarianten und persönlicher Kalibrierung erhalten\n${updateBullet}`
+            );
+          }
+          fs.writeFileSync('README.md', readme);
+
+          fs.writeFileSync(
+            'README-ERST-LESEN.txt',
+            fs.readFileSync('README-ERST-LESEN.txt', 'utf8')
+              .replace(/^FishIT KH CHECKER v[^\n]+/u, `FishIT KH CHECKER v${version}`)
+          );
+
+          let changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
+          const heading = '## 2.4.2 – Korrekte PWA-Update-Erkennung und Cache-Aktivierung';
+          if (!changelog.includes(heading)) {
+            changelog = changelog.replace('# Changelog\n', `# Changelog\n\n${heading}\n\n- eine frische Netzwerkladeversion und die erste Service-Worker-Installation werden nicht mehr fälschlich als Update angeboten,\n- ein gelöschter Cache bei bestehender Registrierung wird im Hintergrund repariert, wenn die geladene App bereits dem aktuellen Deploy entspricht,\n- jeder Service Worker enthält eine abfragbare, build-spezifische Identität,\n- nur ein wartender Worker, dessen Build-ID exakt dem neueren Deploymentmanifest entspricht, erhält einen Updatebutton,\n- die Aktivierung adressiert genau diesen geprüften Worker und lädt erst nach Aktivierung neu,\n- der reale Zwei-Deploy-Test prüft zusätzlich, dass alte App-Assets aus dem Workbox-Cache verschwinden und neue Assets precacht sind.\n`);
+          }
+          fs.writeFileSync('CHANGELOG.md', changelog);
+
+          fs.writeFileSync('RELEASE-NOTES-v2.4.2.txt', `FishIT KH Checker v2.4.2\n============================\n\nBEHOBEN\n-------\n- Nach einem frischen Netzwerkladen oder einer Cache-Löschung wird die aktuelle App nicht mehr fälschlich als Update angezeigt.\n- Ein Updatebutton erscheint nur, wenn ein eindeutig identifizierter, tatsächlich neuerer Service Worker vollständig vorbereitet ist.\n- „Jetzt aktualisieren“ aktiviert genau diesen Worker, ersetzt den alten App-Cache und lädt anschließend den neuen Build.\n- Ein bestehender aktueller Build kann seinen Offline-Cache lautlos reparieren.\n\nDATENSCHUTZ UND KOMPATIBILITÄT\n-----------------------------\nLokaler Verlauf, Favoriten, eigene Produkte, Fotos, Einstellungen, Kalibrierungen und der SQLite-Katalog werden beim App-Cache-Update nicht gelöscht.\n`);
+          NODE
+
+      - name: Remove one-off workflow and commit synchronized metadata
+        run: |
+          rm .github/workflows/one-off-pwa-v2-4-2-sync.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json README.md README-ERST-LESEN.txt CHANGELOG.md RELEASE-NOTES-v2.4.2.txt .github/workflows/one-off-pwa-v2-4-2-sync.yml
+          git commit -m "Synchronize release metadata for v2.4.2 [pwa-2.4.2-sync]"
+          git push origin HEAD:agent/pwa-update-lifecycle-v2-4-2
