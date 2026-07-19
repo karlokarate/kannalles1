@@ -1,0 +1,57 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+
+function source(path: string): string {
+  return readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+}
+
+const authority = source('src/app/catalogInputRequest.ts');
+const catalogController = source('src/app/useCatalogController.ts');
+const smartController = source('src/app/useSmartCatalogController.ts');
+const favoriteController = source('src/app/useFavoriteSearchController.ts');
+const calculator = source('src/app/CalculatorScreen.tsx');
+
+describe('catalog input request architecture', () => {
+  it('keeps parsed-input conversion in one authority', () => {
+    expect(authority).toContain('requestFromParsedCatalogInput');
+    expect(authority).toContain('requestForInitialCatalogProduct');
+    expect(authority).toContain('requestForCatalogVariant');
+    expect(authority).toContain('requestForBareCatalogProduct');
+    expect(authority.match(/normalizeCatalogUnitRequest\(/g)).toHaveLength(1);
+
+    expect(catalogController).toContain("from './catalogInputRequest'");
+    expect(smartController).toContain("from './catalogInputRequest'");
+    expect(catalogController).toContain('requestForInitialCatalogProduct(parsed, preferred)');
+    expect(smartController).toContain("requestForInitialCatalogProduct(parsed, candidate, 'smart')");
+  });
+
+  it('forbids favorite promotion from reparsing or mutating calculation input', () => {
+    expect(favoriteController).not.toContain('parseCatalogQuery');
+    expect(favoriteController).not.toContain('setRequest');
+    expect(favoriteController).toContain('base.search.query');
+    expect(favoriteController).toContain("type: 'resolve'");
+  });
+
+  it('keeps product variant request changes in the controller, not the view', () => {
+    const chooseCandidate = calculator.slice(
+      calculator.indexOf('const chooseCandidate'),
+      calculator.indexOf("if (c.mealOpen")
+    );
+    expect(chooseCandidate).toContain('c.selectCandidate(hit)');
+    expect(chooseCandidate).not.toContain('setRequest');
+    expect(catalogController).toContain('requestForCatalogVariant(current, hit)');
+  });
+
+  it('preserves current amount after confirming a calibration', () => {
+    expect(catalogController).toContain("setRequest((current) => ({ ...current, unit: calibrationUnit, unitExplicit: false }))");
+    expect(catalogController).not.toContain("setRequest({ amount: 1, unit: calibrationUnit");
+  });
+
+  it('removes all controller-local copies of parsed request defaulting', () => {
+    for (const controller of [catalogController, smartController]) {
+      expect(controller).not.toMatch(/parsed\.amount\s*,\s*unit:\s*parsed\.unit/);
+      expect(controller).not.toMatch(/isGenericCatalogProduct\(candidate\).*amount:\s*200/s);
+      expect(controller).not.toMatch(/defaultClinicCatalogUnitRequest\(candidate/);
+    }
+  });
+});
