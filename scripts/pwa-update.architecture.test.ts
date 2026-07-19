@@ -13,8 +13,10 @@ const app = source('src/App.tsx');
 const settings = source('src/app/SettingsScreen.tsx');
 const preparePublic = source('scripts/prepare-public.mjs');
 const verifyPages = source('scripts/verify-pages-build.mjs');
+const publicConfig = source('scripts/public-config.mjs');
 const defaultPlaywright = source('playwright.config.ts');
 const updatePlaywright = source('e2e/playwright.pwa-update.config.ts');
+const updateSpec = source('e2e/pwa-update.spec.ts');
 const packageJson = JSON.parse(source('package.json')) as { scripts?: Record<string, string> };
 
 describe('PWA deployment update architecture', () => {
@@ -36,32 +38,57 @@ describe('PWA deployment update architecture', () => {
     expect(pwa).toContain('APP_UPDATE_CHECK_INTERVAL_MS');
   });
 
-  it('uses no-store checks before invoking the browser update algorithm', () => {
+  it('uses no-store checks and compares build identity before any prompt', () => {
     expect(runtime).toContain("cache: 'no-store'");
     expect(runtime).toContain("'Cache-Control': 'no-cache'");
     expect(runtime).toContain('await bridge.registration.update()');
-    expect(runtime).toContain('await bridge.applyUpdate()');
-    expect(runtime).toContain('updatePromptVisible: true');
+    expect(runtime).toContain('metadata.buildId === remoteBuildId');
+    expect(runtime).toContain('metadata.buildId === environment.currentBuildId');
+    expect(runtime).toContain('Der aktuelle App-Build darf nicht als Update angeboten werden.');
+    expect(runtime.indexOf('parseAppUpdateManifest')).toBeLessThan(runtime.indexOf('await bridge.registration.update()'));
   });
 
-  it('activates the exact waiting worker and reloads only after controller change', () => {
-    expect(pwa).toContain('registration.waiting');
-    expect(pwa).toContain("waiting.postMessage({ type: 'SKIP_WAITING' })");
+  it('embeds an exact build identity in every generated service worker', () => {
+    expect(publicConfig).toContain('serviceWorkerMetadataFile');
+    expect(preparePublic).toContain("contract: 'kh-checker-service-worker-build'");
+    expect(preparePublic).toContain("type !== 'KH_GET_BUILD_METADATA'");
+    expect(vite).toContain('importScripts: [swBuildMetadataFile]');
+    expect(vite).toContain("globIgnores: ['catalog/**', 'app-update.json', 'sw-build-*.js']");
+    expect(verifyPages).toContain('metadataOccurrences !== 1');
+  });
+
+  it('activates only the exact metadata-verified waiting worker', () => {
+    expect(pwa).toContain('readServiceWorkerMetadata');
+    expect(pwa).toContain('parseServiceWorkerBuildMetadata');
+    expect(pwa).toContain('registration.waiting !== expectedWorker');
+    expect(pwa).toContain("expectedWorker.postMessage({ type: 'SKIP_WAITING' })");
     expect(pwa).toContain("navigator.serviceWorker.addEventListener('controllerchange'");
-    expect(pwa).toContain('window.location.reload()');
-    expect(pwa.indexOf("waiting.postMessage({ type: 'SKIP_WAITING' })"))
+    expect(pwa).toContain("expectedWorker.addEventListener('statechange'");
+    expect(pwa.indexOf("expectedWorker.postMessage({ type: 'SKIP_WAITING' })"))
       .toBeGreaterThan(pwa.indexOf("navigator.serviceWorker.addEventListener('controllerchange'"));
   });
 
-  it('keeps a locally prepared update actionable while offline', () => {
-    expect(runtime).toContain('if (bridge.registration.waiting)');
-    expect(runtime).toContain('kann auch offline aktiviert werden');
-    expect(runtime).toContain('preserveWaitingUpdate');
+  it('repairs first installs and deleted caches without a false update button', () => {
+    expect(runtime).toContain('activateCurrentBuildSilently');
+    expect(runtime).toContain('der Offline-Cache wird im Hintergrund synchronisiert');
+    expect(runtime).toContain('updatePromptVisible: false');
+    expect(updateSpec).toContain('frische Netzwerkladen');
+    expect(updateSpec).toContain('Cache Storage gelöscht');
+    expect(updateSpec).toContain('pwa-update-banner');
+  });
+
+  it('keeps a genuinely newer prepared worker user-controlled and replaces old app cache entries', () => {
+    expect(runtime).toContain("mode: 'waiting'");
+    expect(runtime).toContain("mode: 'reload'");
+    expect(runtime).toContain('der App-Cache ersetzt');
+    expect(updateSpec).toContain('oldEntryUrl');
+    expect(updateSpec).toContain('newEntryUrl');
+    expect(updateSpec).toContain('oldEntryStillCached');
+    expect(updateSpec).toContain('newEntryCached');
   });
 
   it('keeps deployment metadata outside the app-shell precache', () => {
-    expect(vite).toContain("globIgnores: ['catalog/**', 'app-update.json']");
-    expect(preparePublic).toContain("contract: 'kh-checker-app-update'");
+    expect(vite).toContain("globIgnores: ['catalog/**', 'app-update.json', 'sw-build-*.js']");
     expect(preparePublic).toContain("path.join(targetDir, 'app-update.json')");
     expect(verifyPages).toContain("const updateManifestFile = 'app-update.json'");
     expect(verifyPages).toContain('Service Worker darf ${excluded} nicht als App-Shell precachen.');
