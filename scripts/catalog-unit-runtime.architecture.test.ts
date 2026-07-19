@@ -50,7 +50,8 @@ describe('catalog unit and input request architecture', () => {
     expect(searchState).toContain("type: 'start'; query: string; input: CatalogInputIntent");
     expect(searchState).toContain('input: action.input');
     expect(standardController).toContain("dispatch({ type: 'start', query: parsed.catalogQuery, input: parsed })");
-    expect(standardController).toContain('catalogRequestForInput(search.input, hit)');
+    expect(standardController).toContain('const selectionInput = search.input ?? implicitCatalogInput(hit.displayName)');
+    expect(standardController).toContain('catalogRequestForInput(selectionInput, hit)');
     expect(favoriteController).toContain('const input = base.search.input');
     expect(favoriteController).toContain('catalogRequestForInput(input, preferred)');
     expect(favoriteController).not.toContain('parseCatalogQuery');
