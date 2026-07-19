@@ -1,0 +1,143 @@
+name: One-off input request gates
+
+on:
+  push:
+    branches: [agent/input-request-ssot]
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: agent/input-request-ssot
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Install permanent SSOT gates
+        run: |
+          python3 - <<'PY'
+          import pathlib
+
+          def replace_once(text, before, after, label):
+              count = text.count(before)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one fragment, found {count}')
+              return text.replace(before, after, 1)
+
+          workflow_path = pathlib.Path('.github/workflows/build-deploy-pages.yml')
+          workflow = workflow_path.read_text()
+          workflow = replace_once(
+              workflow,
+              '''      - name: Run targeted semantic input tests
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:semantic-input 2>&1 | tee semantic-input-test-output.log
+
+      - name: Upload targeted diagnostics on failure
+''',
+              '''      - name: Run targeted semantic input tests
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:semantic-input 2>&1 | tee semantic-input-test-output.log
+
+      - name: Run targeted input request SSOT tests
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:input-request 2>&1 | tee input-request-test-output.log
+
+      - name: Upload targeted diagnostics on failure
+''',
+              'unit gate'
+          )
+          workflow = replace_once(
+              workflow,
+              '''            semantic-input-test-output.log
+''',
+              '''            semantic-input-test-output.log
+            input-request-test-output.log
+''',
+              'diagnostic artifact'
+          )
+          workflow = replace_once(
+              workflow,
+              '''      - name: Run targeted natural-language quantity journeys
+        run: npm run test:e2e:semantic-input
+
+      - name: Run complete real browser catalog proof
+''',
+              '''      - name: Run targeted natural-language quantity journeys
+        run: npm run test:e2e:semantic-input
+
+      - name: Run targeted input request SSOT journeys
+        run: npm run test:e2e:input-request
+
+      - name: Run complete real browser catalog proof
+''',
+              'browser gate'
+          )
+          workflow_path.write_text(workflow)
+
+          validator_path = pathlib.Path('scripts/validate-workflow.mjs')
+          validator = validator_path.read_text()
+          validator = replace_once(
+              validator,
+              "const naturalLanguage = specs.get('natural-language-quantities.spec.ts');\nconst pwaUpdate = specs.get('pwa-update.spec.ts');\n",
+              "const naturalLanguage = specs.get('natural-language-quantities.spec.ts');\nconst inputRequest = specs.get('input-request-ssot.spec.ts');\nconst pwaUpdate = specs.get('pwa-update.spec.ts');\n",
+              'sentinel declaration'
+          )
+          validator = replace_once(
+              validator,
+              "if (!matrix || !quality || !catalog || !runtime || !naturalLanguage || !pwaUpdate || !harness || !pwaUpdateConfig || !pwaUpdateServer) {\n",
+              "if (!matrix || !quality || !catalog || !runtime || !naturalLanguage || !inputRequest || !pwaUpdate || !harness || !pwaUpdateConfig || !pwaUpdateServer) {\n",
+              'sentinel requirement'
+          )
+          validator = replace_once(
+              validator,
+              "  ]) requireText(naturalLanguage, fragment, 'Natural-Language-Quantity-E2E-Coverage');\n  for (const fragment of [\n    \"const OLD_BUILD = 'pwa-old'\",\n",
+              "  ]) requireText(naturalLanguage, fragment, 'Natural-Language-Quantity-E2E-Coverage');\n  for (const fragment of [\n    '24 Salzstangen',\n    'SALT_STICKS_GTIN',\n    'meal-floating-add',\n    'catalog-variant-select',\n    \"toHaveValue('24')\"\n  ]) requireText(inputRequest, fragment, 'Input-Request-SSOT-E2E-Coverage');\n  for (const fragment of [\n    \"const OLD_BUILD = 'pwa-old'\",\n",
+              'E2E coverage'
+          )
+          validator = replace_once(
+              validator,
+              "  const semanticInputTests = String(packageJson.scripts?.['test:semantic-input'] ?? '');\n  const semanticInputE2e = String(packageJson.scripts?.['test:e2e:semantic-input'] ?? '');\n",
+              "  const semanticInputTests = String(packageJson.scripts?.['test:semantic-input'] ?? '');\n  const semanticInputE2e = String(packageJson.scripts?.['test:e2e:semantic-input'] ?? '');\n  const inputRequestTests = String(packageJson.scripts?.['test:input-request'] ?? '');\n  const inputRequestE2e = String(packageJson.scripts?.['test:e2e:input-request'] ?? '');\n",
+              'script declaration'
+          )
+          validator = replace_once(
+              validator,
+              "  for (const fragment of [\n    'e2e/natural-language-quantities.spec.ts',\n    '--project=chromium-desktop'\n  ]) requireText(semanticInputE2e, fragment, 'Gezielte semantische Browsertests');\n\n  const evidence = validateEvidence();\n",
+              "  for (const fragment of [\n    'e2e/natural-language-quantities.spec.ts',\n    '--project=chromium-desktop'\n  ]) requireText(semanticInputE2e, fragment, 'Gezielte semantische Browsertests');\n  for (const fragment of [\n    'src/app/catalogInputRequest.test.ts',\n    'src/lib/searchState.test.ts',\n    'scripts/catalog-unit-runtime.architecture.test.ts'\n  ]) requireText(inputRequestTests, fragment, 'Gezielte Input-Request-SSOT-Tests');\n  for (const fragment of [\n    'e2e/input-request-ssot.spec.ts',\n    '--project=chromium-desktop'\n  ]) requireText(inputRequestE2e, fragment, 'Gezielte Input-Request-SSOT-Browsertests');\n\n  const evidence = validateEvidence();\n",
+              'script validation'
+          )
+          validator = replace_once(
+              validator,
+              "  'npm run lint', 'npm run test:runtime', 'npm run test:pwa-update', 'npm run test:semantic-input', 'npm test',\n",
+              "  'npm run lint', 'npm run test:runtime', 'npm run test:pwa-update', 'npm run test:semantic-input',\n  'npm run test:input-request', 'npm test',\n",
+              'quality command'
+          )
+          validator = replace_once(
+              validator,
+              "  'npm run test:e2e:semantic-input', 'npm run test:e2e']) {\n",
+              "  'npm run test:e2e:semantic-input', 'npm run test:e2e:input-request', 'npm run test:e2e']) {\n",
+              'browser command'
+          )
+          validator_path.write_text(validator)
+          PY
+
+      - name: Remove one-off workflow and commit gates
+        run: |
+          rm .github/workflows/one-off-input-request-gates.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/build-deploy-pages.yml scripts/validate-workflow.mjs .github/workflows/one-off-input-request-gates.yml
+          git commit -m "Require dedicated input request SSOT gates [input-gate-sync]"
+          git push origin HEAD:agent/input-request-ssot
