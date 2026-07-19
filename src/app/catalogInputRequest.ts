@@ -24,6 +24,24 @@ export function requestFromParsedCatalogInput(
   });
 }
 
+/** Product-specific defaults for a true bare-name selection without quantity. */
+export function requestForBareCatalogProduct(
+  product: CatalogProduct,
+  mode: CatalogUnitRuntimeMode = 'standard'
+): CatalogUnitRequest {
+  if (isGenericCatalogProduct(product)) {
+    return { amount: 200, unit: 'g', unitExplicit: true };
+  }
+  if (isClinicCatalogProduct(product)) {
+    return defaultClinicCatalogUnitRequest(product, mode);
+  }
+  return {
+    amount: 1,
+    unit: product.nutrition.basis === 'mass' ? 'g' : 'ml',
+    unitExplicit: false
+  };
+}
+
 /**
  * Applies product-specific defaults exactly once, when the original user input
  * contains neither an explicit amount nor an explicit unit. Any recognized
@@ -36,14 +54,9 @@ export function requestForInitialCatalogProduct(
   mode: CatalogUnitRuntimeMode = 'standard'
 ): CatalogUnitRequest {
   const parsedRequest = requestFromParsedCatalogInput(parsed);
-  if (parsed.amountExplicit || parsed.unitExplicit) return parsedRequest;
-  if (isGenericCatalogProduct(product)) {
-    return { amount: 200, unit: 'g', unitExplicit: true };
-  }
-  if (isClinicCatalogProduct(product)) {
-    return defaultClinicCatalogUnitRequest(product, mode);
-  }
-  return parsedRequest;
+  return parsed.amountExplicit || parsed.unitExplicit
+    ? parsedRequest
+    : requestForBareCatalogProduct(product, mode);
 }
 
 /**
