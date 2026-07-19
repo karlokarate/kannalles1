@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import legacy from '@vitejs/plugin-legacy';
 import { VitePWA } from 'vite-plugin-pwa';
+import { serviceWorkerMetadataFile } from './scripts/public-config.mjs';
 
 const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 const appVersion = packageJson.version;
@@ -10,6 +11,7 @@ const buildId = String(process.env.KH_BUILD_ID || process.env.GITHUB_SHA || `ver
 if (!/^[0-9A-Za-z._:-]{1,128}$/u.test(buildId)) {
   throw new Error(`Unsafe build identity: ${JSON.stringify(buildId)}`);
 }
+const swBuildMetadataFile = serviceWorkerMetadataFile(buildId);
 
 export default defineConfig({
   base: './',
@@ -80,9 +82,12 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,mjs,wasm,css,html,ico,png,svg,webmanifest,json}'],
-        // Catalog data and the deployment update manifest have their own
-        // network/checksum lifecycle and must never be served from app-shell cache.
-        globIgnores: ['catalog/**', 'app-update.json'],
+        // The build-specific import makes every deployed worker identifiable and
+        // guarantees a byte-level sw.js change for each build.
+        importScripts: [swBuildMetadataFile],
+        // Catalog data, the update manifest and the worker metadata import have
+        // their own lifecycle and must never become app-shell precache entries.
+        globIgnores: ['catalog/**', 'app-update.json', 'sw-build-*.js'],
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/\/[^/?]+\.[^/?]+$/],
         cleanupOutdatedCaches: true,
