@@ -3,37 +3,74 @@ import { expect, test } from '@playwright/test';
 const OLD_BUILD = 'pwa-old';
 const NEW_BUILD = 'pwa-new';
 
-test('eine bereits installierte App prüft beim Öffnen den Deploy und aktualisiert nur nach Zustimmung', async ({ context, page }) => {
-  // A retry may reuse the switchable test server after the first attempt has
-  // selected the new deployment. Reset it before the browser is opened.
-  const reset = await page.request.post('/__pwa_test__/activate/old');
-  expect(reset.ok()).toBe(true);
+test.describe.configure({ mode: 'serial' });
 
+async function activateServerBuild(page: Parameters<typeof test>[0] extends never ? never : import('@playwright/test').Page, build: 'old' | 'new') {
+  const response = await page.request.post(`/__pwa_test__/activate/${build}`);
+  expect(response.ok()).toBe(true);
+  expect(await response.json()).toEqual({ activeBuild: build });
+}
+
+async function installAndControlOldBuild(page: import('@playwright/test').Page): Promise<void> {
+  await activateServerBuild(page, 'old');
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  const oldShell = page.locator('.app-shell');
-  await expect(oldShell).toHaveAttribute('data-app-build', OLD_BUILD);
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-app-build', OLD_BUILD);
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;
   });
-
-  // Reload once so the old deployment is demonstrably controlled by its SW,
-  // matching an app that has already been used and locally installed.
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.locator('.app-shell')).toHaveAttribute('data-app-build', OLD_BUILD);
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
+}
+
+test('ein netzwerkfrischer aktueller Build zeigt nach gelöschtem Cache kein falsches Update an', async ({ page }) => {
+  await installAndControlOldBuild(page);
+  await activateServerBuild(page, 'new');
+
+  // Reproduce the reported state: Cache Storage was deleted, but the old
+  // service-worker registration still exists. The next navigation therefore
+  // loads the current deployment from the network while an older registration
+  // discovers a waiting worker for exactly that same current build.
+  await page.evaluate(async () => {
+    await Promise.all((await caches.keys()).map((name) => caches.delete(name)));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+
+  const shell = page.locator('.app-shell');
+  await expect(shell).toHaveAttribute('data-app-build', NEW_BUILD);
+  await expect(shell).toHaveAttribute('data-pwa-remote-build', NEW_BUILD);
+  await expect(shell).toHaveAttribute('data-pwa-update-state', 'up-to-date');
+  await expect(page.getByTestId('pwa-update-banner')).toBeHidden();
+
+  await expect.poll(() => page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.getRegistration();
+    return registration?.waiting === null;
+  })).toBe(true);
+  await expect.poll(() => page.evaluate(async () => (await caches.keys()).length > 0)).toBe(true);
+
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await expect(page.getByTestId('pwa-update-state')).toHaveText('Aktuell');
+  await expect(page.getByTestId('pwa-update-settings-apply')).toHaveCount(0);
+});
+
+test('eine wirklich veraltete Homescreen-App informiert den Nutzer und ersetzt nach Zustimmung den alten Cache', async ({ context, page }) => {
+  await installAndControlOldBuild(page);
+  const oldScriptUrl = await page.evaluate(() => {
+    const scripts = [...document.querySelectorAll<HTMLScriptElement>('script[src]')];
+    return scripts.map((script) => script.src).find((src) => src.includes('/assets/')) ?? null;
+  });
+  expect(oldScriptUrl).not.toBeNull();
 
   await page.evaluate(() => localStorage.setItem('kh:pwa-update-e2e', 'keep-me'));
   await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await page.getByLabel('Modern & ruhig').check();
   await expect(page.locator('.app-shell')).toHaveAttribute('data-visual-theme', 'standard');
 
-  const activated = await page.request.post('/__pwa_test__/activate/new');
-  expect(activated.ok()).toBe(true);
-  expect(await activated.json()).toEqual({ activeBuild: 'new' });
+  await activateServerBuild(page, 'new');
 
-  // Keep the already used old app open. This prevents a no-client activation
-  // from silently replacing it before the newly opened window can display the
-  // explicit user-controlled update prompt.
+  // Keep the already used old app open. A second Homescreen-style window is
+  // served by the intact old precache and must therefore be offered the newer
+  // deployment instead of silently pretending it is already current.
   const reopened = await context.newPage();
   await reopened.goto('/', { waitUntil: 'domcontentloaded' });
   const shell = reopened.locator('.app-shell');
@@ -56,6 +93,10 @@ test('eine bereits installierte App prüft beim Öffnen den Deploy und aktualisi
 
   expect(await reopened.evaluate(() => localStorage.getItem('kh:pwa-update-e2e'))).toBe('keep-me');
   await expect(reopened.locator('.app-shell')).toHaveAttribute('data-visual-theme', 'standard');
+  if (oldScriptUrl) {
+    await expect.poll(() => reopened.evaluate(async (url) => (await caches.match(url)) === undefined, oldScriptUrl))
+      .toBe(true);
+  }
 
   await reopened.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await expect(reopened.getByTestId('pwa-update-settings')).toBeVisible();
