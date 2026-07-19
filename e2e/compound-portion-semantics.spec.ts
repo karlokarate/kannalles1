@@ -22,6 +22,10 @@ function recognizedProducts(page: Page): Locator {
   return page.getByTestId('meal-item');
 }
 
+function pendingPromptCards(page: Page): Locator {
+  return page.locator('.smart-unit-prompt-card[data-testid^="pending-smart-unit-"]');
+}
+
 test('„ein halbes Brötchen mit Nutella“ interpretiert beide Produkte als Portion', async ({ page }) => {
   await openCatalogApp(page);
   await expectCatalogReady(page);
@@ -52,7 +56,7 @@ test('jede fehlende Portionsgröße wird generisch und produktspezifisch abgefra
   await submitCompound(page, 'ein halbes Brötchen mit Nutella');
 
   const pending = page.locator('[data-calculation-status="pending-unit-size"]');
-  const promptCards = page.locator('[data-testid^="pending-smart-unit-"]');
+  const promptCards = pendingPromptCards(page);
   const pendingCount = await pending.count();
   await expect(promptCards).toHaveCount(pendingCount);
 
