@@ -1,0 +1,69 @@
+name: One-off input request UI cleanup
+
+on:
+  push:
+    branches: [agent/input-request-ssot]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: ${{ !contains(github.event.head_commit.message, '[input-ui-sync]') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: agent/input-request-ssot
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Remove remaining duplicated request rewrites
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          function replaceOnce(text, before, after, label) {
+            const first = text.indexOf(before);
+            if (first < 0) throw new Error(`${label}: source fragment missing`);
+            if (text.indexOf(before, first + before.length) >= 0) throw new Error(`${label}: source fragment is not unique`);
+            return `${text.slice(0, first)}${after}${text.slice(first + before.length)}`;
+          }
+
+          const controllerPath = 'src/app/useCatalogController.ts';
+          let controller = fs.readFileSync(controllerPath, 'utf8');
+          controller = replaceOnce(
+            controller,
+            `import type { ManualProduct } from '../lib/userDataStore';\n`,
+            `import type { ManualProduct } from '../lib/userDataStore';\nimport { implicitCatalogInput } from '../lib/input/catalogInput';\n`,
+            'implicit input import'
+          );
+          controller = replaceOnce(
+            controller,
+            `    if (search.input) setRequest(catalogRequestForInput(search.input, hit));\n    dispatch({ type: 'resolve', query: search.query, product: hit, input: search.input });\n`,
+            `    const selectionInput = search.input ?? implicitCatalogInput(hit.displayName);\n    setRequest(catalogRequestForInput(selectionInput, hit));\n    dispatch({ type: 'resolve', query: search.query || hit.displayName, product: hit, input: search.input });\n`,
+            'candidate input request'
+          );
+          fs.writeFileSync(controllerPath, controller);
+
+          const screenPath = 'src/app/CalculatorScreen.tsx';
+          let screen = fs.readFileSync(screenPath, 'utf8');
+          screen = replaceOnce(
+            screen,
+            `  const chooseCandidate = (hit: (typeof c.search.candidates)[number]) => {\n    c.selectCandidate(hit);\n    if (!isClinicCatalogProduct(hit)) c.setRequest((current) => ({ amount: current.amount, unit: hit.nutrition.basis === 'mass' ? 'g' : 'ml', unitExplicit: false }));\n  };\n`,
+            `  const chooseCandidate = (hit: (typeof c.search.candidates)[number]) => {\n    c.selectCandidate(hit);\n  };\n`,
+            'candidate UI rewrite'
+          );
+          fs.writeFileSync(screenPath, screen);
+          NODE
+
+      - name: Remove one-off workflow and commit cleanup
+        run: |
+          rm .github/workflows/one-off-input-request-ui.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/useCatalogController.ts src/app/CalculatorScreen.tsx .github/workflows/one-off-input-request-ui.yml
+          git commit -m "Remove remaining request duplication from candidate UI [input-ui-sync]"
+          git push origin HEAD:agent/input-request-ssot
