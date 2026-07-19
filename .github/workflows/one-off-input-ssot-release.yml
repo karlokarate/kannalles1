@@ -1,0 +1,77 @@
+name: One-off input SSOT release sync
+
+on:
+  push:
+    branches: [agent/input-request-ssot]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: agent/input-request-ssot
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Patch amount preservation and version metadata
+        run: |
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import re
+
+          root = pathlib.Path('.')
+          controller_path = root / 'src/app/useCatalogController.ts'
+          controller = controller_path.read_text()
+          before = "      setRequest({ amount: 1, unit: calibrationUnit, unitExplicit: false });"
+          after = "      setRequest((current) => ({ ...current, unit: calibrationUnit, unitExplicit: false }));"
+          if controller.count(before) != 1:
+              raise SystemExit(f'expected one calibration amount reset, got {controller.count(before)}')
+          controller_path.write_text(controller.replace(before, after))
+
+          version = '2.4.1'
+          lock_path = root / 'package-lock.json'
+          lock = json.loads(lock_path.read_text())
+          lock['version'] = version
+          lock['packages']['']['version'] = version
+          lock_path.write_text(json.dumps(lock, indent=2) + '\n')
+
+          readme_path = root / 'README.md'
+          readme = re.sub(r'^# FishIT KH Checker v[^\n]+', f'# FishIT KH Checker v{version}', readme_path.read_text(), count=1)
+          bullet = '- erkannte Mengen bleiben bei Favoriten-Promotion, Produktvarianten, Kalibrierung und Übernahme in die Gesamtrechnung unverändert erhalten'
+          if bullet not in readme:
+              marker = '- natürliche Bruchmengen in Text und Sprache, zum Beispiel `ein halbes Brötchen`, `dreiviertel Brötchen`, `½ Brötchen` oder `null komma fünf Brötchen`'
+              readme = readme.replace(marker, marker + '\n' + bullet)
+          readme_path.write_text(readme)
+
+          first_path = root / 'README-ERST-LESEN.txt'
+          first_path.write_text(re.sub(r'^FishIT KH CHECKER v[^\n]+', f'FishIT KH CHECKER v{version}', first_path.read_text(), count=1))
+
+          changelog_path = root / 'CHANGELOG.md'
+          changelog = changelog_path.read_text()
+          heading = '## 2.4.1 – Mengen-SSOT für Suche und Gesamtrechnung'
+          if heading not in changelog:
+              entry = f'''\n{heading}\n\n- die einmal erkannte Menge und Einheit werden als gemeinsamer Eingabe-Intent durch Suche, Favoriten-Promotion und Produktvarianten geführt,\n- `24 Salzstangen` bleibt dadurch Menge 24 und fällt nicht nach Favoritenauswahl auf 1 zurück,\n- Produkt- und Klinikdefaults werden nur noch in einer zentralen Request-Policy bestimmt,\n- Kalibrierungen ändern die erkannte Menge nicht mehr,\n- Mehrprodukteingaben verwenden dieselbe Request-Policy wie Einzelsuchen.\n'''
+              changelog = changelog.replace('# Changelog\n', '# Changelog\n' + entry, 1)
+          changelog_path.write_text(changelog)
+
+          (root / 'RELEASE-NOTES-v2.4.1.txt').write_text('''FishIT KH Checker v2.4.1\n============================\n\nBEHOBEN\n-------\n- Erkannte Mengen wie „24 Salzstangen“ bleiben nach Favoriten-Promotion und Produktvarianten erhalten.\n- Die Menge wird unverändert in die Gesamtrechnung übernommen.\n- Kalibrierungen setzen eine erkannte Menge nicht mehr auf 1 zurück.\n- Einzel-, Mehrprodukt-, Favoriten- und Variantenpfade verwenden dieselbe zentrale Input-Request-Policy.\n\nSICHERHEIT\n----------\nExplizite Nutzereinheiten bleiben erhalten. Fehlende Stückgewichte werden weiterhin nicht geraten.\n''')
+
+          pwa_path = root / 'src/lib/pwaUpdate.test.ts'
+          pwa_path.write_text(pwa_path.read_text().replace("'2.4.0'", "'2.4.1'"))
+          PY
+
+      - name: Remove one-off workflow and commit release sync
+        run: |
+          rm .github/workflows/one-off-input-ssot-release.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/useCatalogController.ts package-lock.json README.md README-ERST-LESEN.txt CHANGELOG.md RELEASE-NOTES-v2.4.1.txt src/lib/pwaUpdate.test.ts .github/workflows/one-off-input-ssot-release.yml
+          git commit -m "Synchronize v2.4.1 input request SSOT release [input-release-sync]"
+          git push origin HEAD:agent/input-request-ssot
