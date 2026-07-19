@@ -30,8 +30,12 @@ describe('catalog input request architecture', () => {
   it('applies the persisted personal standard before mass or catalog defaults', () => {
     expect(runtime).toContain('export function catalogPersonalDefaultUnitRequest');
     expect(authority).toContain('catalogPersonalDefaultUnitRequest');
-    expect(authority.indexOf('catalogPersonalDefaultUnitRequest'))
-      .toBeLessThan(authority.indexOf('genericDefaultPortionGrams'));
+    const bareRequest = authority.slice(
+      authority.indexOf('export function requestForBareCatalogProduct'),
+      authority.indexOf('export function requestForInitialCatalogProduct')
+    );
+    expect(bareRequest.indexOf('catalogPersonalDefaultUnitRequest'))
+      .toBeLessThan(bareRequest.indexOf('genericDefaultPortionGrams'));
     expect(authority).toContain('parsedRequest.amount');
     expect(authority).toContain('current.amount');
   });
