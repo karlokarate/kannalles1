@@ -10,17 +10,20 @@ export function PwaUpdateBanner({ pwa }: { pwa: PwaUpdateViewModel }) {
         aria-labelledby="pwa-update-title"
         data-testid="pwa-update-banner"
         data-update-state={pwa.phase}
+        data-prepared-build={pwa.preparedBuildId ?? ''}
       >
         <span className="pwa-update-banner__icon" aria-hidden="true">↻</span>
         <div className="pwa-update-banner__body">
           <strong id="pwa-update-title">Neue App-Version verfügbar</strong>
-          <p>{applying ? 'Das Update wird aktiviert. Die App lädt anschließend neu.' : 'Die bereitgestellte Version ist neuer. Du entscheidest, wann sie aktiviert wird; deine lokalen Nutzerdaten bleiben erhalten.'}</p>
+          <p>{applying
+            ? 'Der geprüfte neue Build wird aktiviert. Danach lädt die App mit dem erneuerten App-Cache.'
+            : 'Ein eindeutig neuer Build ist vollständig vorbereitet. Du entscheidest, wann er den bisherigen App-Cache ersetzt; deine lokalen Nutzerdaten bleiben erhalten.'}</p>
           <div className="button-row">
             <button
               type="button"
               className="button button--primary"
               onClick={() => { void pwa.applyUpdate(); }}
-              disabled={applying}
+              disabled={applying || !pwa.canApply}
               data-testid="pwa-update-apply"
             >
               {applying ? 'Update wird aktiviert …' : 'Jetzt aktualisieren'}
