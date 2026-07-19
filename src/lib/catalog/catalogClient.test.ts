@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CatalogStatus } from './catalogDomain';
 import type { CatalogWorkerRequest, CatalogWorkerResponse } from './catalogProtocol';
 
-const ready = {
-  state: 'ready' as const,
-  activeSlot: 'a' as const,
+const ready: CatalogStatus = {
+  state: 'ready',
+  activeSlot: 'a',
   rollbackSlot: null,
-  slotStates: { a: 'active' as const, b: 'empty' as const },
+  slotStates: { a: 'active', b: 'empty' },
   catalogVersion: 'production-v1',
   productCount: 317_519,
   persistent: true,
