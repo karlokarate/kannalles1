@@ -1,18 +1,11 @@
 import { useEffect, useRef } from 'react';
 import type { CatalogSearchHit } from '../lib/catalog/catalogDomain';
 import { catalogProductEligibility } from '../lib/resolution/catalogResolution';
-import { isClinicCatalogProduct } from '../lib/clinicCatalog';
-import { isGenericCatalogProduct } from '../lib/genericFoods';
-import {
-  defaultClinicCatalogUnitRequest,
-  normalizeCatalogUnitRequest
-} from './catalogUnitRuntime';
 import {
   loadMatchingFavoriteHits,
   prioritizeFavoriteHits,
   sameCatalogHitOrder
 } from './favoriteSearch';
-import { parseCatalogQuery } from './queryParser';
 import { useMealReplacementController } from './useMealReplacementController';
 
 export function useFavoriteSearchController() {
@@ -29,13 +22,10 @@ export function useFavoriteSearchController() {
       || (base.search.phase !== 'resolved' && base.search.phase !== 'needs_product_choice')
       || !base.search.query) return;
 
-    const parsed = parseCatalogQuery(base.search.query);
-    if (!parsed || parsed.barcode) return;
-
     const controller = new AbortController();
     void loadMatchingFavoriteHits(
       base.favorites,
-      parsed.catalogQuery,
+      base.search.query,
       base.settings.clinicMode,
       controller.signal
     ).then((favoriteHits) => {
@@ -49,24 +39,10 @@ export function useFavoriteSearchController() {
         && sameCatalogHitOrder(base.search.candidates, merged);
       if (alreadyApplied) return;
 
-      if (isGenericCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) {
-        base.setRequest({ amount: 200, unit: 'g', unitExplicit: true });
-      } else if (isClinicCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) {
-        base.setRequest(defaultClinicCatalogUnitRequest(preferred));
-      } else {
-        base.setRequest(normalizeCatalogUnitRequest({
-          amount: parsed.amount,
-          unit: parsed.unit,
-          unitExplicit: parsed.unitExplicit
-        }));
-      }
-
-      base.dispatch({
-        type: 'resolve',
-        query: parsed.catalogQuery,
-        product: preferred,
-        candidates: merged
-      });
+      // The base controller is the only authority allowed to pair a selected
+      // product with the current parsed request. Favorite promotion supplies
+      // only product ordering and never reparses or mutates the amount itself.
+      base.promoteSearchCandidate(preferred, merged);
     }).catch((error) => {
       if (!(error instanceof DOMException && error.name === 'AbortError')) {
         // Favorite promotion is fail-soft; the normal deterministic search remains usable.
@@ -75,14 +51,13 @@ export function useFavoriteSearchController() {
 
     return () => controller.abort();
   }, [
-    base.dispatch,
     base.favorites,
+    base.promoteSearchCandidate,
     base.search.candidates,
     base.search.phase,
     base.search.query,
     base.search.selectedProduct?.productId,
     base.searchPage,
-    base.setRequest,
     base.settings.clinicMode
   ]);
 

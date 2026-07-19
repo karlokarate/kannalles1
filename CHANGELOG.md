@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.1 – Erkannte Mengen als zentrale Request-Quelle
+
+- behebt den Mengenverlust bei asynchroner Favoritenpriorisierung, zum Beispiel `24 Salzstangen`,
+- die kanonische Produktabfrage wird nicht mehr erneut als neue Mengeneingabe geparst,
+- initiale Produktdefaults, Mehrprodukteingaben und Variantenwechsel verwenden eine gemeinsame Request-Policy,
+- Produktvarianten und bestätigte Einheitskalibrierungen behalten die erkannte Menge,
+- echte SQLite-WASM-Browsertests reproduzieren den Favoritenfall und prüfen die vollständige Berechnung.
+
 ## 2.4.0 – Natürliche Bruchmengen und verlässliche App-Updates
 
 - deutsche Bruchmengen wie `ein halbes`, `anderthalb`, `dreiviertel`, `½` und `1 1/2` werden deterministisch erkannt,

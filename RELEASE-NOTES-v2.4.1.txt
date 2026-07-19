@@ -1,0 +1,16 @@
+FishIT KH Checker v2.4.1
+============================
+
+BEHOBEN
+-------
+- Erkannte Mengen wie „24 Salzstangen“ bleiben auch dann erhalten, wenn ein lokal gespeicherter Favorit nachträglich priorisiert wird.
+- Produktvarianten und bestätigte persönliche Einheitskalibrierungen setzen die Menge nicht mehr auf 1 zurück.
+- Die kanonische Produktabfrage wird nicht mehr ein zweites Mal als Mengenquelle geparst.
+
+ARCHITEKTUR
+-----------
+Eine gemeinsame Request-Policy ist die einzige Autorität für erkannte Menge, Einheit, Produktdefaults und Variantenwechsel.
+
+KOMPATIBILITÄT
+--------------
+Verlauf, Favoriten, eigene Produkte, Fotos, Einstellungen und Kalibrierungen bleiben erhalten.

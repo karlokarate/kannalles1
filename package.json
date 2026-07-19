@@ -1,7 +1,7 @@
 {
   "name": "kh-checker-v2",
   "private": true,
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "Installierbare PWA mit deterministischer Kohlenhydratberechnung und lokalem SQLite-Produktkatalog.",
   "license": "MIT",
   "repository": {
@@ -23,7 +23,7 @@
     "test:contracts": "vitest run contracts",
     "test:runtime": "vitest run src/app/catalogUnitRuntime.test.ts src/lib/mealCalculation.test.ts src/lib/clinicCatalog.test.ts src/lib/resolution/catalogResolution.test.ts src/lib/smartUnitPrompt.test.ts scripts/catalog-unit-runtime.architecture.test.ts scripts/catalog-unit-runtime.catalog.test.ts",
     "test:pwa-update": "vitest run src/lib/pwaUpdate.test.ts scripts/pwa-update.architecture.test.ts",
-    "test:semantic-input": "vitest run src/lib/input/germanQuantity.test.ts src/app/queryParser.fractions.test.ts src/session.test.ts",
+    "test:semantic-input": "vitest run src/lib/input/germanQuantity.test.ts src/app/queryParser.fractions.test.ts src/app/catalogInputRequest.test.ts src/session.test.ts scripts/catalog-input-request.architecture.test.ts",
     "test:watch": "vitest src contracts",
     "typecheck": "tsc -b",
     "check": "npm run check:version && npm run check:workflow && npm run check:browser-support && npm run check:secrets && npm run typecheck && npm run lint && npm test && npm run check:scripts && npm run check:catalog && npm run build && npm run check:bundle && npm run check:pages && npm run check:architecture && npm run check:knip",
@@ -46,7 +46,7 @@
     "test:e2e": "playwright test",
     "test:e2e:catalog": "playwright test e2e/catalog-real.spec.ts --project=chromium-desktop",
     "test:e2e:runtime": "playwright test e2e/catalog-unit-runtime.spec.ts e2e/smart-unit-prompts.spec.ts --project=chromium-desktop",
-    "test:e2e:semantic-input": "playwright test e2e/natural-language-quantities.spec.ts --project=chromium-desktop",
+    "test:e2e:semantic-input": "playwright test e2e/natural-language-quantities.spec.ts e2e/input-request-ssot.spec.ts --project=chromium-desktop",
     "test:e2e:pwa-update": "node scripts/run-pwa-update-e2e.mjs",
     "test:e2e:matrix": "playwright test e2e/browser-matrix.spec.ts",
     "test:e2e:headed": "playwright test --headed",
