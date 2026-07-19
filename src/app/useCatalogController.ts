@@ -34,6 +34,7 @@ import {
 } from './catalogInputRequest';
 import { inferredCalibrationUnit, selectDefaultCatalogCandidate } from './catalogViewModel';
 import { parseCatalogQuery, parseProductList } from './queryParser';
+import { useCatalogUnitSelection } from './useCatalogUnitSelection';
 
 const VERSION_MARKER = 'kh-checker:installed-catalog-version:v1';
 const INITIAL_STATUS: CatalogStatus = {
@@ -69,7 +70,6 @@ export function useCatalogController() {
   const [searchPage, setSearchPage] = useState(0);
   const [searchHasNext, setSearchHasNext] = useState(false);
   const [request, setRequest] = useState<CatalogUnitRequest>({ amount: 1, unit: 'g', unitExplicit: false });
-  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [history, setHistory] = useState<CalculationHistoryEntry[]>(() => listHistoryEntries());
   const [savedMeals, setSavedMeals] = useState<SavedMealCalculation[]>(() => listMealCalculations());
@@ -134,7 +134,11 @@ export function useCatalogController() {
     if (!product) return null;
     return resolveCatalogUnitRuntime(product, request).resolution;
   }, [product, request, revision]);
-  useEffect(() => { setSelectedOptionId((current) => resolution && current && resolution.options.some((o) => o.id === current) ? current : resolution?.selectedOptionId ?? null); }, [resolution]);
+  const [selectedOptionId, setSelectedOptionId] = useCatalogUnitSelection(
+    product,
+    resolution,
+    request
+  );
   useEffect(() => { void product?.code; setProductPhotoMessage(null); }, [product?.code]);
   const effectiveResolution = useMemo(() => resolution ? { ...resolution, selectedOptionId } : null, [resolution, selectedOptionId]);
   const calculation = useMemo(() => product && effectiveResolution ? calculateCatalogCarbohydrates(product, request, effectiveResolution) : null, [effectiveResolution, product, request]);

@@ -34,6 +34,7 @@ import { requestForInitialCatalogProduct } from './catalogInputRequest';
 import { selectDefaultCatalogCandidate } from './catalogViewModel';
 import { parseCatalogQuery, parseProductList } from './queryParser';
 import { useCatalogController } from './useCatalogController';
+import { useCatalogUnitSelection } from './useCatalogUnitSelection';
 
 export interface PendingSmartUnitItem {
   id: string;
@@ -85,7 +86,6 @@ export function useSmartCatalogController() {
   const [smartHistoryCreatedAt, setSmartHistoryCreatedAt] = useState<string | null>(null);
   const [speechListening, setSpeechListening] = useState(false);
   const [speechMessage, setSpeechMessage] = useState<string | null>(null);
-  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const speechRecognitionRef = useRef<SpeechRecognition | null>(null);
 
@@ -107,11 +107,11 @@ export function useSmartCatalogController() {
   const resolution = currentUnitState?.resolution ?? base.resolution;
   const smartUnitPrompt = currentUnitState?.prompt ?? null;
 
-  useEffect(() => {
-    setSelectedOptionId((current) => current && resolution?.options.some((option) => option.id === current)
-      ? current
-      : resolution?.selectedOptionId ?? null);
-  }, [resolution]);
+  const [selectedOptionId, setSelectedOptionId] = useCatalogUnitSelection(
+    base.product,
+    resolution ?? null,
+    base.request
+  );
 
   const effectiveResolution = useMemo(() => resolution ? { ...resolution, selectedOptionId } : null, [resolution, selectedOptionId]);
   const calculation = useMemo(() => base.product && effectiveResolution
