@@ -112,17 +112,18 @@ describe('personal standard unit runtime', () => {
       recommended: true
     });
 
-    expect(calculateCatalogCarbohydrates(
+    const calculation = calculateCatalogCarbohydrates(
       product,
       request,
       state.resolution
-    )).toMatchObject({
+    );
+    expect(calculation).toMatchObject({
       amount: 13,
       unit: 'portion',
-      unitBaseValue: 0.4,
-      totalMassG: 5.2,
-      carbohydratesG: 3.744
+      unitBaseValue: 0.4
     });
+    expect(calculation.totalMassG).toBeCloseTo(5.2, 12);
+    expect(calculation.carbohydratesG).toBeCloseTo(3.744, 12);
   });
 
   it('does not override an explicit gram request', () => {
@@ -137,8 +138,13 @@ describe('personal standard unit runtime', () => {
       baseValue: 1,
       recommended: true
     });
-    expect(calculateCatalogCarbohydrates(product, request, state.resolution))
-      .toMatchObject({ totalMassG: 13, carbohydratesG: 9.36 });
+    const calculation = calculateCatalogCarbohydrates(
+      product,
+      request,
+      state.resolution
+    );
+    expect(calculation.totalMassG).toBe(13);
+    expect(calculation.carbohydratesG).toBeCloseTo(9.36, 12);
   });
 
   it('returns no personal default when no calibration matches', () => {
