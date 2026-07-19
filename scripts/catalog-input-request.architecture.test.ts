@@ -28,8 +28,10 @@ describe('catalog input request architecture', () => {
   it('forbids favorite promotion from reparsing or mutating calculation input', () => {
     expect(favoriteController).not.toContain('parseCatalogQuery');
     expect(favoriteController).not.toContain('setRequest');
+    expect(favoriteController).not.toContain("type: 'resolve'");
     expect(favoriteController).toContain('base.search.query');
-    expect(favoriteController).toContain("type: 'resolve'");
+    expect(favoriteController).toContain('base.promoteSearchCandidate(preferred, merged)');
+    expect(catalogController).toContain('promoteSearchCandidate: resolveSearchCandidate');
   });
 
   it('keeps product variant request changes in the controller, not the view', () => {
