@@ -1,0 +1,15 @@
+FishIT KH Checker v2.4.0
+============================
+
+NEU
+---
+- Natürliche deutsche Bruchmengen werden vollständig erkannt.
+- Beispiele: „ein halbes Brötchen“, „anderthalb Brötchen“, „dreiviertel Brötchen“, „½ Brötchen“ und „1 1/2 Brötchen“.
+- Die App sucht dabei nach dem eigentlichen Produktnamen und verwendet nur belegte Hersteller-, Katalog- oder Nutzer-Einheiten.
+- Unbekannte Stückgewichte werden weiterhin nicht geraten.
+- Installierte Apps prüfen den aktuellen GitHub-Deploy auf Updates und lassen den Benutzer den Aktualisierungszeitpunkt bestimmen.
+- Automatisch gespeicherte Gesamtrechnungen enthalten und zeigen den vollständigen Berechnungszeitpunkt.
+
+KOMPATIBILITÄT
+--------------
+Lokaler Verlauf, Favoriten, eigene Produkte, Fotos, Einstellungen und persönliche Einheitskalibrierungen bleiben erhalten.

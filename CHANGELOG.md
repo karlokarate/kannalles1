@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.0 – Natürliche Bruchmengen und verlässliche App-Updates
+
+- deutsche Bruchmengen wie `ein halbes`, `anderthalb`, `dreiviertel`, `½` und `1 1/2` werden deterministisch erkannt,
+- die vollständige Mengenphrase wird vor der Produktsuche entfernt, sodass nach `Brötchen` statt nach `halbes Brötchen` gesucht wird,
+- Dezimal- und Mehrprodukteingaben bleiben kompatibel,
+- installierte Apps prüfen den aktuellen Deploy und bieten Updates benutzergesteuert an,
+- automatisch gespeicherte Gesamtrechnungen zeigen ihren vollständigen Berechnungszeitpunkt.
+
 ## 2.3.1 – Editierbare persönliche Therapiewerte
 
 - kontrollierte Zahlenfelder im Diabetikerprofil erlauben jetzt vollständiges Löschen und ziffernweise Neueingabe,

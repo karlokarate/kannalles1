@@ -42,11 +42,12 @@ const matrix = specs.get('browser-matrix.spec.ts');
 const quality = specs.get('app-quality.spec.ts');
 const catalog = specs.get('catalog-real.spec.ts');
 const runtime = specs.get('catalog-unit-runtime.spec.ts');
+const naturalLanguage = specs.get('natural-language-quantities.spec.ts');
 const pwaUpdate = specs.get('pwa-update.spec.ts');
 const harness = sources.get('catalog-harness.ts');
 const pwaUpdateConfig = sources.get('playwright.pwa-update.config.ts');
 const pwaUpdateServer = sources.get('start-pwa-update-preview.mjs');
-if (!matrix || !quality || !catalog || !runtime || !pwaUpdate || !harness || !pwaUpdateConfig || !pwaUpdateServer) {
+if (!matrix || !quality || !catalog || !runtime || !naturalLanguage || !pwaUpdate || !harness || !pwaUpdateConfig || !pwaUpdateServer) {
   fail('Verpflichtende Sentinel-E2E-Dateien fehlen.');
 }
 
@@ -134,6 +135,13 @@ function validateTests() {
     'eine Portion Reis'
   ]) requireText(runtime, fragment, 'Unit-Runtime-E2E-Coverage');
   for (const fragment of [
+    'Ein halbes Brötchen',
+    'data-amount',
+    '0.5 * unitWeightG',
+    '½ Brötchen',
+    'null komma fünf Brötchen'
+  ]) requireText(naturalLanguage, fragment, 'Natural-Language-Quantity-E2E-Coverage');
+  for (const fragment of [
     "const OLD_BUILD = 'pwa-old'",
     "const NEW_BUILD = 'pwa-new'",
     '/__pwa_test__/activate/new',
@@ -206,6 +214,8 @@ function validateBrowserSupport() {
   const runtimeE2e = String(packageJson.scripts?.['test:e2e:runtime'] ?? '');
   const pwaUpdateTests = String(packageJson.scripts?.['test:pwa-update'] ?? '');
   const pwaUpdateE2e = String(packageJson.scripts?.['test:e2e:pwa-update'] ?? '');
+  const semanticInputTests = String(packageJson.scripts?.['test:semantic-input'] ?? '');
+  const semanticInputE2e = String(packageJson.scripts?.['test:e2e:semantic-input'] ?? '');
   if (packageJson.devDependencies?.['dependency-cruiser'] !== '18.1.0' ||
       !architecture.includes('depcruise') || !architecture.includes('dependency-cruiser.config.cjs')) {
     fail('dependency-cruiser ist nicht exakt gepinnt oder konfiguriert.');
@@ -230,6 +240,15 @@ function validateBrowserSupport() {
     'scripts/pwa-update.architecture.test.ts'
   ]) requireText(pwaUpdateTests, fragment, 'Gezielte PWA-Update-Tests');
   requireText(pwaUpdateE2e, 'scripts/run-pwa-update-e2e.mjs', 'Realer PWA-Update-Test');
+  for (const fragment of [
+    'src/lib/input/germanQuantity.test.ts',
+    'src/app/queryParser.fractions.test.ts',
+    'src/session.test.ts'
+  ]) requireText(semanticInputTests, fragment, 'Gezielte semantische Eingabetests');
+  for (const fragment of [
+    'e2e/natural-language-quantities.spec.ts',
+    '--project=chromium-desktop'
+  ]) requireText(semanticInputE2e, fragment, 'Gezielte semantische Browsertests');
 
   const evidence = validateEvidence();
   if (evidence.state === 'failed') fail(`Browser-Support ist als failed dokumentiert: ${support.currentEvidence.failureSummary}`);
@@ -286,8 +305,8 @@ if (qualityJob?.strategy?.['fail-fast'] !== false) fail('Node-Runtime-Matrix mus
 requireText(workflowText, 'node-version: $' + '{{ matrix.node-version }}', 'Node-Runtime-Matrix');
 const qualityCommands = commands(qualityJob);
 for (const command of ['npm ci --no-audit --no-fund', 'npm ci --prefix Catalog/runtime --no-audit --no-fund',
-  'npm run check:catalog', 'npm run check:workflow', 'npm run check:browser-support', 'npm run typecheck',
-  'npm run lint', 'npm run test:runtime', 'npm run test:pwa-update', 'npm test',
+  'npm run check:version', 'npm run check:catalog', 'npm run check:workflow', 'npm run check:browser-support', 'npm run typecheck',
+  'npm run lint', 'npm run test:runtime', 'npm run test:pwa-update', 'npm run test:semantic-input', 'npm test',
   'npm run check:architecture', 'npm run check:knip']) {
   requireText(qualityCommands, command, 'Quality-Command');
 }
@@ -308,7 +327,8 @@ const browser = workflow.jobs['browser-e2e'];
 if (browser?.needs !== 'quality') fail('Browser-E2E muss von quality abhängen.');
 const browserCommands = commands(browser);
 for (const command of ['npm ci --no-audit --no-fund', 'npm ci --prefix Catalog/runtime --no-audit --no-fund',
-  'npm run test:e2e:install', 'npm run test:e2e:pwa-update', 'npm run test:e2e:runtime', 'npm run test:e2e']) {
+  'npm run test:e2e:install', 'npm run test:e2e:pwa-update', 'npm run test:e2e:runtime',
+  'npm run test:e2e:semantic-input', 'npm run test:e2e']) {
   requireText(browserCommands, command, 'Browser-E2E-Command');
 }
 
@@ -323,6 +343,6 @@ for (const fragment of ['Catalog/catalog-manifest.v1.json', 'manifest.database.f
   requireText(deployCommands, fragment, 'Deployment-Summary');
 }
 
-console.log(JSON.stringify({ workflowValid: true, mode: 'hard-cutover-quality-browser-pages-pwa-update',
+console.log(JSON.stringify({ workflowValid: true, mode: 'hard-cutover-quality-browser-pages-pwa-update-semantic-input',
   manifestVersion: manifest.catalogVersion, databaseFilename: manifest.database.file,
   browserSupport, file: `.github/workflows/${workflowFiles[0]}`, jobs }));
