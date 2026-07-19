@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4.2 – Verifizierte PWA-Updates
+
+- behebt den falschen Updatehinweis nach einem frischen Netzwerkladen oder gelöschtem Cache,
+- ein wartender Service Worker ist nur noch ein Lifecycle-Signal und kein Updatebeweis,
+- der bereitgestellte Build wird mit `no-store` gegen den geladenen Build geprüft,
+- ein echter alter Homescreen-Build erhält erst nach vollständig vorbereitetem neuen Worker einen Updatehinweis,
+- `Jetzt aktualisieren` aktiviert den verifizierten Worker, lädt den neuen Build und lässt Workbox den alten Precache entfernen,
+- lokale Nutzerdaten und Einstellungen bleiben erhalten.
+
 ## 2.4.1 – Erkannte Mengen als zentrale Request-Quelle
 
 - behebt den Mengenverlust bei asynchroner Favoritenpriorisierung, zum Beispiel `24 Salzstangen`,
