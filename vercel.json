@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/**/*.js": {
+      "maxDuration": 15
+    }
+  },
+  "regions": ["fra1"],
+  "env": {
+    "CORS_ORIGINS": "https://karlokarate.github.io",
+    "TRUST_PROXY": "1"
+  }
+}
