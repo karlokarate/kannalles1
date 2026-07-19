@@ -1,0 +1,127 @@
+name: One-off request SSOT wiring
+
+on:
+  push:
+    branches: [agent/input-request-ssot-v2-4-1]
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: ${{ !contains(github.event.head_commit.message, '[request-ssot-sync]') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: agent/input-request-ssot-v2-4-1
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Wire shared request authority
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          function replaceOnce(text, before, after, label) {
+            const first = text.indexOf(before);
+            if (first < 0) throw new Error(`${label}: source fragment missing`);
+            if (text.indexOf(before, first + before.length) >= 0) throw new Error(`${label}: source fragment is not unique`);
+            return `${text.slice(0, first)}${after}${text.slice(first + before.length)}`;
+          }
+
+          const controllerPath = 'src/app/useCatalogController.ts';
+          let controller = fs.readFileSync(controllerPath, 'utf8');
+          controller = replaceOnce(
+            controller,
+            `import {\n  catalogCalibrationForUnit,\n  catalogCalibrationIdentity,\n  defaultClinicCatalogUnitRequest,\n  normalizeCatalogUnitRequest,\n  resolveCatalogUnitRuntime\n} from './catalogUnitRuntime';\nimport { inferredCalibrationUnit, selectDefaultCatalogCandidate } from './catalogViewModel';\n`,
+            `import {\n  catalogCalibrationForUnit,\n  catalogCalibrationIdentity,\n  normalizeCatalogUnitRequest,\n  resolveCatalogUnitRuntime\n} from './catalogUnitRuntime';\nimport {\n  requestForBareCatalogProduct,\n  requestForCatalogVariant,\n  requestForInitialCatalogProduct,\n  requestFromParsedCatalogInput\n} from './catalogInputRequest';\nimport { inferredCalibrationUnit, selectDefaultCatalogCandidate } from './catalogViewModel';\n`,
+            'catalog controller imports'
+          );
+          controller = replaceOnce(
+            controller,
+            `      if (preferred) {\n        if (isClinicCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) setRequest(defaultClinicCatalogUnitRequest(preferred));\n        else setRequest(normalizeCatalogUnitRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit }));\n        dispatch({ type: 'resolve', query: parsed.catalogQuery, product: preferred, candidates: hits });\n      } else dispatch({ type: 'show-choice', query: parsed.catalogQuery, candidates: hits });\n`,
+            `      if (preferred) {\n        setRequest(requestForInitialCatalogProduct(parsed, preferred));\n        dispatch({ type: 'resolve', query: parsed.catalogQuery, product: preferred, candidates: hits });\n      } else dispatch({ type: 'show-choice', query: parsed.catalogQuery, candidates: hits });\n`,
+            'clinic initial request'
+          );
+          controller = replaceOnce(
+            controller,
+            `    setRequest(normalizeCatalogUnitRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit })); setSelectedOptionId(null); dispatch({ type: 'start', query: parsed.catalogQuery });\n`,
+            `    setRequest(requestFromParsedCatalogInput(parsed)); setSelectedOptionId(null); dispatch({ type: 'start', query: parsed.catalogQuery });\n`,
+            'parsed request bootstrap'
+          );
+          controller = replaceOnce(
+            controller,
+            `        if (!value) dispatch({ type: 'not-found', query: parsed.catalogQuery });\n        else if (!catalogProductEligibility(value).eligible) dispatch({ type: 'validation', message: 'Der Katalogeintrag enthält keine sicher berechenbaren Kohlenhydratdaten.' });\n        else dispatch({ type: 'resolve', query: parsed.catalogQuery, product: value });\n`,
+            `        if (!value) dispatch({ type: 'not-found', query: parsed.catalogQuery });\n        else if (!catalogProductEligibility(value).eligible) dispatch({ type: 'validation', message: 'Der Katalogeintrag enthält keine sicher berechenbaren Kohlenhydratdaten.' });\n        else {\n          setRequest(requestForInitialCatalogProduct(parsed, value));\n          dispatch({ type: 'resolve', query: parsed.catalogQuery, product: value });\n        }\n`,
+            'barcode request'
+          );
+          controller = replaceOnce(
+            controller,
+            `      if (preferred) {\n        if (isGenericCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) setRequest({ amount: 200, unit: 'g', unitExplicit: true });\n        else if (isClinicCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) setRequest(defaultClinicCatalogUnitRequest(preferred));\n        dispatch({ type: 'resolve', query: parsed.catalogQuery, product: preferred, candidates: hits });\n      }\n`,
+            `      if (preferred) {\n        setRequest(requestForInitialCatalogProduct(parsed, preferred));\n        dispatch({ type: 'resolve', query: parsed.catalogQuery, product: preferred, candidates: hits });\n      }\n`,
+            'normal initial request'
+          );
+          controller = replaceOnce(
+            controller,
+            `  const selectCandidate = (hit: CatalogSearchHit) => { if (!catalogProductEligibility(hit).eligible) dispatch({ type: 'validation', message: isClinicCatalogProduct(hit) ? 'Für diesen Klinikdatensatz ist ausdrücklich kein berechenbarer KH-Wert hinterlegt.' : 'Dieser Katalogeintrag ist nicht sicher berechenbar.' }); else { if (isClinicCatalogProduct(hit)) setRequest(defaultClinicCatalogUnitRequest(hit)); dispatch({ type: 'resolve', query: search.query, product: hit }); } };\n`,
+            `  const selectCandidate = (hit: CatalogSearchHit) => {\n    if (!catalogProductEligibility(hit).eligible) {\n      dispatch({ type: 'validation', message: isClinicCatalogProduct(hit) ? 'Für diesen Klinikdatensatz ist ausdrücklich kein berechenbarer KH-Wert hinterlegt.' : 'Dieser Katalogeintrag ist nicht sicher berechenbar.' });\n      return;\n    }\n    setRequest((current) => search.phase === 'idle'\n      ? requestForBareCatalogProduct(hit)\n      : requestForCatalogVariant(current, hit));\n    dispatch({ type: 'resolve', query: search.query || hit.displayName, product: hit });\n  };\n`,
+            'variant request authority'
+          );
+          controller = replaceOnce(
+            controller,
+            `      setRequest({ amount: 1, unit: calibrationUnit, unitExplicit: false });\n`,
+            `      setRequest((current) => ({ ...current, unit: calibrationUnit, unitExplicit: false }));\n`,
+            'calibration amount preservation'
+          );
+          controller = replaceOnce(
+            controller,
+            `          let nextRequest = normalizeCatalogUnitRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit });\n          if (isGenericCatalogProduct(candidate) && !parsed.amountExplicit && !parsed.unitExplicit) nextRequest = { amount: 200, unit: 'g', unitExplicit: true };\n          else if (isClinicCatalogProduct(candidate) && !parsed.amountExplicit && !parsed.unitExplicit) nextRequest = defaultClinicCatalogUnitRequest(candidate);\n`,
+            `          const nextRequest = requestForInitialCatalogProduct(parsed, candidate);\n`,
+            'multi-product request'
+          );
+          fs.writeFileSync(controllerPath, controller);
+
+          const smartPath = 'src/app/useSmartCatalogController.ts';
+          let smart = fs.readFileSync(smartPath, 'utf8');
+          smart = replaceOnce(
+            smart,
+            `import { asGenericSearchHit, genericCookedProductForQuery, isGenericCatalogProduct } from '../lib/genericFoods';\nimport { isClinicCatalogProduct, searchClinicCatalog } from '../lib/clinicCatalog';\n`,
+            `import { asGenericSearchHit, genericCookedProductForQuery } from '../lib/genericFoods';\nimport { searchClinicCatalog } from '../lib/clinicCatalog';\n`,
+            'smart domain imports'
+          );
+          smart = replaceOnce(
+            smart,
+            `import {\n  catalogCalibrationIdentity,\n  defaultClinicCatalogUnitRequest,\n  normalizeCatalogUnitRequest,\n  resolveCatalogUnitRuntime\n} from './catalogUnitRuntime';\n`,
+            `import {\n  catalogCalibrationIdentity,\n  resolveCatalogUnitRuntime\n} from './catalogUnitRuntime';\nimport { requestForInitialCatalogProduct } from './catalogInputRequest';\n`,
+            'smart request imports'
+          );
+          smart = replaceOnce(
+            smart,
+            `      let request = normalizeCatalogUnitRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit });\n      if (isGenericCatalogProduct(candidate) && !parsed.amountExplicit && !parsed.unitExplicit) request = { amount: 200, unit: 'g', unitExplicit: true };\n      else if (isClinicCatalogProduct(candidate) && !parsed.amountExplicit && !parsed.unitExplicit) request = defaultClinicCatalogUnitRequest(candidate, 'smart');\n`,
+            `      const request = requestForInitialCatalogProduct(parsed, candidate, 'smart');\n`,
+            'smart multi-product request'
+          );
+          fs.writeFileSync(smartPath, smart);
+
+          const screenPath = 'src/app/CalculatorScreen.tsx';
+          let screen = fs.readFileSync(screenPath, 'utf8');
+          screen = replaceOnce(
+            screen,
+            `  const chooseCandidate = (hit: (typeof c.search.candidates)[number]) => {\n    c.selectCandidate(hit);\n    if (!isClinicCatalogProduct(hit)) c.setRequest((current) => ({ amount: current.amount, unit: hit.nutrition.basis === 'mass' ? 'g' : 'ml', unitExplicit: false }));\n  };\n`,
+            `  const chooseCandidate = (hit: (typeof c.search.candidates)[number]) => {\n    c.selectCandidate(hit);\n  };\n`,
+            'screen variant mutation removal'
+          );
+          fs.writeFileSync(screenPath, screen);
+          NODE
+
+      - name: Remove installer and commit SSOT wiring
+        run: |
+          rm .github/workflows/one-off-request-ssot.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/useCatalogController.ts src/app/useSmartCatalogController.ts src/app/CalculatorScreen.tsx .github/workflows/one-off-request-ssot.yml
+          git commit -m "Wire parsed amounts through one request authority [request-ssot-sync]"
+          git push origin HEAD:agent/input-request-ssot-v2-4-1
