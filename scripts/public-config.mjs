@@ -21,3 +21,12 @@ export function resolveBuildId(environment, appVersion) {
       || `version-${validateAppVersion(appVersion)}`
   );
 }
+
+/** A stable filename token for build-specific service-worker metadata. */
+export function buildIdAssetToken(value) {
+  return validateBuildId(value).replace(/[^0-9A-Za-z._-]/g, '_');
+}
+
+export function serviceWorkerMetadataFile(value) {
+  return `sw-build-${buildIdAssetToken(value)}.js`;
+}
