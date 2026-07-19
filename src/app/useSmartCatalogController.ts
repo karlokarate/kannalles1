@@ -4,8 +4,8 @@ import { getOfflineCatalogProduct, searchOfflineCatalog } from '../lib/catalog/c
 import { catalogProductEligibility, calculateCatalogCarbohydrates } from '../lib/resolution/catalogResolution';
 import type { CatalogUnitRequest } from '../lib/resolution/catalogResolution';
 import { createCatalogCalibration } from '../lib/resolution/catalogCalibration';
-import { asGenericSearchHit, genericCookedProductForQuery, isGenericCatalogProduct } from '../lib/genericFoods';
-import { isClinicCatalogProduct, searchClinicCatalog } from '../lib/clinicCatalog';
+import { asGenericSearchHit, genericCookedProductForQuery } from '../lib/genericFoods';
+import { searchClinicCatalog } from '../lib/clinicCatalog';
 import { searchManualCatalog } from '../lib/manualCatalog';
 import { createMealCalculationItem, totalMealCarbohydrates, updateMealCalculationItem } from '../lib/mealCalculation';
 import type { MealCalculationItem } from '../lib/mealCalculation';
@@ -28,10 +28,9 @@ import {
 } from '../lib/speech';
 import {
   catalogCalibrationIdentity,
-  defaultClinicCatalogUnitRequest,
-  normalizeCatalogUnitRequest,
   resolveCatalogUnitRuntime
 } from './catalogUnitRuntime';
+import { catalogRequestForInput } from './catalogInputRequest';
 import { selectDefaultCatalogCandidate } from './catalogViewModel';
 import { parseCatalogQuery, parseProductList } from './queryParser';
 import { useCatalogController } from './useCatalogController';
@@ -186,9 +185,7 @@ export function useSmartCatalogController() {
 
     for (const candidate of candidates) {
       if (!catalogProductEligibility(candidate).eligible) continue;
-      let request = normalizeCatalogUnitRequest({ amount: parsed.amount, unit: parsed.unit, unitExplicit: parsed.unitExplicit });
-      if (isGenericCatalogProduct(candidate) && !parsed.amountExplicit && !parsed.unitExplicit) request = { amount: 200, unit: 'g', unitExplicit: true };
-      else if (isClinicCatalogProduct(candidate) && !parsed.amountExplicit && !parsed.unitExplicit) request = defaultClinicCatalogUnitRequest(candidate, 'smart');
+      const request = catalogRequestForInput(parsed, candidate, 'smart');
       const state = resolveCatalogUnitRuntime(candidate, request, 'smart');
       const item = createMealCalculationItem(createLocalId('meal'), candidate, request, state.resolution, state.resolution.selectedOptionId, state.prompt);
       if (!item) continue;
@@ -383,7 +380,7 @@ export function useSmartCatalogController() {
     base.setManualMode(false);
     base.setQuery(item.product.displayName);
     base.setRequest({ ...item.request });
-    base.dispatch({ type: 'resolve', query: item.product.displayName, product: item.product, candidates: [] });
+    base.dispatch({ type: 'resolve', query: item.product.displayName, product: item.product, candidates: [], input: null });
     const prompt = item.smartUnitPrompt;
     if (prompt) {
       const key = smartUnitKey(item.product, prompt);

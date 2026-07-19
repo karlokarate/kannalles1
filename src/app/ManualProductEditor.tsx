@@ -186,7 +186,7 @@ export function ManualProductEditor({ c, diabetesPanel }: ManualProductEditorPro
     c.setRequest(calibration
       ? { amount: 1, unit: calibration.unit, unitExplicit: false }
       : { amount: 100, unit: item.basis === 'mass' ? 'g' : 'ml', unitExplicit: false });
-    c.dispatch({ type: 'resolve', query: item.label, product, candidates: [{ ...product, resultIndex: 0 }] });
+    c.dispatch({ type: 'resolve', query: item.label, product, candidates: [{ ...product, resultIndex: 0 }], input: null });
   };
 
   const newDefinition = () => {
