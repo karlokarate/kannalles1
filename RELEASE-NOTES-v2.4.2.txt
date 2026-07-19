@@ -1,0 +1,14 @@
+FishIT KH Checker v2.4.2
+============================
+
+BEHOBEN
+-------
+- Gespeicherte persönliche Standard-Einheiten werden bei späteren Suchen automatisch verwendet.
+- Beispiel: 13 Salzstangen mit einer gespeicherten Portion von 0,4 g werden als 13 Portionen und damit 5,2 g Gesamtgewicht berechnet.
+- Im Einheitenfeld ist nach der Suche unmittelbar die persönliche Portion mit der Provenienz „Nutzerkalibrierung“ ausgewählt.
+- Eine ältere gültige Gramm-Auswahl kann die persönliche Standard-Einheit nicht mehr übersteuern.
+- Produktvarianten behalten die Menge und übernehmen ihren eigenen persönlichen Standard.
+
+SICHERHEIT
+----------
+Explizite Nutzereinheiten bleiben erhalten. Einheitsgewichte werden nur aus gespeicherten Kalibrierungen oder belastbarer Katalogevidenz verwendet und niemals geraten.

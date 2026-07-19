@@ -25,7 +25,7 @@ function manifest(buildId = 'build-current') {
   return {
     contract: APP_UPDATE_MANIFEST_CONTRACT,
     schemaVersion: APP_UPDATE_MANIFEST_VERSION,
-    appVersion: '2.4.1',
+    appVersion: '2.4.2',
     buildId,
     catalogVersion: 'production-v1'
   };
@@ -50,7 +50,7 @@ function environment(overrides: Partial<PwaUpdateEnvironment> = {}) {
       : textResponse()
   );
   const value: PwaUpdateEnvironment = {
-    currentAppVersion: '2.4.1',
+    currentAppVersion: '2.4.2',
     currentBuildId: 'build-current',
     manifestUrl: 'https://example.test/app/app-update.json',
     supported: true,

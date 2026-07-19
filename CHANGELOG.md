@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.2 – Persönliche Standard-Einheiten bei jeder Suche
+
+- mengenexplizite Eingaben ohne Einheit, zum Beispiel `13 Salzstangen`, verwenden automatisch die gespeicherte persönliche Standard-Einheit des ausgewählten Produkts,
+- eine persönliche Portion von `0,4 g` ergibt bei Menge 13 exakt `5,2 g` Gesamtgewicht,
+- implizite Einheiten folgen immer der aktuellen Resolver-Empfehlung statt einer veralteten Gramm-Auswahl,
+- Standard- und Smart-Controller verwenden dieselbe Auswahl-Autorität,
+- ausdrücklich eingegebene Einheiten bleiben weiterhin maßgeblich.
+
 ## 2.4.1 – Erkannte Mengen als zentrale Request-Quelle
 
 - behebt den Mengenverlust bei asynchroner Favoritenpriorisierung, zum Beispiel `24 Salzstangen`,
