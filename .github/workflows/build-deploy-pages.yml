@@ -48,11 +48,24 @@ jobs:
         run: npm ci --prefix Catalog/runtime --no-audit --no-fund
 
       - name: Validate version, production catalog, workflow and browser-support contracts
+        shell: bash
         run: |
-          npm run check:version
-          npm run check:catalog
-          npm run check:workflow
-          npm run check:browser-support
+          set -o pipefail
+          {
+            npm run check:version
+            npm run check:catalog
+            npm run check:workflow
+            npm run check:browser-support
+          } 2>&1 | tee validation-output.log
+
+      - name: Upload contract diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
+        with:
+          name: validation-output-node-${{ matrix.node-version }}
+          path: validation-output.log
+          if-no-files-found: ignore
+          retention-days: 5
 
       - name: Typecheck application
         run: npm run typecheck
