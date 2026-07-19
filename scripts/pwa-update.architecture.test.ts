@@ -72,7 +72,7 @@ describe('PWA deployment update architecture', () => {
     expect(runtime).toContain('activateCurrentBuildSilently');
     expect(runtime).toContain('der Offline-Cache wird im Hintergrund synchronisiert');
     expect(runtime).toContain('updatePromptVisible: false');
-    expect(updateSpec).toContain('frische Netzwerkladen');
+    expect(updateSpec).toContain('frischer Netzwerkladen');
     expect(updateSpec).toContain('Cache Storage gelöscht');
     expect(updateSpec).toContain('pwa-update-banner');
   });
