@@ -1,17 +1,17 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const OLD_BUILD = 'pwa-old';
 const NEW_BUILD = 'pwa-new';
 
 test.describe.configure({ mode: 'serial' });
 
-async function activateServerBuild(page: Parameters<typeof test>[0] extends never ? never : import('@playwright/test').Page, build: 'old' | 'new') {
+async function activateServerBuild(page: Page, build: 'old' | 'new'): Promise<void> {
   const response = await page.request.post(`/__pwa_test__/activate/${build}`);
   expect(response.ok()).toBe(true);
   expect(await response.json()).toEqual({ activeBuild: build });
 }
 
-async function installAndControlOldBuild(page: import('@playwright/test').Page): Promise<void> {
+async function installAndControlOldBuild(page: Page): Promise<void> {
   await activateServerBuild(page, 'old');
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.app-shell')).toHaveAttribute('data-app-build', OLD_BUILD);
@@ -94,8 +94,10 @@ test('eine wirklich veraltete Homescreen-App informiert den Nutzer und ersetzt n
   expect(await reopened.evaluate(() => localStorage.getItem('kh:pwa-update-e2e'))).toBe('keep-me');
   await expect(reopened.locator('.app-shell')).toHaveAttribute('data-visual-theme', 'standard');
   if (oldScriptUrl) {
-    await expect.poll(() => reopened.evaluate(async (url) => (await caches.match(url)) === undefined, oldScriptUrl))
-      .toBe(true);
+    await expect.poll(() => reopened.evaluate(
+      async (url) => (await caches.match(url)) === undefined,
+      oldScriptUrl
+    )).toBe(true);
   }
 
   await reopened.getByRole('button', { name: 'Einstellungen', exact: true }).click();
