@@ -73,8 +73,8 @@ describe('generic compound portion resolution', () => {
       const request = requestForInitialCatalogProduct(query, target, 'smart');
       const state = resolveCatalogUnitRuntime(target, request, 'smart');
       expect(state.resolution).toMatchObject({
-        status: 'not_calculable',
-        reason: 'requested-unit-unavailable'
+        status: 'needs_unit_calibration',
+        reason: 'explicit-unit-preserved'
       });
       expect(state.prompt).toMatchObject({
         unit: 'portion',
