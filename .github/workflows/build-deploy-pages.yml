@@ -55,7 +55,10 @@ jobs:
           npm run check:browser-support
 
       - name: Typecheck application
-        run: npm run typecheck
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee typecheck-output.log
 
       - name: Lint browser and test sources
         shell: bash
@@ -96,6 +99,7 @@ jobs:
         with:
           name: targeted-test-output-node-${{ matrix.node-version }}
           path: |
+            typecheck-output.log
             runtime-test-output.log
             pwa-update-test-output.log
             semantic-input-test-output.log
