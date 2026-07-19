@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4.2 – Korrekte PWA-Update-Erkennung und Cache-Aktivierung
+
+- eine frische Netzwerkladeversion und die erste Service-Worker-Installation werden nicht mehr fälschlich als Update angeboten,
+- ein gelöschter Cache bei bestehender Registrierung wird im Hintergrund repariert, wenn die geladene App bereits dem aktuellen Deploy entspricht,
+- jeder Service Worker enthält eine abfragbare, build-spezifische Identität,
+- nur ein wartender Worker, dessen Build-ID exakt dem neueren Deploymentmanifest entspricht, erhält einen Updatebutton,
+- die Aktivierung adressiert genau diesen geprüften Worker und lädt erst nach Aktivierung neu,
+- der reale Zwei-Deploy-Test prüft zusätzlich, dass alte App-Assets aus dem Workbox-Cache verschwinden und neue Assets precacht sind.
+
 ## 2.4.1 – Erkannte Mengen als zentrale Request-Quelle
 
 - behebt den Mengenverlust bei asynchroner Favoritenpriorisierung, zum Beispiel `24 Salzstangen`,

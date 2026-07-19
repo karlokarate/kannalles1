@@ -1,0 +1,13 @@
+FishIT KH Checker v2.4.2
+============================
+
+BEHOBEN
+-------
+- Nach einem frischen Netzwerkladen oder einer Cache-Löschung wird die aktuelle App nicht mehr fälschlich als Update angezeigt.
+- Ein Updatebutton erscheint nur, wenn ein eindeutig identifizierter, tatsächlich neuerer Service Worker vollständig vorbereitet ist.
+- „Jetzt aktualisieren“ aktiviert genau diesen Worker, ersetzt den alten App-Cache und lädt anschließend den neuen Build.
+- Ein bestehender aktueller Build kann seinen Offline-Cache lautlos reparieren.
+
+DATENSCHUTZ UND KOMPATIBILITÄT
+-----------------------------
+Lokaler Verlauf, Favoriten, eigene Produkte, Fotos, Einstellungen, Kalibrierungen und der SQLite-Katalog werden beim App-Cache-Update nicht gelöscht.
