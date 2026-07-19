@@ -1,0 +1,75 @@
+name: One-off version metadata sync
+
+on:
+  push:
+    branches: [agent/german-fraction-input-v2-4]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: ${{ !contains(github.event.head_commit.message, '[version-sync]') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: agent/german-fraction-input-v2-4
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Synchronize versioned files
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const version = '2.4.0';
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          lock.version = version;
+          lock.packages[''].version = version;
+          fs.writeFileSync('package-lock.json', `${JSON.stringify(lock, null, 2)}\n`);
+
+          const readmePath = 'README.md';
+          let readme = fs.readFileSync(readmePath, 'utf8')
+            .replace(/^# FishIT KH Checker v[^\n]+/u, `# FishIT KH Checker v${version}`);
+          const quantityBullet = '- natürliche Bruchmengen in Text und Sprache, zum Beispiel `ein halbes Brötchen`, `dreiviertel Brötchen`, `½ Brötchen` oder `null komma fünf Brötchen`';
+          if (!readme.includes(quantityBullet)) {
+            readme = readme.replace(
+              '- Eingabe von Menge und Einheit zusammen mit dem Produktnamen, zum Beispiel `3 Riegel Kinder Bueno`',
+              `- Eingabe von Menge und Einheit zusammen mit dem Produktnamen, zum Beispiel \`3 Riegel Kinder Bueno\`\n${quantityBullet}`
+            );
+          }
+          fs.writeFileSync(readmePath, readme);
+
+          const firstReadmePath = 'README-ERST-LESEN.txt';
+          const firstReadme = fs.readFileSync(firstReadmePath, 'utf8')
+            .replace(/^FishIT KH CHECKER v[^\n]+/u, `FishIT KH CHECKER v${version}`);
+          fs.writeFileSync(firstReadmePath, firstReadme);
+
+          const changelogPath = 'CHANGELOG.md';
+          let changelog = fs.readFileSync(changelogPath, 'utf8');
+          const releaseHeading = '## 2.4.0 – Natürliche Bruchmengen und verlässliche App-Updates';
+          if (!changelog.includes(releaseHeading)) {
+            changelog = changelog.replace('# Changelog\n', `# Changelog\n\n${releaseHeading}\n\n- deutsche Bruchmengen wie \`ein halbes\`, \`anderthalb\`, \`dreiviertel\`, \`½\` und \`1 1/2\` werden deterministisch erkannt,\n- die vollständige Mengenphrase wird vor der Produktsuche entfernt, sodass nach \`Brötchen\` statt nach \`halbes Brötchen\` gesucht wird,\n- Dezimal- und Mehrprodukteingaben bleiben kompatibel,\n- installierte Apps prüfen den aktuellen Deploy und bieten Updates benutzergesteuert an,\n- automatisch gespeicherte Gesamtrechnungen zeigen ihren vollständigen Berechnungszeitpunkt.\n`);
+          }
+          fs.writeFileSync(changelogPath, changelog);
+
+          const pwaTestPath = 'src/lib/pwaUpdate.test.ts';
+          fs.writeFileSync(
+            pwaTestPath,
+            fs.readFileSync(pwaTestPath, 'utf8').replaceAll("'2.3.1'", "'2.4.0'")
+          );
+
+          fs.writeFileSync('RELEASE-NOTES-v2.4.0.txt', `FishIT KH Checker v2.4.0\n============================\n\nNEU\n---\n- Natürliche deutsche Bruchmengen werden vollständig erkannt.\n- Beispiele: „ein halbes Brötchen“, „anderthalb Brötchen“, „dreiviertel Brötchen“, „½ Brötchen“ und „1 1/2 Brötchen“.\n- Die App sucht dabei nach dem eigentlichen Produktnamen und verwendet nur belegte Hersteller-, Katalog- oder Nutzer-Einheiten.\n- Unbekannte Stückgewichte werden weiterhin nicht geraten.\n- Installierte Apps prüfen den aktuellen GitHub-Deploy auf Updates und lassen den Benutzer den Aktualisierungszeitpunkt bestimmen.\n- Automatisch gespeicherte Gesamtrechnungen enthalten und zeigen den vollständigen Berechnungszeitpunkt.\n\nKOMPATIBILITÄT\n--------------\nLokaler Verlauf, Favoriten, eigene Produkte, Fotos, Einstellungen und persönliche Einheitskalibrierungen bleiben erhalten.\n`);
+          NODE
+
+      - name: Remove one-off workflow and commit generated metadata
+        run: |
+          rm .github/workflows/one-off-version-sync.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json README.md README-ERST-LESEN.txt CHANGELOG.md RELEASE-NOTES-v2.4.0.txt src/lib/pwaUpdate.test.ts .github/workflows/one-off-version-sync.yml
+          git commit -m "Synchronize release metadata for v2.4.0 [version-sync]"
+          git push origin HEAD:agent/german-fraction-input-v2-4
