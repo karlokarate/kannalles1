@@ -175,9 +175,10 @@ test('eine gecachte Homescreen-App bietet einen echten neuen Deploy an und erset
 
   const newEntryUrl = await currentEntryUrl(reopened);
   expect(newEntryUrl).not.toBe(oldEntryUrl);
-  const oldEntryStillCached = await expect.poll(() => cacheContains(reopened, oldEntryUrl), {
+  await expect.poll(() => cacheContains(reopened, oldEntryUrl), {
     timeout: 30_000
-  }).toBe(false).then(() => false);
+  }).toBe(false);
+  const oldEntryStillCached = await cacheContains(reopened, oldEntryUrl);
   expect(oldEntryStillCached).toBe(false);
   const newEntryCached = await cacheContains(reopened, newEntryUrl);
   expect(newEntryCached).toBe(true);
