@@ -39,7 +39,7 @@ export interface PwaUpdateSnapshot {
 export interface PwaUpdateBridge {
   swUrl: string;
   registration: ServiceWorkerRegistration;
-  applyUpdate: () => Promise<void>;
+  activateWaitingWorker: (reloadPage: boolean) => Promise<void>;
 }
 
 export interface PwaUpdateEnvironment {
@@ -59,7 +59,7 @@ export interface PwaUpdateController {
   checkForUpdates: (force?: boolean) => Promise<void>;
   applyUpdate: () => Promise<void>;
   dismissUpdate: () => void;
-  markUpdateAvailable: () => void;
+  markWorkerWaiting: () => void;
   markOfflineReady: () => void;
   dismissOfflineReady: () => void;
   markRegistrationError: (error: unknown) => void;
@@ -121,6 +121,7 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
   const listeners = new Set<() => void>();
   let bridge: PwaUpdateBridge | null = null;
   let inFlight: Promise<void> | null = null;
+  let silentActivation: Promise<void> | null = null;
   let lastAttemptAt: number | null = null;
   const observedWorkers = new WeakSet<ServiceWorker>();
   let mutable: MutableUpdateState = {
@@ -138,6 +139,10 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
   };
   let snapshot: PwaUpdateSnapshot = decorate(mutable);
 
+  function remoteDiffersFromCurrentBuild(state: MutableUpdateState): boolean {
+    return state.remoteBuildId !== null && state.remoteBuildId !== state.currentBuildId;
+  }
+
   function decorate(state: MutableUpdateState): PwaUpdateSnapshot {
     return Object.freeze({
       ...state,
@@ -145,7 +150,9 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
         && bridge !== null
         && state.phase !== 'checking'
         && state.phase !== 'applying',
-      canApply: bridge !== null && state.phase === 'update-available'
+      canApply: bridge !== null
+        && state.phase === 'update-available'
+        && remoteDiffersFromCurrentBuild(state)
     });
   }
 
@@ -155,7 +162,19 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
     for (const listener of listeners) listener();
   }
 
-  function publishWaitingUpdate(showPrompt: boolean, message = 'Eine neue App-Version ist verfügbar.'): void {
+  function publishCurrentBuild(checkedAt = mutable.checkedAt ?? environment.now()): void {
+    publish({
+      phase: 'up-to-date',
+      checkedAt,
+      message: `FishIT KH Checker ${environment.currentAppVersion} ist aktuell.`,
+      updatePromptVisible: false
+    });
+  }
+
+  function publishVerifiedUpdate(message = 'Eine neue App-Version ist verfügbar.'): void {
+    const showPrompt = mutable.phase === 'update-available'
+      ? mutable.updatePromptVisible
+      : true;
     publish({
       phase: 'update-available',
       message,
@@ -164,11 +183,58 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
     });
   }
 
-  function preserveWaitingUpdate(message?: string): void {
-    const showPrompt = mutable.phase === 'update-available'
-      ? mutable.updatePromptVisible
-      : true;
-    publishWaitingUpdate(showPrompt, message);
+  async function reconcileWaitingWorker(checkedAt = mutable.checkedAt ?? environment.now()): Promise<boolean> {
+    if (!bridge?.registration.waiting) return false;
+
+    // A waiting worker alone is not proof of a newer app. It can also be the
+    // worker for the exact build already loaded from the network after Cache
+    // Storage was cleared while an older registration remained active.
+    if (mutable.remoteBuildId === null) {
+      publish({
+        phase: environment.isOnline() ? 'checking' : 'offline',
+        message: environment.isOnline()
+          ? 'Der lokale Service Worker wird mit dem bereitgestellten Build abgeglichen …'
+          : 'Ein vorbereiteter Service Worker wurde gefunden, kann offline aber noch keinem Build sicher zugeordnet werden.',
+        updatePromptVisible: false
+      });
+      return true;
+    }
+
+    if (remoteDiffersFromCurrentBuild(mutable)) {
+      publish({ checkedAt });
+      publishVerifiedUpdate(environment.isOnline()
+        ? undefined
+        : 'Eine verifizierte neue App-Version ist bereits lokal vorbereitet und kann offline aktiviert werden.');
+      return true;
+    }
+
+    if (silentActivation) {
+      await silentActivation;
+      return true;
+    }
+
+    publish({
+      phase: 'checking',
+      message: 'Der Offline-Cache wird mit der bereits geladenen aktuellen App-Version synchronisiert …',
+      updatePromptVisible: false
+    });
+    silentActivation = bridge.activateWaitingWorker(false)
+      .then(() => {
+        publishCurrentBuild(checkedAt);
+      })
+      .catch((error) => {
+        publish({
+          phase: 'error',
+          checkedAt,
+          message: `Die App ist aktuell, aber der Offline-Cache konnte nicht synchronisiert werden: ${technicalMessage(error)}`,
+          updatePromptVisible: false
+        });
+      })
+      .finally(() => {
+        silentActivation = null;
+      });
+    await silentActivation;
+    return true;
   }
 
   function observeInstallingWorker(worker: ServiceWorker | null): void {
@@ -176,18 +242,24 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
     observedWorkers.add(worker);
     worker.addEventListener('statechange', () => {
       if (worker.state === 'installed' && bridge?.registration.waiting) {
-        markUpdateAvailable();
+        markWorkerWaiting();
+      } else if (worker.state === 'activated'
+        && mutable.remoteBuildId === mutable.currentBuildId
+        && !bridge?.registration.waiting) {
+        publishCurrentBuild();
       } else if (worker.state === 'redundant' && mutable.phase === 'checking') {
         publish({
           phase: 'error',
-          message: 'Die neue App-Version konnte nicht vorbereitet werden. Bitte erneut prüfen.'
+          message: 'Die neue App-Version konnte nicht vorbereitet werden. Bitte erneut prüfen.',
+          updatePromptVisible: false
         });
       }
     });
   }
 
-  function markUpdateAvailable(): void {
-    publishWaitingUpdate(true);
+  function markWorkerWaiting(): void {
+    if (!bridge?.registration.waiting) return;
+    void reconcileWaitingWorker();
   }
 
   function attachServiceWorker(nextBridge: PwaUpdateBridge): void {
@@ -196,8 +268,11 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
       observeInstallingWorker(nextBridge.registration.installing);
     });
     observeInstallingWorker(nextBridge.registration.installing);
+
+    // Do not announce an update before app-update.json has proven that the
+    // deployed build differs from the JavaScript bundle currently executing.
     if (nextBridge.registration.waiting) {
-      markUpdateAvailable();
+      markWorkerWaiting();
       return;
     }
     publish({
@@ -230,27 +305,23 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
     }
     lastAttemptAt = startedAt;
 
-    // A worker that is already waiting is a complete, locally downloaded
-    // update. It remains actionable without a network connection and a
-    // dismissed banner must not reappear on every focus event.
-    if (bridge.registration.waiting) {
-      preserveWaitingUpdate(environment.isOnline()
-        ? undefined
-        : 'Eine neue App-Version ist bereits lokal vorbereitet und kann auch offline aktiviert werden.');
-      return;
-    }
-
     if (!environment.isOnline()) {
+      if (bridge.registration.waiting) {
+        await reconcileWaitingWorker(startedAt);
+        return;
+      }
       publish({
         phase: 'offline',
-        message: 'Keine Verbindung zur Bereitstellungsseite. Die lokal gespeicherte App bleibt nutzbar.'
+        message: 'Keine Verbindung zur Bereitstellungsseite. Die lokal gespeicherte App bleibt nutzbar.',
+        updatePromptVisible: false
       });
       return;
     }
 
     publish({
       phase: 'checking',
-      message: 'Die bereitgestellte App-Version wird ohne Cache geprüft …'
+      message: 'Die bereitgestellte App-Version wird ohne Cache geprüft …',
+      updatePromptVisible: false
     });
 
     const requestInit: RequestInit = {
@@ -282,22 +353,9 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
 
       await bridge.registration.update();
       const checkedAt = environment.now();
-      if (mutable.phase === 'update-available') {
-        publish({ checkedAt });
-        return;
-      }
-      if (bridge.registration.waiting) {
-        publish({ checkedAt });
-        markUpdateAvailable();
-        return;
-      }
 
-      if (remote.buildId === environment.currentBuildId) {
-        publish({
-          phase: 'up-to-date',
-          checkedAt,
-          message: `FishIT KH Checker ${environment.currentAppVersion} ist aktuell.`
-        });
+      if (bridge.registration.waiting) {
+        await reconcileWaitingWorker(checkedAt);
         return;
       }
 
@@ -307,26 +365,36 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
         publish({
           phase: 'checking',
           checkedAt,
-          message: 'Eine neue Version wurde gefunden und wird für die Aktualisierung vorbereitet …'
+          message: remote.buildId === environment.currentBuildId
+            ? 'Der Offline-Cache wird für die bereits aktuelle App-Version vorbereitet …'
+            : 'Eine neue Version wurde gefunden und wird für die Aktualisierung vorbereitet …',
+          updatePromptVisible: false
         });
+        return;
+      }
+
+      if (remote.buildId === environment.currentBuildId) {
+        publishCurrentBuild(checkedAt);
         return;
       }
 
       publish({
         phase: 'error',
         checkedAt,
-        message: 'Eine neue Version wurde gefunden, konnte aber noch nicht vorbereitet werden. Bitte erneut prüfen.'
+        message: 'Eine neue Version wurde gefunden, konnte aber noch nicht vorbereitet werden. Bitte erneut prüfen.',
+        updatePromptVisible: false
       });
     } catch (error) {
       if (bridge.registration.waiting) {
-        preserveWaitingUpdate('Eine neue App-Version ist bereits lokal vorbereitet und kann trotz fehlgeschlagener Onlineprüfung aktiviert werden.');
+        await reconcileWaitingWorker();
         return;
       }
       publish({
         phase: environment.isOnline() ? 'error' : 'offline',
         message: environment.isOnline()
           ? `Updateprüfung fehlgeschlagen: ${technicalMessage(error)}`
-          : 'Die Verbindung wurde während der Updateprüfung unterbrochen. Die lokale App bleibt nutzbar.'
+          : 'Die Verbindung wurde während der Updateprüfung unterbrochen. Die lokale App bleibt nutzbar.',
+        updatePromptVisible: false
       });
     }
   }
@@ -340,14 +408,14 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
   }
 
   async function applyUpdate(): Promise<void> {
-    if (!bridge || mutable.phase !== 'update-available') return;
+    if (!bridge || mutable.phase !== 'update-available' || !remoteDiffersFromCurrentBuild(mutable)) return;
     publish({
       phase: 'applying',
-      message: 'Die neue App-Version wird aktiviert …',
+      message: 'Die neue App-Version wird aktiviert und der alte App-Cache ersetzt …',
       updatePromptVisible: true
     });
     try {
-      await bridge.applyUpdate();
+      await bridge.activateWaitingWorker(true);
     } catch (error) {
       publish({
         phase: 'update-available',
@@ -373,7 +441,8 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
   function markRegistrationError(error: unknown): void {
     publish({
       phase: 'error',
-      message: `Der Offline- und Update-Dienst konnte nicht gestartet werden: ${technicalMessage(error)}`
+      message: `Der Offline- und Update-Dienst konnte nicht gestartet werden: ${technicalMessage(error)}`,
+      updatePromptVisible: false
     });
   }
 
@@ -387,7 +456,7 @@ export function createPwaUpdateController(environment: PwaUpdateEnvironment): Pw
     checkForUpdates,
     applyUpdate,
     dismissUpdate,
-    markUpdateAvailable,
+    markWorkerWaiting,
     markOfflineReady,
     dismissOfflineReady,
     markRegistrationError
