@@ -243,10 +243,13 @@ function validateBrowserSupport() {
   for (const fragment of [
     'src/lib/input/germanQuantity.test.ts',
     'src/app/queryParser.fractions.test.ts',
-    'src/session.test.ts'
+    'src/app/catalogInputRequest.test.ts',
+    'src/session.test.ts',
+    'scripts/catalog-input-request.architecture.test.ts'
   ]) requireText(semanticInputTests, fragment, 'Gezielte semantische Eingabetests');
   for (const fragment of [
     'e2e/natural-language-quantities.spec.ts',
+    'e2e/input-request-ssot.spec.ts',
     '--project=chromium-desktop'
   ]) requireText(semanticInputE2e, fragment, 'Gezielte semantische Browsertests');
 
