@@ -1,4 +1,4 @@
-# FishIT KH Checker v2.4.2
+# FishIT KH Checker v2.5.0
 
 FishIT KH Checker ist eine installierbare Kohlenhydrat-Rechenhilfe, die nach der Ersteinrichtung lokal und offline arbeitet. Produktsuche, Berechnungen, Favoriten, Verlauf, eigene Produkte, persönliche Einheiten und Einstellungen werden auf dem verwendeten Gerät verarbeitet und gespeichert.
 
@@ -84,6 +84,8 @@ Die Suche arbeitet mit dem lokal gespeicherten SQLite-Katalog. Möglich sind:
 - Suche nach Barcode
 - Auswahl zwischen ähnlichen Produktvarianten
 - Eingabe von Menge und Einheit zusammen mit dem Produktnamen, zum Beispiel `3 Riegel Kinder Bueno`
+- Katalogsuchen sind nicht auf insgesamt 20 Treffer begrenzt, sondern zeigen fest 20 Treffer pro Seite mit fortlaufender Seitennavigation
+- Mehrprodukteingaben ohne eigene Einheit verwenden generisch Portion; fehlende Portionsgrößen werden für jedes betroffene Produkt abgefragt
 - natürliche Bruchmengen in Text und Sprache, zum Beispiel `ein halbes Brötchen`, `dreiviertel Brötchen`, `½ Brötchen` oder `null komma fünf Brötchen`
 - erkannte Mengen bleiben als eine zentrale Request-Quelle bei Favoritenpriorisierung, Produktvarianten und persönlicher Kalibrierung erhalten
 - persönliche Standard-Einheiten werden bei späteren mengenexpliziten Suchen automatisch wieder ausgewählt

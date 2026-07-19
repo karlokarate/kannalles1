@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { CatalogDiagnostics, CatalogProduct, CatalogSearchHit, CatalogStatus } from '../lib/catalog/catalogDomain';
 import { catalogDiagnostics, toCatalogFailure } from '../lib/catalog/catalogErrors';
+import {
+  finishCatalogSearchPage,
+  paginateLocalCatalogResults,
+  planCatalogSearchPage
+} from '../lib/catalog/catalogPagination';
 import { cancelOfflineCatalogRequests, getOfflineCatalogProduct, initializeOfflineCatalog, searchOfflineCatalog } from '../lib/catalog/catalogClient';
 import { calculateCatalogCarbohydrates, catalogProductEligibility } from '../lib/resolution/catalogResolution';
 import type { CatalogUnitRequest, ResolvedUnitOption } from '../lib/resolution/catalogResolution';
@@ -33,7 +38,7 @@ import {
   requestFromParsedCatalogInput
 } from './catalogInputRequest';
 import { inferredCalibrationUnit, selectDefaultCatalogCandidate } from './catalogViewModel';
-import { parseCatalogQuery, parseProductList } from './queryParser';
+import { parseCatalogInputParts, parseCatalogQuery } from './queryParser';
 import { useCatalogUnitSelection } from './useCatalogUnitSelection';
 
 const VERSION_MARKER = 'kh-checker:installed-catalog-version:v1';
@@ -156,13 +161,16 @@ export function useCatalogController() {
     if (!parsed) { dispatch({ type: 'validation', message: 'Bitte Produktname oder Barcode eingeben.' }); return; }
     setEditingMealItemId(null);
     setMealOpen(false);
-    const pageSize = Math.min(20, settings.searchResultLimit);
-    const offset = Math.max(0, page) * pageSize;
     const clinicMatches = parsed.barcode || settings.clinicMode === 'off' ? [] : searchClinicCatalog(parsed.catalogQuery, Number.MAX_SAFE_INTEGER);
     const cookedGeneric = parsed.barcode || settings.clinicMode === 'clinic-only' ? null : genericCookedProductForQuery(parsed.catalogQuery);
     if (settings.clinicMode === 'clinic-only') {
-      const hits = clinicMatches.slice(offset, offset + pageSize);
-      setSearchPage(page); setSearchHasNext(offset + pageSize < clinicMatches.length);
+      const resultPage = paginateLocalCatalogResults(clinicMatches, page);
+      const hits = resultPage.items.map((hit, index) => ({
+        ...hit,
+        resultIndex: resultPage.offset + index
+      }));
+      setSearchPage(resultPage.page);
+      setSearchHasNext(resultPage.hasNext);
       if (!hits.length) { dispatch({ type: 'not-found', query: parsed.catalogQuery }); return; }
       const flags = hits.map((hit) => catalogProductEligibility(hit).eligible);
       const preferred = selectDefaultCatalogCandidate(hits, parsed.catalogQuery, flags);
@@ -187,15 +195,22 @@ export function useCatalogController() {
         return;
       }
       const localMatches = cookedGeneric ? [...clinicMatches, asGenericSearchHit(cookedGeneric)] : clinicMatches;
-      const localPage = localMatches.slice(offset, offset + pageSize);
-      const remaining = pageSize - localPage.length;
-      const sqliteOffset = Math.max(0, offset - localMatches.length);
-      const sqliteHits = remaining > 0
-        ? await searchOfflineCatalog(parsed.catalogQuery, remaining + 1, controller.signal, sqliteOffset)
+      const pagePlan = planCatalogSearchPage(localMatches, page);
+      const sqliteHits = pagePlan.sourceLimit > 0
+        ? await searchOfflineCatalog(
+  parsed.catalogQuery,
+  pagePlan.sourceLimit,
+  controller.signal,
+  pagePlan.sourceOffset
+)
         : [];
-      const hits = [...localPage, ...sqliteHits.slice(0, remaining)].map((hit, resultIndex) => ({ ...hit, resultIndex }));
-      setSearchPage(page);
-      setSearchHasNext(offset + localPage.length < localMatches.length || (remaining > 0 && sqliteHits.length >= remaining) || (remaining === 0 && status.state === 'ready'));
+      const resultPage = finishCatalogSearchPage(pagePlan, sqliteHits);
+      const hits = resultPage.items.map((hit, index) => ({
+        ...hit,
+        resultIndex: resultPage.offset + index
+      }));
+      setSearchPage(resultPage.page);
+      setSearchHasNext(resultPage.hasNext);
       if (!hits.length) { dispatch({ type: 'not-found', query: parsed.catalogQuery }); return; }
       const flags = hits.map((hit) => catalogProductEligibility(hit).eligible);
       const preferred = selectDefaultCatalogCandidate(hits, parsed.catalogQuery, flags);
@@ -207,7 +222,7 @@ export function useCatalogController() {
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'AbortError')) dispatch({ type: 'failed', query: parsed.catalogQuery, diagnostics: diagnostic(error, parsed.barcode ? 'product_lookup' : 'search', 'Die lokale Katalogabfrage konnte nicht abgeschlossen werden.') });
     } finally { if (abortRef.current === controller) abortRef.current = null; }
-  }, [settings.clinicMode, settings.searchResultLimit, setSelectedOptionId, status.state]);
+  }, [settings.clinicMode, setSelectedOptionId, status.state]);
 
   const resolveSearchCandidate = useCallback((
     hit: CatalogSearchHit,
@@ -271,17 +286,17 @@ export function useCatalogController() {
   };
 
   const executeProductInput = async (input: string) => {
-    const parts = parseProductList(input);
-    if (parts.length <= 1) { await executeSearch(input); return; }
-    if (status.state !== 'ready' && settings.clinicMode !== 'clinic-only') { await executeSearch(parts[0] ?? input); return; }
+    const inputParts = parseCatalogInputParts(input);
+    if (inputParts.length <= 1) { await executeSearch(input); return; }
+    if (status.state !== 'ready' && settings.clinicMode !== 'clinic-only') { await executeSearch(inputParts[0]?.source ?? input); return; }
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     const added: MealCalculationItem[] = [];
     const failures: string[] = [];
     try {
-      for (const part of parts) {
-        const parsed = parseCatalogQuery(part);
+      for (const inputPart of inputParts) {
+        const { source: part, parsed } = inputPart;
         if (!parsed) { failures.push(part); continue; }
         let candidates: CatalogProduct[] = [];
         if (parsed.barcode) {
@@ -307,7 +322,7 @@ export function useCatalogController() {
         if (item) added.push(item); else failures.push(part);
       }
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) failures.push(...parts.filter((part) => !failures.includes(part)));
+      if (!(error instanceof DOMException && error.name === 'AbortError')) failures.push(...inputParts.map((part) => part.source).filter((part) => !failures.includes(part)));
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
     }

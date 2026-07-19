@@ -72,12 +72,7 @@ export function SettingsScreen({
               <option value={0}>0</option><option value={1}>1</option><option value={2}>2</option>
             </select>
           </label>
-          <label className="field">
-            <span>Maximale Suchtreffer</span>
-            <select value={settings.searchResultLimit} onChange={(event: ChangeEvent<HTMLSelectElement>) => update('searchResultLimit', Number(event.target.value) as 10 | 15 | 20)}>
-              <option value={10}>10</option><option value={15}>15</option><option value={20}>20</option>
-            </select>
-          </label>
+          <p className="settings-note">Produktsuchen zeigen immer 20 Treffer pro Seite; weitere Treffer bleiben über die Seitennavigation erreichbar.</p>
         </fieldset>
         <fieldset className="settings-card">
           <legend>Lokale Speicherung</legend>

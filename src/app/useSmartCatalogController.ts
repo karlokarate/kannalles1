@@ -32,7 +32,8 @@ import {
 } from './catalogUnitRuntime';
 import { requestForInitialCatalogProduct } from './catalogInputRequest';
 import { selectDefaultCatalogCandidate } from './catalogViewModel';
-import { parseCatalogQuery, parseProductList } from './queryParser';
+import { parseCatalogInputParts } from './queryParser';
+import type { ParsedCatalogQuery } from './queryParser';
 import { useCatalogController } from './useCatalogController';
 import { useCatalogUnitSelection } from './useCatalogUnitSelection';
 
@@ -163,9 +164,7 @@ export function useSmartCatalogController() {
     if (product && smartUnitPrompt) persistSmartPrompt(product, smartUnitPrompt);
   };
 
-  const resolveInputPart = async (part: string, signal: AbortSignal): Promise<{ item: MealCalculationItem | null; pending: PendingSmartUnitItem | null }> => {
-    const parsed = parseCatalogQuery(part);
-    if (!parsed) return { item: null, pending: null };
+  const resolveInputPart = async (parsed: ParsedCatalogQuery, signal: AbortSignal): Promise<{ item: MealCalculationItem | null; pending: PendingSmartUnitItem | null }> => {
     let candidates: CatalogProduct[] = [];
     if (parsed.barcode) {
       const product = await getOfflineCatalogProduct(parsed.barcode, signal);
@@ -198,13 +197,13 @@ export function useSmartCatalogController() {
   };
 
   const executeProductInput = async (input: string) => {
-    const parts = parseProductList(input);
-    if (parts.length <= 1) {
+    const inputParts = parseCatalogInputParts(input);
+    if (inputParts.length <= 1) {
       await base.executeSearch(input);
       return;
     }
     if (base.status.state !== 'ready' && base.settings.clinicMode !== 'clinic-only') {
-      await base.executeSearch(parts[0] ?? input);
+      await base.executeSearch(inputParts[0]?.source ?? input);
       return;
     }
     abortRef.current?.abort();
@@ -214,14 +213,18 @@ export function useSmartCatalogController() {
     const pending: PendingSmartUnitItem[] = [];
     const failures: string[] = [];
     try {
-      for (const part of parts) {
-        const result = await resolveInputPart(part, controller.signal);
+      for (const inputPart of inputParts) {
+        if (!inputPart.parsed) {
+          failures.push(inputPart.source);
+          continue;
+        }
+        const result = await resolveInputPart(inputPart.parsed, controller.signal);
         if (result.item) added.push(result.item);
         else if (result.pending) pending.push(result.pending);
-        else failures.push(part);
+        else failures.push(inputPart.source);
       }
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) failures.push(...parts.filter((part) => !failures.includes(part)));
+      if (!(error instanceof DOMException && error.name === 'AbortError')) failures.push(...inputParts.map((part) => part.source).filter((part) => !failures.includes(part)));
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
     }

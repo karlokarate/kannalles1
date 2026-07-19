@@ -9,6 +9,7 @@ import {
 import type { CatalogProduct, CatalogSearchHit, CatalogStatus } from './catalogDomain';
 import { CatalogFailure, isCatalogFailure, toCatalogFailure } from './catalogErrors';
 import { type CatalogDatabase, CatalogInstaller, type CatalogPool, type CatalogPools } from './catalogInstaller';
+import { CATALOG_SEARCH_LOOKAHEAD_SIZE } from './catalogPagination';
 import { type CatalogSqlRow, projectCatalogProductRow, projectCatalogSearchRows } from './catalogProjection';
 import type { CatalogWorkerRequest, CatalogWorkerResponse } from './catalogProtocol';
 
@@ -165,7 +166,7 @@ function searchCatalog(query: string, requestedLimit: number, requestedOffset: n
   const canonical = query.normalize('NFKC').trim();
   const ftsQuery = buildCatalogFtsQuery(canonical);
   if (!ftsQuery) return [];
-  const limit = Math.max(1, Math.min(20, Math.trunc(requestedLimit) || 20));
+  const limit = Math.max(1, Math.min(CATALOG_SEARCH_LOOKAHEAD_SIZE, Math.trunc(requestedLimit) || 20));
   const offset = Math.max(0, Math.trunc(requestedOffset) || 0);
   try {
     const resultRows = rows<CatalogSqlRow>(
