@@ -39,7 +39,9 @@ test('Produkt einer Gesamtrechnung lässt sich durch ein lokales Alternativprodu
   await expect(page.getByTestId('meal-item').filter({ hasText: 'Kartoffeln, gekocht' })).toHaveCount(1);
   await expect(page.getByLabel('Kartoffeln, gekocht: Menge')).toHaveValue('100');
   await expect(page.getByLabel('Nudeln, gekocht: Menge')).toHaveValue('150');
-  await expect(page.getByRole('status')).toContainText('Reis, gekocht wurde durch Kartoffeln, gekocht ersetzt');
+  await expect(page.getByRole('status').filter({
+    hasText: 'Reis, gekocht wurde durch Kartoffeln, gekocht ersetzt'
+  })).toContainText('Reis, gekocht wurde durch Kartoffeln, gekocht ersetzt');
   const totalAfter = Number(await page.getByTestId('meal-total').getAttribute('data-total-carbs-g'));
   expect(totalAfter).not.toBe(totalBefore);
 

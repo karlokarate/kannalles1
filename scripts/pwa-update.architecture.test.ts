@@ -15,6 +15,7 @@ const preparePublic = source('scripts/prepare-public.mjs');
 const verifyPages = source('scripts/verify-pages-build.mjs');
 const defaultPlaywright = source('playwright.config.ts');
 const updatePlaywright = source('e2e/playwright.pwa-update.config.ts');
+const updateSpec = source('e2e/pwa-update.spec.ts');
 const packageJson = JSON.parse(source('package.json')) as { scripts?: Record<string, string> };
 
 describe('PWA deployment update architecture', () => {
@@ -36,27 +37,59 @@ describe('PWA deployment update architecture', () => {
     expect(pwa).toContain('APP_UPDATE_CHECK_INTERVAL_MS');
   });
 
-  it('uses no-store checks before invoking the browser update algorithm', () => {
+  it('never turns Workbox lifecycle state into an unverified update prompt', () => {
+    expect(pwa).toContain('controller.markWorkerWaiting()');
+    expect(pwa).not.toContain('controller.markUpdateAvailable()');
+    expect(runtime).toContain('A waiting worker alone is not proof of a newer app');
+    expect(runtime).toContain('verifiedUpdateAvailable');
+    expect(runtime).toContain('verifiedWaitingBuildId');
+    expect(runtime).toContain('verifiedWaitingBuildId !== mutable.remoteBuildId');
+    expect(runtime).toContain('updatePromptVisible: false');
+  });
+
+  it('uses no-store deployment checks before comparing build identity', () => {
     expect(runtime).toContain("cache: 'no-store'");
     expect(runtime).toContain("'Cache-Control': 'no-cache'");
     expect(runtime).toContain('await bridge.registration.update()');
-    expect(runtime).toContain('await bridge.applyUpdate()');
-    expect(runtime).toContain('updatePromptVisible: true');
+    expect(runtime.indexOf('remoteBuildId: remote.buildId'))
+      .toBeLessThan(runtime.indexOf('await bridge.registration.update()'));
   });
 
-  it('activates the exact waiting worker and reloads only after controller change', () => {
+  it('silently reconciles a current network shell and reloads only a verified stale shell', () => {
+    expect(runtime).toContain('bridge.activateWaitingWorker(false)');
+    expect(runtime).toContain('await bridge.activateWaitingWorker(true)');
+    expect(runtime).toContain('remote.buildId === environment.currentBuildId');
+    expect(runtime).toContain('canApply: bridge !== null');
+    expect(pwa).toContain('activateWaitingServiceWorker(registration, reloadPage)');
+    expect(pwa).toContain('if (reloadPage) window.location.reload()');
+  });
+
+  it('does not activate an older waiting worker while a newer build is installing', () => {
+    const marker = 'Prefer an actually installing worker over an older waiting worker';
+    const start = runtime.indexOf(marker);
+    const end = runtime.indexOf('pendingWorkerBuildId = null;', start);
+    const updateResultBlock = runtime.slice(start, end);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(updateResultBlock.indexOf('const installing = bridge.registration.installing'))
+      .toBeLessThan(updateResultBlock.indexOf('if (bridge.registration.waiting)'));
+    expect(runtime).toContain('pendingWorkerBuildId = remote.buildId');
+  });
+
+  it('activates the exact waiting worker and replaces caches through Workbox activation', () => {
     expect(pwa).toContain('registration.waiting');
     expect(pwa).toContain("waiting.postMessage({ type: 'SKIP_WAITING' })");
     expect(pwa).toContain("navigator.serviceWorker.addEventListener('controllerchange'");
-    expect(pwa).toContain('window.location.reload()');
+    expect(pwa).toContain("waiting.addEventListener('statechange'");
     expect(pwa.indexOf("waiting.postMessage({ type: 'SKIP_WAITING' })"))
       .toBeGreaterThan(pwa.indexOf("navigator.serviceWorker.addEventListener('controllerchange'"));
   });
 
-  it('keeps a locally prepared update actionable while offline', () => {
-    expect(runtime).toContain('if (bridge.registration.waiting)');
-    expect(runtime).toContain('kann auch offline aktiviert werden');
-    expect(runtime).toContain('preserveWaitingUpdate');
+  it('keeps only verified prepared updates actionable while offline', () => {
+    expect(runtime).toContain('Eine verifizierte neue App-Version');
+    expect(runtime).toContain('kann offline aktiviert werden');
+    expect(runtime).toContain('verifiedWaitingBuildId === state.remoteBuildId');
+    expect(runtime).toContain('canApply: bridge !== null');
   });
 
   it('keeps deployment metadata outside the app-shell precache', () => {
@@ -67,11 +100,14 @@ describe('PWA deployment update architecture', () => {
     expect(verifyPages).toContain('Service Worker darf ${excluded} nicht als App-Shell precachen.');
   });
 
-  it('runs the switchable two-deployment journey only with its dedicated server', () => {
+  it('proves both cache-cleared current shells and genuinely stale homescreen shells', () => {
     expect(defaultPlaywright).toContain("testIgnore: '**/pwa-update.spec.ts'");
     expect(updatePlaywright).toContain("testMatch: 'pwa-update.spec.ts'");
     expect(updatePlaywright).toContain("command: 'node start-pwa-update-preview.mjs'");
-    expect(updatePlaywright).toContain("baseURL: 'http://127.0.0.1:4174'");
+    expect(updateSpec).toContain('Cache Storage was deleted');
+    expect(updateSpec).toContain("data-pwa-update-state', 'up-to-date'");
+    expect(updateSpec).toContain("data-pwa-update-state', 'update-available'");
+    expect(updateSpec).toContain('caches.match(url)');
   });
 
   it('exposes both a startup prompt and a persistent manual settings action', () => {
