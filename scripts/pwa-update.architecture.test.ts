@@ -65,9 +65,14 @@ describe('PWA deployment update architecture', () => {
   });
 
   it('does not activate an older waiting worker while a newer build is installing', () => {
-    expect(runtime).toContain('Prefer an actually installing worker over an older waiting worker');
-    expect(runtime.indexOf('const installing = bridge.registration.installing'))
-      .toBeLessThan(runtime.indexOf('if (bridge.registration.waiting)'));
+    const marker = 'Prefer an actually installing worker over an older waiting worker';
+    const start = runtime.indexOf(marker);
+    const end = runtime.indexOf('pendingWorkerBuildId = null;', start);
+    const updateResultBlock = runtime.slice(start, end);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(updateResultBlock.indexOf('const installing = bridge.registration.installing'))
+      .toBeLessThan(updateResultBlock.indexOf('if (bridge.registration.waiting)'));
     expect(runtime).toContain('pendingWorkerBuildId = remote.buildId');
   });
 
