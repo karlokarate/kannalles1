@@ -1,18 +1,11 @@
 import { useEffect, useRef } from 'react';
 import type { CatalogSearchHit } from '../lib/catalog/catalogDomain';
 import { catalogProductEligibility } from '../lib/resolution/catalogResolution';
-import { isClinicCatalogProduct } from '../lib/clinicCatalog';
-import { isGenericCatalogProduct } from '../lib/genericFoods';
-import {
-  defaultClinicCatalogUnitRequest,
-  normalizeCatalogUnitRequest
-} from './catalogUnitRuntime';
 import {
   loadMatchingFavoriteHits,
   prioritizeFavoriteHits,
   sameCatalogHitOrder
 } from './favoriteSearch';
-import { parseCatalogQuery } from './queryParser';
 import { useMealReplacementController } from './useMealReplacementController';
 
 export function useFavoriteSearchController() {
@@ -29,13 +22,10 @@ export function useFavoriteSearchController() {
       || (base.search.phase !== 'resolved' && base.search.phase !== 'needs_product_choice')
       || !base.search.query) return;
 
-    const parsed = parseCatalogQuery(base.search.query);
-    if (!parsed || parsed.barcode) return;
-
     const controller = new AbortController();
     void loadMatchingFavoriteHits(
       base.favorites,
-      parsed.catalogQuery,
+      base.search.query,
       base.settings.clinicMode,
       controller.signal
     ).then((favoriteHits) => {
@@ -49,21 +39,12 @@ export function useFavoriteSearchController() {
         && sameCatalogHitOrder(base.search.candidates, merged);
       if (alreadyApplied) return;
 
-      if (isGenericCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) {
-        base.setRequest({ amount: 200, unit: 'g', unitExplicit: true });
-      } else if (isClinicCatalogProduct(preferred) && !parsed.amountExplicit && !parsed.unitExplicit) {
-        base.setRequest(defaultClinicCatalogUnitRequest(preferred));
-      } else {
-        base.setRequest(normalizeCatalogUnitRequest({
-          amount: parsed.amount,
-          unit: parsed.unit,
-          unitExplicit: parsed.unitExplicit
-        }));
-      }
-
+      // Request amount and unit already belong to the catalog controller SSOT.
+      // Favorite promotion may reorder/select products but must never reparse the
+      // canonical query (which intentionally no longer contains "24", "0,5", …).
       base.dispatch({
         type: 'resolve',
-        query: parsed.catalogQuery,
+        query: base.search.query,
         product: preferred,
         candidates: merged
       });
@@ -82,7 +63,6 @@ export function useFavoriteSearchController() {
     base.search.query,
     base.search.selectedProduct?.productId,
     base.searchPage,
-    base.setRequest,
     base.settings.clinicMode
   ]);
 
