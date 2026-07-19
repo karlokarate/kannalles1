@@ -25,7 +25,7 @@ function manifest(buildId = 'build-current') {
   return {
     contract: APP_UPDATE_MANIFEST_CONTRACT,
     schemaVersion: APP_UPDATE_MANIFEST_VERSION,
-    appVersion: '2.4.2',
+    appVersion: '2.4.1',
     buildId,
     catalogVersion: 'production-v1'
   };
@@ -50,7 +50,7 @@ function environment(overrides: Partial<PwaUpdateEnvironment> = {}) {
       : textResponse()
   );
   const value: PwaUpdateEnvironment = {
-    currentAppVersion: '2.4.2',
+    currentAppVersion: '2.4.1',
     currentBuildId: 'build-current',
     manifestUrl: 'https://example.test/app/app-update.json',
     supported: true,
@@ -252,7 +252,7 @@ describe('PWA deployment update controller', () => {
     await controller.checkForUpdates(true);
     controller.dismissUpdate();
     online = false;
-    await controller.checkForUpdates(false);
+    await controller.checkForUpdates(true);
 
     expect(controller.getSnapshot()).toMatchObject({
       phase: 'update-available',
@@ -308,6 +308,47 @@ describe('PWA deployment update controller', () => {
     worker.dispatchEvent(new Event('statechange'));
     expect(controller.getSnapshot()).toMatchObject({
       phase: 'update-available',
+      updatePromptVisible: true,
+      canApply: true
+    });
+  });
+
+  it('does not activate an older waiting worker while a newer verified build is still installing', async () => {
+    const fetchMock = vi.fn<FetchFunction>(async (input) =>
+      String(input).includes('app-update.json')
+        ? jsonResponse(manifest('build-new'))
+        : textResponse()
+    );
+    const env = environment({ fetch: fetchMock });
+    const controller = createPwaUpdateController(env.value);
+    const registration = new FakeRegistration();
+    const oldWaiting = new FakeWorker();
+    oldWaiting.state = 'installed';
+    const newInstalling = new FakeWorker();
+    registration.waiting = oldWaiting as unknown as ServiceWorker;
+    registration.update.mockImplementation(async () => {
+      registration.installing = newInstalling as unknown as ServiceWorker;
+      registration.dispatchEvent(new Event('updatefound'));
+    });
+    const { activateWaitingWorker } = attach(controller, registration);
+
+    await controller.checkForUpdates(true);
+
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: 'checking',
+      remoteBuildId: 'build-new',
+      updatePromptVisible: false,
+      canApply: false
+    });
+    expect(activateWaitingWorker).not.toHaveBeenCalled();
+
+    registration.installing = null;
+    registration.waiting = newInstalling as unknown as ServiceWorker;
+    newInstalling.state = 'installed';
+    newInstalling.dispatchEvent(new Event('statechange'));
+    expect(controller.getSnapshot()).toMatchObject({
+      phase: 'update-available',
+      remoteBuildId: 'build-new',
       updatePromptVisible: true,
       canApply: true
     });
