@@ -3,12 +3,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import autoprefixer from 'autoprefixer';
 import postcss from 'postcss';
-import { resolveBuildId, validateAppVersion } from './public-config.mjs';
+import {
+  resolveBuildId,
+  serviceWorkerMetadataFile,
+  validateAppVersion
+} from './public-config.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const packageJson = JSON.parse(await fs.readFile(path.join(rootDir, 'package.json'), 'utf8'));
 const version = validateAppVersion(packageJson.version);
 const buildId = resolveBuildId(process.env, version);
+const serviceWorkerBuildFile = serviceWorkerMetadataFile(buildId);
 const sourceDir = path.join(rootDir, 'public-template');
 const targetDir = path.join(rootDir, '.generated-public');
 const catalogSourceDir = path.join(rootDir, 'Catalog');
@@ -128,6 +133,23 @@ await fs.writeFile(
   'utf8'
 );
 
+// Each generated worker imports a build-specific metadata script. The filename
+// changes with every deployment, forcing the top-level sw.js byte content to
+// change as well, while the message contract lets the page identify the exact
+// installing/waiting worker before showing an update prompt.
+const serviceWorkerMetadata = {
+  contract: 'kh-checker-service-worker-build',
+  schemaVersion: 1,
+  appVersion: version,
+  buildId
+};
+const serviceWorkerMetadataSource = `(() => {\n  const metadata = Object.freeze(${JSON.stringify(serviceWorkerMetadata)});\n  self.addEventListener('message', (event) => {\n    if (!event.data || event.data.type !== 'KH_GET_BUILD_METADATA') return;\n    const port = event.ports && event.ports[0];\n    if (port) port.postMessage(metadata);\n  });\n})();\n`;
+await fs.writeFile(
+  path.join(targetDir, serviceWorkerBuildFile),
+  serviceWorkerMetadataSource,
+  'utf8'
+);
+
 async function replaceTokens(directory) {
   for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
     const absolute = path.join(directory, entry.name);
@@ -150,4 +172,4 @@ await replaceTokens(targetDir);
 if (versionTokenCount < 1) {
   throw new Error(`Unexpected public version token inventory: ${versionTokenCount}.`);
 }
-console.log(`Public assets prepared for FishIT KH Checker v${version}; build=${buildId}; catalog=production-v1.`);
+console.log(`Public assets prepared for FishIT KH Checker v${version}; build=${buildId}; sw-meta=${serviceWorkerBuildFile}; catalog=production-v1.`);
