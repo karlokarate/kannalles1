@@ -1,0 +1,103 @@
+name: One-off v2.4.2 personal unit release sync
+
+on:
+  push:
+    branches: [agent/personal-default-unit-v2-4-2]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: ${{ !contains(github.event.head_commit.message, '[personal-unit-release-sync]') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: agent/personal-default-unit-v2-4-2
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Synchronize release metadata
+        run: |
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import re
+
+          root = pathlib.Path('.')
+          version = '2.4.2'
+
+          package_path = root / 'package.json'
+          package = json.loads(package_path.read_text())
+          package['version'] = version
+          runtime_script = package['scripts']['test:runtime']
+          for test_file in [
+              'src/app/catalogPersonalDefaultUnit.test.ts',
+              'src/app/useCatalogUnitSelection.test.ts'
+          ]:
+              if test_file not in runtime_script:
+                  runtime_script += f' {test_file}'
+          package['scripts']['test:runtime'] = runtime_script
+          package_path.write_text(json.dumps(package, indent=2) + '\n')
+
+          lock_path = root / 'package-lock.json'
+          lock = json.loads(lock_path.read_text())
+          lock['version'] = version
+          lock['packages']['']['version'] = version
+          lock_path.write_text(json.dumps(lock, indent=2) + '\n')
+
+          readme_path = root / 'README.md'
+          readme = re.sub(
+              r'^# FishIT KH Checker v[^\n]+',
+              f'# FishIT KH Checker v{version}',
+              readme_path.read_text(),
+              count=1
+          )
+          feature = '- persönliche Standard-Einheiten werden bei späteren mengenexpliziten Suchen automatisch wieder ausgewählt'
+          if feature not in readme:
+              marker = '- erkannte Mengen bleiben als eine zentrale Request-Quelle bei Favoritenpriorisierung, Produktvarianten und persönlicher Kalibrierung erhalten'
+              if marker in readme:
+                  readme = readme.replace(marker, marker + '\n' + feature)
+              else:
+                  readme = readme.replace(
+                      '- Eingabe von Menge und Einheit zusammen mit dem Produktnamen, zum Beispiel `3 Riegel Kinder Bueno`',
+                      '- Eingabe von Menge und Einheit zusammen mit dem Produktnamen, zum Beispiel `3 Riegel Kinder Bueno`\n' + feature
+                  )
+          readme_path.write_text(readme)
+
+          first_path = root / 'README-ERST-LESEN.txt'
+          first_path.write_text(re.sub(
+              r'^FishIT KH CHECKER v[^\n]+',
+              f'FishIT KH CHECKER v{version}',
+              first_path.read_text(),
+              count=1
+          ))
+
+          changelog_path = root / 'CHANGELOG.md'
+          changelog = changelog_path.read_text()
+          heading = '## 2.4.2 – Persönliche Standard-Einheiten bei jeder Suche'
+          if heading not in changelog:
+              entry = f'''\n{heading}\n\n- mengenexplizite Eingaben ohne Einheit, zum Beispiel `13 Salzstangen`, verwenden automatisch die gespeicherte persönliche Standard-Einheit des ausgewählten Produkts,\n- eine persönliche Portion von `0,4 g` ergibt bei Menge 13 exakt `5,2 g` Gesamtgewicht,\n- implizite Einheiten folgen immer der aktuellen Resolver-Empfehlung statt einer veralteten Gramm-Auswahl,\n- Standard- und Smart-Controller verwenden dieselbe Auswahl-Autorität,\n- ausdrücklich eingegebene Einheiten bleiben weiterhin maßgeblich.\n'''
+              changelog = changelog.replace('# Changelog\n', '# Changelog\n' + entry, 1)
+          changelog_path.write_text(changelog)
+
+          release_path = root / 'RELEASE-NOTES-v2.4.2.txt'
+          release_path.write_text('''FishIT KH Checker v2.4.2\n============================\n\nBEHOBEN\n-------\n- Gespeicherte persönliche Standard-Einheiten werden bei späteren Suchen automatisch verwendet.\n- Beispiel: 13 Salzstangen mit einer gespeicherten Portion von 0,4 g werden als 13 Portionen und damit 5,2 g Gesamtgewicht berechnet.\n- Eine ältere gültige Gramm-Auswahl kann die persönliche Standard-Einheit nicht mehr übersteuern.\n- Produktvarianten behalten die Menge und übernehmen ihren eigenen persönlichen Standard.\n\nSICHERHEIT\n----------\nExplizite Nutzereinheiten bleiben erhalten. Einheitsgewichte werden nur aus gespeicherten Kalibrierungen oder belastbarer Katalogevidenz verwendet und niemals geraten.\n''')
+
+          pwa_test_path = root / 'src/lib/pwaUpdate.test.ts'
+          pwa_test_path.write_text(
+              pwa_test_path.read_text().replace("'2.4.1'", "'2.4.2'")
+          )
+          PY
+
+      - name: Remove one-off workflow and commit release sync
+        run: |
+          rm .github/workflows/one-off-personal-unit-release.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json README.md README-ERST-LESEN.txt CHANGELOG.md RELEASE-NOTES-v2.4.2.txt src/lib/pwaUpdate.test.ts .github/workflows/one-off-personal-unit-release.yml
+          git commit -m "Synchronize v2.4.2 personal unit release [personal-unit-release-sync]"
+          git push origin HEAD:agent/personal-default-unit-v2-4-2
