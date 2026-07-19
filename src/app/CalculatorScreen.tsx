@@ -100,7 +100,6 @@ export function CalculatorScreen({ c }: { c: CatalogController }) {
   const diabetesPanel = c.settings.diabeticProfileEnabled ? <DiabetesBolusPanel settings={c.settings} carbohydratesG={carbohydratesForBolus} currentGlucose={currentGlucose} onCurrentGlucoseChange={setCurrentGlucose} lastBolusTime={c.lastBolusTime} lastBolusUnits={c.lastBolusUnits} onLastBolusTimeChange={c.setLastBolusTime} onLastBolusUnitsChange={c.setLastBolusUnits} /> : null;
   const chooseCandidate = (hit: (typeof c.search.candidates)[number]) => {
     c.selectCandidate(hit);
-    if (!isClinicCatalogProduct(hit)) c.setRequest((current) => ({ amount: current.amount, unit: hit.nutrition.basis === 'mass' ? 'g' : 'ml', unitExplicit: false }));
   };
 
   if (c.mealOpen && c.mealItems.length > 0) return (

@@ -13,6 +13,7 @@ import { clearAllUserData, clearHistoryEntries, clearSearchSession, createLocalI
 import type { AppSection, CalculationHistoryEntry, CatalogProductPhoto, FavoriteProduct, SavedMealCalculation, UserDataCounts } from '../lib/userDataStore';
 import { deleteManualProduct, listManualProducts, saveManualProduct as persistManualProduct } from '../lib/userDataStore';
 import type { ManualProduct } from '../lib/userDataStore';
+import { implicitCatalogInput } from '../lib/input/catalogInput';
 import { asGenericSearchHit, genericCookedProductForQuery, genericProductByCode, isGenericCatalogProduct } from '../lib/genericFoods';
 import { clinicCatalogProducts, clinicProductByCode, isClinicCatalogProduct, searchClinicCatalog } from '../lib/clinicCatalog';
 import { resizeManualProductImage } from '../lib/manualProductImage';
@@ -204,8 +205,9 @@ export function useCatalogController() {
       dispatch({ type: 'validation', message: isClinicCatalogProduct(hit) ? 'Für diesen Klinikdatensatz ist ausdrücklich kein berechenbarer KH-Wert hinterlegt.' : 'Dieser Katalogeintrag ist nicht sicher berechenbar.' });
       return;
     }
-    if (search.input) setRequest(catalogRequestForInput(search.input, hit));
-    dispatch({ type: 'resolve', query: search.query, product: hit, input: search.input });
+    const selectionInput = search.input ?? implicitCatalogInput(hit.displayName);
+    setRequest(catalogRequestForInput(selectionInput, hit));
+    dispatch({ type: 'resolve', query: search.query || hit.displayName, product: hit, input: search.input });
   };
   const changeSearchPage = (page: number) => { if (page < 0 || (page > searchPage && !searchHasNext)) return; void executeSearch(query, page); };
   const selectUnit = (id: string) => { const option = resolution?.options.find((o) => o.id === id); if (!option) return; setRequest((r) => ({ ...r, unit: option.unit, unitExplicit: true })); setSelectedOptionId(id); setCalibrationMessage(null); };
