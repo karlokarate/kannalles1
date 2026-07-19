@@ -35,7 +35,7 @@ export type CatalogSearchAction =
       product: CatalogProduct;
       candidates?: readonly CatalogSearchHit[];
       /** `null` explicitly marks a programmatic resolution without user input. */
-      input?: CatalogInputIntent | null;
+      input: CatalogInputIntent | null;
     }
   | { type: 'needs-calibration'; product: CatalogProduct }
   | { type: 'not-found'; query: string }
@@ -90,7 +90,7 @@ export function catalogSearchReducer(
         ...state,
         phase: 'resolved',
         query: action.query,
-        input: action.input === undefined ? state.input : action.input,
+        input: action.input,
         candidates: action.candidates ?? state.candidates,
         selectedProduct: action.product,
         diagnostics: null,
