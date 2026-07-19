@@ -7,6 +7,7 @@ function source(path: string): string {
 
 const runtime = source('src/app/catalogUnitRuntime.ts');
 const requestNormalizer = source('src/lib/resolution/catalogUnitRequest.ts');
+const inputRequestAuthority = source('src/app/catalogInputRequest.ts');
 const mealCalculation = source('src/lib/mealCalculation.ts');
 const standardController = source('src/app/useCatalogController.ts');
 const smartController = source('src/app/useSmartCatalogController.ts');
@@ -39,22 +40,24 @@ describe('catalog unit runtime architecture', () => {
     }
   });
 
-  it('keeps kilogram normalization in one lower-layer function and reuses it at meal boundaries', () => {
+  it('keeps kilogram normalization in one lower-layer function and reuses it at request boundaries', () => {
     expect(requestNormalizer.match(/\*\s*1_000/g)).toHaveLength(1);
     expect(runtime).toContain("from '../lib/resolution/catalogUnitRequest'");
     expect(runtime).toContain('const normalizedRequest = normalizeCatalogUnitRequest(request)');
+    expect(inputRequestAuthority).toContain('normalizeCatalogUnitRequest');
     expect(mealCalculation).toContain("from './resolution/catalogUnitRequest'");
     expect(mealCalculation).toContain('const normalizedRequest = normalizeCatalogUnitRequest(request)');
-    for (const sourceText of [runtime, mealCalculation, ...unitControllers, favoriteController]) {
+    for (const sourceText of [runtime, inputRequestAuthority, mealCalculation, ...unitControllers, favoriteController]) {
       expect(sourceText).not.toMatch(/request\.amount\s*\*\s*1_000/);
       expect(sourceText).not.toMatch(/parsed\.amount\s*\*\s*1_000/);
     }
   });
 
-  it('requires the smart controller to opt into smart calibration scope explicitly', () => {
+  it('requires smart multi-product resolution to opt into smart request and calibration scope', () => {
     expect(smartController).toContain("resolveCatalogUnitRuntime(base.product, base.request, 'smart')");
     expect(smartController).toContain("catalogCalibrationIdentity(product, 'smart')");
-    expect(smartController).toContain("defaultClinicCatalogUnitRequest(candidate, 'smart')");
+    expect(smartController).toContain("requestForInitialCatalogProduct(parsed, candidate, 'smart')");
+    expect(inputRequestAuthority).toContain('defaultClinicCatalogUnitRequest(product, mode)');
   });
 
   it('preserves explicit non-piece requests for direct clinic values', () => {
@@ -65,10 +68,11 @@ describe('catalog unit runtime architecture', () => {
     expect(runtime).toContain("request.unit === 'piece'");
   });
 
-  it('routes favorite request defaults through the same runtime helpers', () => {
-    expect(favoriteController).toContain("from './catalogUnitRuntime'");
-    expect(favoriteController).toContain('normalizeCatalogUnitRequest');
-    expect(favoriteController).toContain('defaultClinicCatalogUnitRequest');
-    expect(favoriteController).not.toContain('clinicDefaultRequest');
+  it('forbids favorite promotion from becoming a second request authority', () => {
+    expect(favoriteController).not.toContain("from './catalogUnitRuntime'");
+    expect(favoriteController).not.toContain('normalizeCatalogUnitRequest');
+    expect(favoriteController).not.toContain('defaultClinicCatalogUnitRequest');
+    expect(favoriteController).not.toContain('parseCatalogQuery');
+    expect(favoriteController).not.toContain('setRequest');
   });
 });
