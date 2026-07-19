@@ -6,7 +6,10 @@ const NEW_BUILD = 'pwa-new';
 test.describe.configure({ mode: 'serial' });
 
 async function activateServerBuild(page: Page, build: 'old' | 'new'): Promise<void> {
-  const response = await page.request.post(`/__pwa_test__/activate/${build}`);
+  const endpoint = build === 'new'
+    ? '/__pwa_test__/activate/new'
+    : '/__pwa_test__/activate/old';
+  const response = await page.request.post(endpoint);
   expect(response.ok()).toBe(true);
   expect(await response.json()).toEqual({ activeBuild: build });
 }
